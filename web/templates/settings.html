@@ -212,46 +212,204 @@
     <table class="gallery-table stack-table">
       <thead>
         <tr>
-          <th>Name</th><th>Gallery path</th><th>Status</th><th>Content</th><th>Actions</th>
+          <th>Name</th>
+          <th>Gallery path</th>
+          <th>Content</th>
+          <th>Actions</th>
         </tr>
       </thead>
+
       <tbody>
         {{range $galleries}}
-        <tr>
-          <td class="stack-head"><strong>{{.Name}}</strong></td>
-          <td class="gallery-path-cell" data-label="Gallery path"><code>{{.GalleryPath}}</code>{{range .LeavesOut}}<span class="gallery-leaves">leaves out {{.}}</span>{{end}}</td>
-          <td class="gallery-status-cell" data-label="Status">
-            {{- if eq .Name $active}}<span class="status-badge status-ok">active</span>{{end}}
-            {{- if eq .Name $cfg.DefaultGallery}}<span class="status-badge status-ok">default</span>{{end -}}
+        <tr class="gallery-management-row{{if eq .Name $active}} is-active{{else}} is-switchable{{end}}"
+            data-gallery-name="{{.Name}}"
+            {{if ne .Name $active}}onclick="galleryManagementRowClick(event, this)"{{end}}>
+
+          <td class="stack-head gallery-name-cell">
+
+            <div class="gallery-name-display">
+              <button type="button"
+                      class="gallery-name-edit-trigger"
+                      title="Rename gallery"
+                      onclick="startGalleryInlineRename(event, this)">
+                {{.Name}}
+              </button>
+
+              {{if eq .Name $active}}
+              <span class="gallery-active-dot"
+                    title="Active gallery"
+                    aria-label="Active gallery">●</span>
+              {{end}}
+            </div>
+
+            <form class="gallery-inline-rename"
+                  hidden
+                  hx-post="/settings/galleries/{{.Name}}/rename"
+                  hx-target="#flash-galleries"
+                  hx-swap="innerHTML">
+
+              <input type="text"
+                     name="new_name"
+                     value="{{.Name}}"
+                     required
+                     pattern="[A-Za-z0-9_\-]+"
+                     title="Letters, digits, underscore, dash"
+                     onkeydown="galleryInlineRenameKeydown(event, this)">
+
+            </form>
+
+            {{if ne .Name $active}}
+            <form id="gallery-switch-row-{{.Name}}"
+                  class="gallery-row-switch-form"
+                  hx-post="/internal/gallery/switch"
+                  hx-swap="none">
+              <input type="hidden" name="name" value="{{.Name}}">
+              <input type="hidden" name="return_to" value="/settings">
+            </form>
+            {{end}}
+
           </td>
-          <td class="gallery-info" data-label="Content"><span>{{.Images}} img{{if .Images}} · {{.Tags}} tags{{end}}</span></td>
+
+          <td class="gallery-path-cell"
+              data-label="Gallery path">
+
+            {{if $.DesktopProfile}}
+            <form hx-post="/internal/open-folder"
+                  hx-swap="none"
+                  class="gallery-path-open-form">
+
+              <input type="hidden"
+                     name="kind"
+                     value="gallery">
+
+              <input type="hidden"
+                     name="gallery_name"
+                     value="{{.Name}}">
+
+              <button type="submit"
+                      class="gallery-path-link"
+                      title="Open this gallery folder">
+                <code>{{.GalleryPath}}</code>
+              </button>
+            </form>
+            {{else}}
+            <code>{{.GalleryPath}}</code>
+            {{end}}
+
+            {{range .LeavesOut}}
+            <span class="gallery-leaves">leaves out {{.}}</span>
+            {{end}}
+
+          </td>
+
+          <td class="gallery-info"
+              data-label="Content">
+            <span>
+              {{.Images}} img{{if .Images}} · {{.Tags}} tags{{end}}
+            </span>
+          </td>
+
           <td>
             <div class="gallery-actions">
-            {{if ne .Name $active}}
-            <form hx-post="/internal/gallery/switch" hx-target="#flash-galleries" hx-swap="innerHTML">
-              <input type="hidden" name="name" value="{{.Name}}">
-              <button type="submit" class="btn-sm">Switch</button>
-            </form>
-            {{else}}
-            <button class="btn-sm gallery-action-spacer" tabindex="-1" aria-hidden="true">Switch</button>
-            {{end}}
-            {{if ne .Name $cfg.DefaultGallery}}
-            <form hx-post="/settings/galleries/{{.Name}}/default" hx-target="#flash-galleries" hx-swap="innerHTML">
-              <button type="submit" class="btn-sm btn-success">Set default</button>
-            </form>
-            {{else}}
-            <button class="btn-sm gallery-action-spacer" tabindex="-1" aria-hidden="true">Set default</button>
-            {{end}}
-            <button class="btn-sm btn-gallery-rename" data-name="{{.Name}}">Rename</button>
-            <button class="btn-sm btn-gallery-export" data-name="{{.Name}}">Export</button>
-            <button class="btn-sm btn-danger btn-gallery-import"
-                    data-name="{{.Name}}"
-                    data-can-replace="{{if or (eq .Name $active) (eq .Name $cfg.DefaultGallery)}}false{{else}}true{{end}}">Import</button>
-            {{if and (ne .Name $active) (ne .Name $cfg.DefaultGallery) (gt (len $galleries) 1)}}
-            <button class="btn-sm btn-danger btn-gallery-delete" data-name="{{.Name}}" data-keeps="{{range $i, $k := .LeavesOut}}{{if $i}}, {{end}}{{$k}}{{end}}">Delete</button>
-            {{else}}
-            <button class="btn-sm btn-danger" disabled title="{{if le (len $galleries) 1}}The last gallery cannot be deleted{{else if eq .Name $active}}Switch to another gallery first{{else}}Set another gallery as the default first{{end}}">Delete</button>
-            {{end}}
+
+              <div class="gallery-actions-row gallery-actions-primary">
+
+                {{if ne .Name $cfg.DefaultGallery}}
+                <form hx-post="/settings/galleries/{{.Name}}/default"
+                      hx-target="#flash-galleries"
+                      hx-swap="innerHTML">
+                  <button type="submit" class="btn-sm">
+                    Set Default
+                  </button>
+                </form>
+                {{else}}
+                <button type="button"
+                        class="btn-sm btn-success gallery-default-state"
+                        disabled
+                        title="This is the default gallery">
+                  Default
+                </button>
+                {{end}}
+
+                {{if .HasBanner}}
+                <button type="button"
+                        class="btn-sm"
+                        data-name="{{.Name}}"
+                        data-banner-url="/internal/gallery/banner/{{.Name}}"
+                        data-focal-x="{{printf "%.6f" .BannerFocalX}}"
+                        data-focal-y="{{printf "%.6f" .BannerFocalY}}"
+                        onclick="openGalleryBannerCrop(this)">
+                  Edit Banner
+                </button>
+
+                <form hx-post="/settings/galleries/banner/clear"
+                      hx-target="#flash-galleries"
+                      hx-swap="innerHTML">
+                  <input type="hidden"
+                         name="name"
+                         value="{{.Name}}">
+                  <button type="submit" class="btn-sm">
+                    Clear Banner
+                  </button>
+                </form>
+
+                {{else}}
+
+                <form hx-post="/settings/galleries/banner"
+                      hx-target="#flash-galleries"
+                      hx-swap="innerHTML"
+                      hx-encoding="multipart/form-data">
+
+                  <input type="hidden"
+                         name="name"
+                         value="{{.Name}}">
+
+                  <input type="file"
+                         name="banner"
+                         accept="image/jpeg,image/png,image/webp"
+                         hidden
+                         onchange="if(this.files.length){this.form.requestSubmit()}">
+
+                  <button type="button"
+                          class="btn-sm"
+                          onclick="this.form.querySelector('input[type=file]').click()">
+                    Set Banner
+                  </button>
+                </form>
+
+                {{end}}
+
+              </div>
+
+              <div class="gallery-actions-row gallery-actions-secondary">
+
+                <button class="btn-sm btn-gallery-export"
+                        data-name="{{.Name}}">
+                  Export
+                </button>
+
+                <button class="btn-sm btn-gallery-import"
+                        data-name="{{.Name}}"
+                        data-can-replace="{{if or (eq .Name $active) (eq .Name $cfg.DefaultGallery)}}false{{else}}true{{end}}">
+                  Import
+                </button>
+
+                {{if and (ne .Name $active) (ne .Name $cfg.DefaultGallery) (gt (len $galleries) 1)}}
+                <button class="btn-sm btn-danger btn-gallery-delete"
+                        data-name="{{.Name}}"
+                        data-keeps="{{range $i, $k := .LeavesOut}}{{if $i}}, {{end}}{{$k}}{{end}}">
+                  Delete
+                </button>
+                {{else}}
+                <button class="btn-sm btn-danger"
+                        disabled
+                        title="{{if le (len $galleries) 1}}The last gallery cannot be deleted{{else if eq .Name $active}}Switch to another gallery first{{else}}Set another gallery as the default first{{end}}">
+                  Delete
+                </button>
+                {{end}}
+
+              </div>
+
             </div>
           </td>
         </tr>
@@ -263,6 +421,105 @@
       <button type="button" id="add-gallery-btn"
               onclick="openAddGalleryDialog()">Add gallery</button>
     </div>
+
+    <script>
+    function galleryManagementRowClick(event, row) {
+      if (!row.classList.contains('is-switchable')) return;
+
+      // Interactive controls own their clicks. A click on the remaining row
+      // surface changes the active gallery.
+      if (event.target.closest(
+        'button, a, input, form, label, select, textarea'
+      )) {
+        return;
+      }
+
+      var name = row.dataset.galleryName;
+      var form = document.getElementById(
+        'gallery-switch-row-' + name
+      );
+
+      if (form) {
+        form.requestSubmit();
+      }
+    }
+
+    function closeGalleryInlineRenames(exceptForm) {
+      document
+        .querySelectorAll('.gallery-inline-rename:not([hidden])')
+        .forEach(function(form) {
+          if (form === exceptForm) return;
+          cancelGalleryInlineRename(form);
+        });
+    }
+
+    function startGalleryInlineRename(event, button) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      var cell = button.closest('.gallery-name-cell');
+      var display = cell.querySelector('.gallery-name-display');
+      var form = cell.querySelector('.gallery-inline-rename');
+      var input = form.querySelector('input[name=new_name]');
+
+      closeGalleryInlineRenames(form);
+
+      display.hidden = true;
+      form.hidden = false;
+
+      input.dataset.originalValue = input.value;
+      input.focus();
+      input.select();
+    }
+
+    function cancelGalleryInlineRename(form) {
+      if (!form) return;
+
+      var cell = form.closest('.gallery-name-cell');
+      var display = cell.querySelector('.gallery-name-display');
+      var input = form.querySelector('input[name=new_name]');
+
+      if (input.dataset.originalValue !== undefined) {
+        input.value = input.dataset.originalValue;
+      }
+
+      form.hidden = true;
+      display.hidden = false;
+    }
+
+    function galleryInlineRenameKeydown(event, input) {
+      var form = input.closest('.gallery-inline-rename');
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        cancelGalleryInlineRename(form);
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+
+        if (input.reportValidity()) {
+          form.requestSubmit();
+        }
+      }
+    }
+
+    document.addEventListener('click', function(event) {
+      var openForm = document.querySelector(
+        '.gallery-inline-rename:not([hidden])'
+      );
+
+      if (!openForm) return;
+
+      var cell = openForm.closest('.gallery-name-cell');
+
+      if (!cell.contains(event.target)) {
+        cancelGalleryInlineRename(openForm);
+      }
+    });
+    </script>
 
     <dialog id="gallery-add-dialog">
       <form hx-post="/settings/galleries" hx-target="#flash-gallery-add" hx-swap="innerHTML"
@@ -324,6 +581,404 @@
     }
     </script>
   </section>
+
+  <dialog id="gallery-banner-crop-dialog"
+          class="gallery-banner-crop-dialog">
+
+    <p class="dlg-title">
+      Position Gallery Banner
+      {{template "webui/dialog_x"}}
+    </p>
+
+    <p class="field-hint">
+      Drag the image behind the fixed banner frame.
+      The saved focal point adapts automatically as the window width changes.
+    </p>
+
+    <!--
+      Banner replacement is a completely separate form from focal-point
+      saving. Nested forms are invalid HTML and caused the previous
+      focal-position submission bug.
+    -->
+    <div class="gallery-banner-editor-toolbar">
+
+      <form id="gallery-banner-replace-form"
+            hx-post="/settings/galleries/banner"
+            hx-target="#flash-gallery-banner-crop"
+            hx-swap="innerHTML"
+            hx-encoding="multipart/form-data">
+
+        <input type="hidden"
+               id="gallery-banner-replace-name"
+               name="name">
+
+        <input type="file"
+               id="gallery-banner-replace-file"
+               name="banner"
+               accept="image/jpeg,image/png,image/webp"
+               hidden
+               onchange="if(this.files.length){this.form.requestSubmit()}">
+
+        <button type="button"
+                onclick="document.getElementById('gallery-banner-replace-file').click()">
+          Select Image
+        </button>
+
+      </form>
+
+    </div>
+
+    <div id="gallery-banner-crop-viewport"
+         class="gallery-banner-crop-viewport">
+
+      <img id="gallery-banner-crop-image"
+           alt=""
+           draggable="false">
+
+    </div>
+
+    <!-- Focal-point save form -->
+    <form id="gallery-banner-crop-form"
+          hx-post="/settings/galleries/banner/focal"
+          hx-target="#flash-gallery-banner-crop"
+          hx-swap="innerHTML">
+
+      <input type="hidden"
+             id="gallery-banner-crop-name"
+             name="name">
+
+      <input type="hidden"
+             id="gallery-banner-crop-x"
+             name="focal_x">
+
+      <input type="hidden"
+             id="gallery-banner-crop-y"
+             name="focal_y">
+
+      <div id="flash-gallery-banner-crop"></div>
+
+      <div class="dialog-actions">
+
+        <button type="button"
+                onclick="resetGalleryBannerCrop()">
+          Reset Center
+        </button>
+
+        <button type="button"
+                onclick="cancelGalleryBannerCrop()">
+          Cancel
+        </button>
+
+        <button type="submit">
+          Save
+        </button>
+
+      </div>
+
+    </form>
+
+  </dialog>
+
+  <script>
+  var galleryBannerCrop = {
+    x: 0.5,
+    y: 0.5,
+    originalX: 0.5,
+    originalY: 0.5,
+    pointerX: 0,
+    pointerY: 0,
+    startX: 0.5,
+    startY: 0.5,
+    dragging: false,
+    topbarOriginal: null
+  };
+
+  function clampBannerFocal(v) {
+    return Math.max(0, Math.min(1, v));
+  }
+
+  function applyGalleryBannerCropPreview() {
+    var img = document.getElementById(
+      'gallery-banner-crop-image'
+    );
+
+    var xInput = document.getElementById(
+      'gallery-banner-crop-x'
+    );
+
+    var yInput = document.getElementById(
+      'gallery-banner-crop-y'
+    );
+
+    var position =
+      (galleryBannerCrop.x * 100).toFixed(2) + '% ' +
+      (galleryBannerCrop.y * 100).toFixed(2) + '%';
+
+    img.style.objectPosition = position;
+
+    xInput.value = galleryBannerCrop.x.toFixed(6);
+    yInput.value = galleryBannerCrop.y.toFixed(6);
+
+    var name =
+      document.getElementById(
+        'gallery-banner-crop-name'
+      ).value;
+
+    var active = document.body.dataset.gallery;
+
+    if (name === active) {
+      var topbar =
+        document.querySelector('.gallery-banner-image');
+
+      if (topbar) {
+        topbar.style.objectPosition = position;
+      }
+    }
+  }
+
+  function openGalleryBannerCrop(button) {
+    var dialog =
+      document.getElementById(
+        'gallery-banner-crop-dialog'
+      );
+
+    var img =
+      document.getElementById(
+        'gallery-banner-crop-image'
+      );
+
+    var name = button.dataset.name;
+
+    galleryBannerCrop.x =
+      parseFloat(button.dataset.focalX || '0.5');
+
+    galleryBannerCrop.y =
+      parseFloat(button.dataset.focalY || '0.5');
+
+    if (!Number.isFinite(galleryBannerCrop.x)) {
+      galleryBannerCrop.x = 0.5;
+    }
+
+    if (!Number.isFinite(galleryBannerCrop.y)) {
+      galleryBannerCrop.y = 0.5;
+    }
+
+    galleryBannerCrop.x =
+      clampBannerFocal(galleryBannerCrop.x);
+
+    galleryBannerCrop.y =
+      clampBannerFocal(galleryBannerCrop.y);
+
+    galleryBannerCrop.originalX =
+      galleryBannerCrop.x;
+
+    galleryBannerCrop.originalY =
+      galleryBannerCrop.y;
+
+    document.getElementById(
+      'gallery-banner-crop-name'
+    ).value = name;
+
+    document.getElementById(
+      'gallery-banner-replace-name'
+    ).value = name;
+
+    img.src =
+      button.dataset.bannerUrl +
+      '?crop_preview=' + Date.now();
+
+    var topbar =
+      document.querySelector('.gallery-banner-image');
+
+    galleryBannerCrop.topbarOriginal =
+      topbar ? topbar.style.objectPosition : null;
+
+    applyGalleryBannerCropPreview();
+
+    dialog.showModal();
+  }
+
+  function resetGalleryBannerCrop() {
+    galleryBannerCrop.x = 0.5;
+    galleryBannerCrop.y = 0.5;
+
+    applyGalleryBannerCropPreview();
+  }
+
+  function restoreGalleryBannerTopbarPreview() {
+    var name =
+      document.getElementById(
+        'gallery-banner-crop-name'
+      ).value;
+
+    if (name !== document.body.dataset.gallery) {
+      return;
+    }
+
+    var topbar =
+      document.querySelector('.gallery-banner-image');
+
+    if (!topbar) {
+      return;
+    }
+
+    if (galleryBannerCrop.topbarOriginal !== null) {
+      topbar.style.objectPosition =
+        galleryBannerCrop.topbarOriginal;
+    }
+  }
+
+  function cancelGalleryBannerCrop() {
+    restoreGalleryBannerTopbarPreview();
+
+    document
+      .getElementById('gallery-banner-crop-dialog')
+      .close();
+  }
+
+  function galleryBannerCropOverflow(viewport, img) {
+    if (!img.naturalWidth || !img.naturalHeight) {
+      return {x: 0, y: 0};
+    }
+
+    var vw = viewport.clientWidth;
+    var vh = viewport.clientHeight;
+
+    var scale = Math.max(
+      vw / img.naturalWidth,
+      vh / img.naturalHeight
+    );
+
+    return {
+      x: Math.max(
+        0,
+        img.naturalWidth * scale - vw
+      ),
+      y: Math.max(
+        0,
+        img.naturalHeight * scale - vh
+      )
+    };
+  }
+
+  (function () {
+    var viewport =
+      document.getElementById(
+        'gallery-banner-crop-viewport'
+      );
+
+    var img =
+      document.getElementById(
+        'gallery-banner-crop-image'
+      );
+
+    viewport.addEventListener(
+      'pointerdown',
+      function(event) {
+        galleryBannerCrop.dragging = true;
+
+        galleryBannerCrop.pointerX =
+          event.clientX;
+
+        galleryBannerCrop.pointerY =
+          event.clientY;
+
+        galleryBannerCrop.startX =
+          galleryBannerCrop.x;
+
+        galleryBannerCrop.startY =
+          galleryBannerCrop.y;
+
+        viewport.classList.add('dragging');
+
+        viewport.setPointerCapture(
+          event.pointerId
+        );
+
+        event.preventDefault();
+      }
+    );
+
+    viewport.addEventListener(
+      'pointermove',
+      function(event) {
+        if (!galleryBannerCrop.dragging) {
+          return;
+        }
+
+        var overflow =
+          galleryBannerCropOverflow(
+            viewport,
+            img
+          );
+
+        var dx =
+          event.clientX -
+          galleryBannerCrop.pointerX;
+
+        var dy =
+          event.clientY -
+          galleryBannerCrop.pointerY;
+
+        if (overflow.x > 0) {
+          galleryBannerCrop.x =
+            clampBannerFocal(
+              galleryBannerCrop.startX -
+              dx / overflow.x
+            );
+        }
+
+        if (overflow.y > 0) {
+          galleryBannerCrop.y =
+            clampBannerFocal(
+              galleryBannerCrop.startY -
+              dy / overflow.y
+            );
+        }
+
+        applyGalleryBannerCropPreview();
+      }
+    );
+
+    function endDrag(event) {
+      if (!galleryBannerCrop.dragging) {
+        return;
+      }
+
+      galleryBannerCrop.dragging = false;
+
+      viewport.classList.remove('dragging');
+
+      try {
+        viewport.releasePointerCapture(
+          event.pointerId
+        );
+      } catch (_) {}
+    }
+
+    viewport.addEventListener(
+      'pointerup',
+      endDrag
+    );
+
+    viewport.addEventListener(
+      'pointercancel',
+      endDrag
+    );
+
+    document
+      .getElementById(
+        'gallery-banner-crop-dialog'
+      )
+      .addEventListener(
+        'cancel',
+        function(event) {
+          event.preventDefault();
+          cancelGalleryBannerCrop();
+        }
+      );
+  })();
+  </script>
 
   <dialog id="gallery-rename-dialog">
     <form id="gallery-rename-form" hx-post="" hx-target="#flash-gallery-rename" hx-swap="innerHTML"

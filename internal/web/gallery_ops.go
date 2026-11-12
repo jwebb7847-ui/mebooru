@@ -92,9 +92,12 @@ func (s *Server) galleryList() []config.Gallery {
 
 type galleryRow struct {
 	config.Gallery
-	Images    int
-	Tags      int
-	LeavesOut []string
+	Images       int
+	Tags         int
+	LeavesOut    []string
+	HasBanner    bool
+	BannerFocalX float64
+	BannerFocalY float64
 }
 
 // The active row takes the caller's counts, which the footer shows: a
@@ -104,6 +107,12 @@ func (s *Server) galleryRowsWithSnapshot(activeName string, activeImages, active
 	out := make([]galleryRow, len(galleries))
 	for i, g := range galleries {
 		out[i].Gallery = g
+		out[i].HasBanner = s.galleryBannerExists(g.Name)
+
+		presentation := s.loadGalleryPresentation(g.Name)
+		out[i].BannerFocalX = presentation.FocalX
+		out[i].BannerFocalY = presentation.FocalY
+
 		cx := s.get(g.Name)
 		if cx != nil {
 			for _, e := range cx.Boundary().Fenced() {

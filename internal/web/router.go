@@ -625,6 +625,10 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.write("POST /settings/galleries/{name}/default", s.settingsGalleryDefaultPost)
 	rt.free("GET /settings/galleries/{name}/export", s.settingsGalleryExport)
 	rt.write("POST /settings/galleries/{name}/import", s.settingsGalleryImport)
+	rt.write("POST /settings/galleries/banner", s.settingsGalleryBannerPost)
+	rt.write("POST /settings/galleries/banner/clear", s.settingsGalleryBannerClearPost)
+	rt.write("POST /settings/galleries/banner/focal", s.settingsGalleryBannerFocalPost)
+	rt.read("GET /internal/gallery/banner/{name}", s.galleryBannerGet)
 
 	rt.free("POST /api/v1/pair/request", s.pairRequest)
 	rt.free("GET /api/v1/pair/status", s.pairStatus)
@@ -758,29 +762,31 @@ type baseData struct {
 	Theme       bool
 	// Server-rendered so a navigation does not flash the column before
 	// main.js runs.
-	SidebarCollapsed    bool
-	BooruName           string
-	BooruLogo           string
-	BooruFavicon        string
-	Mascot              map[string]string
-	ActiveGallery       string
-	Galleries           []config.Gallery
-	GallerySwitchTarget string
-	VisibleCount        int
-	InboxCount          int
-	TagCount            int
-	CollectionsCount    int
-	InboxNavActive      bool
-	HiddenByCeiling     int
-	RatingLevels        []ratingLevel
-	ActiveRating        string
-	RequestStart        time.Time
-	MonloaderPaired     bool
-	MonloaderUsable     bool
-	MonloaderConn       string
-	MonloaderLight      webui.PeerLight
-	MonloaderPTR        bool
-	MonloaderPTRSyncing bool
+	SidebarCollapsed      bool
+	BooruName             string
+	BooruLogo             string
+	BooruFavicon          string
+	Mascot                map[string]string
+	ActiveGallery         string
+	Galleries             []config.Gallery
+	GallerySwitchTarget   string
+	GalleryBannerURL      string
+	GalleryBannerPosition string
+	VisibleCount          int
+	InboxCount            int
+	TagCount              int
+	CollectionsCount      int
+	InboxNavActive        bool
+	HiddenByCeiling       int
+	RatingLevels          []ratingLevel
+	ActiveRating          string
+	RequestStart          time.Time
+	MonloaderPaired       bool
+	MonloaderUsable       bool
+	MonloaderConn         string
+	MonloaderLight        webui.PeerLight
+	MonloaderPTR          bool
+	MonloaderPTRSyncing   bool
 	// The render gate, where MonloaderPTR is the live one: a paused or
 	// unreachable link reports no PTR, so it counts as present.
 	MonloaderPTRPresent bool
@@ -844,40 +850,42 @@ func (s *Server) base(r *http.Request, nav, title string) baseData {
 	monloaderUsable := s.ml.Usable()
 	theme := s.activeTheme()
 	return baseData{
-		Title:               title,
-		ActiveNav:           nav,
-		CSRFToken:           s.sessions.CSRFToken(sessID),
-		AuthEnabled:         s.authEnabled(),
-		Degraded:            degraded,
-		Version:             Version,
-		RepoURL:             RepoURL,
-		DocURL:              DocURL,
-		Build:               BuildLabel(),
-		Theme:               theme.Path != "",
-		SidebarCollapsed:    sidebarCollapsed(r),
-		BooruName:           s.booruName(),
-		BooruLogo:           themeLogoURL(theme),
-		BooruFavicon:        themeFaviconURL(theme),
-		Mascot:              themeMascots(theme),
-		MonloaderPaired:     paired,
-		MonloaderUsable:     monloaderUsable,
-		MonloaderConn:       ml.Conn,
-		MonloaderLight:      s.monloaderLight(ml.Conn, ml.Version, ml.APIMismatch, ml.Panels()),
-		MonloaderPTR:        ml.PTR,
-		MonloaderPTRSyncing: ml.PTRSyncing,
-		MonloaderPTRPresent: paired && (ml.PTR || ml.PTRSyncing || !monloaderUsable),
-		ActiveGallery:       s.activeGallery(),
-		Galleries:           galleries,
-		GallerySwitchTarget: gallerySwitchTarget(r.URL.RequestURI()),
-		VisibleCount:        visible,
-		InboxCount:          inbox,
-		TagCount:            tagCount,
-		CollectionsCount:    collectionsCount,
-		InboxNavActive:      inboxNavActive,
-		RatingLevels:        ratingFooterLevels,
-		ActiveRating:        active,
-		RequestStart:        requestStartFromContext(r.Context()),
-		PairNotice:          s.pairNotice(),
+		Title:                 title,
+		ActiveNav:             nav,
+		CSRFToken:             s.sessions.CSRFToken(sessID),
+		AuthEnabled:           s.authEnabled(),
+		Degraded:              degraded,
+		Version:               Version,
+		RepoURL:               RepoURL,
+		DocURL:                DocURL,
+		Build:                 BuildLabel(),
+		Theme:                 theme.Path != "",
+		SidebarCollapsed:      sidebarCollapsed(r),
+		BooruName:             s.booruName(),
+		BooruLogo:             themeLogoURL(theme),
+		BooruFavicon:          themeFaviconURL(theme),
+		Mascot:                themeMascots(theme),
+		MonloaderPaired:       paired,
+		MonloaderUsable:       monloaderUsable,
+		MonloaderConn:         ml.Conn,
+		MonloaderLight:        s.monloaderLight(ml.Conn, ml.Version, ml.APIMismatch, ml.Panels()),
+		MonloaderPTR:          ml.PTR,
+		MonloaderPTRSyncing:   ml.PTRSyncing,
+		MonloaderPTRPresent:   paired && (ml.PTR || ml.PTRSyncing || !monloaderUsable),
+		ActiveGallery:         s.activeGallery(),
+		Galleries:             galleries,
+		GallerySwitchTarget:   gallerySwitchTarget(r.URL.RequestURI()),
+		GalleryBannerURL:      s.galleryBannerURL(s.activeGallery()),
+		GalleryBannerPosition: s.galleryBannerPosition(s.activeGallery()),
+		VisibleCount:          visible,
+		InboxCount:            inbox,
+		TagCount:              tagCount,
+		CollectionsCount:      collectionsCount,
+		InboxNavActive:        inboxNavActive,
+		RatingLevels:          ratingFooterLevels,
+		ActiveRating:          active,
+		RequestStart:          requestStartFromContext(r.Context()),
+		PairNotice:            s.pairNotice(),
 	}
 }
 

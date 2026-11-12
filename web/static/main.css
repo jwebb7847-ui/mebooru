@@ -2841,3 +2841,264 @@ label.ptr-row:hover { background: var(--bg-input); }
     max-width: 140px;
   }
 }
+
+/* Active gallery presentation banner. */
+#gallery-banner-slot {
+  position: relative;
+}
+
+.gallery-banner-image {
+  position: absolute;
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+
+  object-fit: cover;
+  object-position: center;
+
+  opacity: 0.88;
+
+  /*
+    The image is fully transparent at the left edge and becomes fully visible
+    toward the right, allowing the ordinary top-bar background to flow into it.
+  */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0,0,0,0.15) 18%,
+    rgba(0,0,0,0.70) 48%,
+    black 72%,
+    black 100%
+  );
+
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0,0,0,0.15) 18%,
+    rgba(0,0,0,0.70) 48%,
+    black 72%,
+    black 100%
+  );
+}
+
+/* Gallery banner focal-point editor. */
+.gallery-banner-crop-dialog {
+  width: min(900px, 92vw);
+}
+
+.gallery-banner-crop-viewport {
+  position: relative;
+
+  width: 100%;
+  aspect-ratio: 8 / 1;
+  min-height: 90px;
+
+  margin: 14px 0;
+
+  overflow: hidden;
+
+  background: var(--bg);
+  border: 1px solid var(--border);
+
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.gallery-banner-crop-viewport.dragging {
+  cursor: grabbing;
+}
+
+.gallery-banner-crop-viewport img {
+  width: 100%;
+  height: 100%;
+
+  object-fit: cover;
+  object-position: 50% 50%;
+
+  pointer-events: none;
+  user-select: none;
+}
+
+.gallery-banner-crop-viewport::after {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  pointer-events: none;
+
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.08),
+    inset 0 0 35px rgba(0,0,0,0.18);
+}
+
+/* ==========================================================
+   Mebooru gallery management table
+   ========================================================== */
+
+.gallery-management-row {
+  transition:
+    background-color 100ms ease,
+    box-shadow 100ms ease;
+}
+
+.gallery-management-row.is-switchable {
+  cursor: pointer;
+}
+
+.gallery-management-row.is-switchable:hover > td {
+  background: rgba(255,255,255,0.035);
+}
+
+/*
+  Active-gallery treatment deliberately uses Mebooru cyan rather than the
+  normal red action accent. The dot also communicates state without relying
+  on color alone.
+*/
+.gallery-management-row.is-active > td {
+  background: rgba(24, 166, 211, 0.085);
+}
+
+.gallery-management-row.is-active > td:first-child {
+  box-shadow: inset 3px 0 #24c7e8;
+}
+
+.gallery-name-cell {
+  min-width: 118px;
+}
+
+.gallery-name-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gallery-name-edit-trigger {
+  appearance: none;
+
+  margin: 0;
+  padding: 0;
+
+  border: 0;
+  background: transparent;
+
+  color: var(--fg);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+
+  cursor: text;
+}
+
+.gallery-name-edit-trigger:hover {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.gallery-active-dot {
+  color: #24c7e8;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.gallery-inline-rename {
+  margin: 0;
+}
+
+.gallery-inline-rename[hidden] {
+  display: none;
+}
+
+.gallery-inline-rename input {
+  width: min(180px, 100%);
+  min-width: 90px;
+  font-weight: 700;
+}
+
+.gallery-row-switch-form {
+  display: none;
+}
+
+.gallery-default-state:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+/*
+  With Status / Switch / Rename removed, let the useful columns consume
+  the reclaimed width rather than squeezing the filesystem path.
+*/
+.gallery-table .gallery-path-cell {
+  width: 32%;
+  min-width: 230px;
+}
+
+.gallery-table .gallery-info {
+  width: 125px;
+  white-space: nowrap;
+}
+
+.gallery-table .gallery-actions {
+  flex-wrap: wrap;
+}
+
+/* Clickable gallery filesystem path in desktop/local mode. */
+.gallery-path-open-form {
+  display: inline;
+  margin: 0;
+}
+
+.gallery-path-link {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+
+  border: 0;
+  background: transparent;
+
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gallery-path-link code {
+  color: inherit;
+}
+
+.gallery-path-link:hover code {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Explicit two-row gallery action layout. */
+.gallery-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.gallery-actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.gallery-default-state:disabled {
+  opacity: 1;
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-surface));
+}
+
+.gallery-banner-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 10px 0 4px;
+}

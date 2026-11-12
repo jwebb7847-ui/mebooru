@@ -54,12 +54,33 @@ func (s *Server) openFolder(w http.ResponseWriter, r *http.Request) {
 	if !parseFormOK(w, r) {
 		return
 	}
+
 	kind := r.FormValue("kind")
 	if !slices.Contains(openFolderKinds, kind) {
 		externalErr(w, r, "Unknown folder.", http.StatusBadRequest)
 		return
 	}
-	dir, ours := s.desktopFolder(kind)
+
+	var dir string
+	var ours bool
+
+	if kind == "gallery" {
+		galleryName := strings.TrimSpace(r.FormValue("gallery_name"))
+
+		if galleryName != "" {
+			s.cfgMu.RLock()
+			gallery := s.cfg.FindGallery(galleryName)
+			if gallery != nil {
+				dir = gallery.GalleryPath
+			}
+			s.cfgMu.RUnlock()
+		} else {
+			dir, ours = s.desktopFolder(kind)
+		}
+	} else {
+		dir, ours = s.desktopFolder(kind)
+	}
+
 	// A tagger name passes the allowlist, so it cannot leave the models folder.
 	if kind == "models" && dir != "" {
 		name := r.FormValue("name")
@@ -71,25 +92,38 @@ func (s *Server) openFolder(w http.ResponseWriter, r *http.Request) {
 			dir = filepath.Join(dir, name)
 		}
 	}
+
 	if dir == "" {
 		externalErr(w, r, "That folder is not configured.", http.StatusBadRequest)
 		return
 	}
+
 	if ours {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			externalErr(w, r, "Could not create "+dir+": "+err.Error(), http.StatusInternalServerError)
+			externalErr(
+				w,
+				r,
+				"Could not create "+dir+": "+err.Error(),
+				http.StatusInternalServerError,
+			)
 			return
 		}
 	}
+
 	if err := s.folderOpener(dir); err != nil {
 		logx.Warnf("open-folder %s: %v", kind, err)
-		externalErr(w, r, "Could not open "+dir+".", http.StatusInternalServerError)
+		externalErr(
+			w,
+			r,
+			"Could not open "+dir+".",
+			http.StatusInternalServerError,
+		)
 		return
 	}
-	writeInlineFlash(w, "ok", "Opened "+dir+".")
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
-// The gallery is not ours to create: an empty one would be a second library.
 func (s *Server) desktopFolder(kind string) (string, bool) {
 	s.cfgMu.RLock()
 	dataPath := s.cfg.Paths.DataPath
