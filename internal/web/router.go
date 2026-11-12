@@ -709,7 +709,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 var Version = "dev"
 
 // RepoURL is set at build time via -ldflags.
-var RepoURL = "https://github.com/monbooru/monbooru"
+var RepoURL = "https://github.com/jwebb7847-ui/mebooru"
 
 // DocURL is set at build time via -ldflags.
 var DocURL = "https://monbooru.github.io/mondocs/index.html"
@@ -924,7 +924,7 @@ func (s *Server) serveThumbnail(w http.ResponseWriter, r *http.Request) {
 func (s *Server) booruName() string {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
-	return cmp.Or(s.cfg.Server.BooruName, "Monbooru")
+	return cmp.Or(s.cfg.Server.BooruName, "Mebooru")
 }
 
 func (s *Server) modelPath() string {
