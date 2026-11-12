@@ -14,6 +14,37 @@
       <img src="{{.BooruLogo}}" alt="" class="topbar-logo">
       <span>{{wordmark .BooruName}}</span>
     </a>
+
+    {{with .Galleries}}
+    <details id="gallery-switcher" class="gallery-switcher">
+      <summary title="Switch gallery (\)">
+        <span class="gallery-switcher-name">{{$.ActiveGallery}}</span>
+        <span class="gallery-switcher-caret" aria-hidden="true">▾</span>
+      </summary>
+
+      <div class="gallery-switcher-menu">
+        {{range .}}
+          {{if eq .Name $.ActiveGallery}}
+          <div class="gallery-switcher-current" aria-current="true">
+            <span class="gallery-switcher-check">✓</span>
+            <span>{{.Name}}</span>
+          </div>
+          {{else}}
+          <form hx-post="/internal/gallery/switch" hx-swap="none">
+            <input type="hidden" name="name" value="{{.Name}}">
+            <input type="hidden" name="return_to" value="{{$.GallerySwitchTarget}}">
+            <button type="submit" class="gallery-switcher-option">{{.Name}}</button>
+          </form>
+          {{end}}
+        {{end}}
+
+        <a class="gallery-switcher-manage" href="/settings#galleries">
+          Manage galleries…
+        </a>
+      </div>
+    </details>
+    {{end}}
+
     <nav id="nav">
       <a href="/" class="nav-images{{if and (eq .ActiveNav "gallery") (not .InboxNavActive)}} active{{end}}">Images</a>
       <a id="inbox-nav" href="/?q=inbox:true" class="nav-inbox{{if .InboxNavActive}} active{{end}}">Inbox<span id="inbox-nav-count">{{if gt .InboxCount 0}} ({{.InboxCount}}){{end}}</span></a>
@@ -24,6 +55,9 @@
       <a href="/settings" class="nav-settings{{if eq .ActiveNav "settings"}} active{{end}}">Settings</a>
       {{template "webui/pair_notice" .PairNotice}}
     </nav>
+
+    <div id="gallery-banner-slot" aria-hidden="true"></div>
+
     <div id="topbar-right">
       <div id="job-status"
            hx-get="/internal/job/status"
@@ -83,12 +117,9 @@
   </div>
   <footer id="footer">
     <div id="footer-left">
-      {{with .Galleries}}{{if gt (len .) 1}}
-      <button id="gallery-switch-btn" class="footer-gallery" type="button" title="Switch gallery"
-              onclick="document.getElementById('gallery-switch-dialog').showModal()">[{{$.ActiveGallery}}]</button>
-      {{else}}
+      {{with .Galleries}}
       <span class="footer-gallery">[{{$.ActiveGallery}}]</span>
-      {{end}}{{end}}
+      {{end}}
       <span class="footer-wide">
       <span class="footer-sep">·</span>
       <span id="footer-count-images">{{.VisibleCount}} img</span>
@@ -127,7 +158,7 @@
           <li><kbd>g</kbd><kbd>s</kbd><span>Settings</span></li>
           <li data-when="form[hx-post=&#34;/internal/sync&#34;]"><kbd>Y</kbd><span>Sync gallery</span></li>
           <li><kbd>,</kbd><kbd>.</kbd><span>Rating ceiling switch</span></li>
-          <li data-when="#gallery-switch-dialog"><kbd>\</kbd><span>Switch gallery</span></li>
+          <li data-when="#gallery-switcher"><kbd>\</kbd><span>Switch gallery</span></li>
           <li data-when=".pagination"><kbd>[</kbd><kbd>]</kbd><span>Previous / next page</span></li>
           <li data-when=".pagination"><kbd>G</kbd><span>Last page</span></li>
           <li data-when=".pagination"><kbd>p</kbd><span>Page-jump dialog</span></li>
@@ -330,31 +361,6 @@
     </form>
   </dialog>
   {{template "partials/image_lightbox.html" .}}
-  {{with .Galleries}}{{if gt (len .) 1}}
-  <dialog id="gallery-switch-dialog">
-    <p class="dlg-title">Switch gallery{{template "webui/dialog_x"}}</p>
-    <ul class="gallery-switch-list">
-      {{range .}}
-      <li>
-        {{if eq .Name $.ActiveGallery}}
-          <span class="gallery-switch-current">[current] {{.Name}}</span>
-        {{else}}
-          <form hx-post="/internal/gallery/switch"
-                hx-target="#gallery-switch-flash" hx-swap="innerHTML"
-                style="display:inline">
-            <input type="hidden" name="name" value="{{.Name}}">
-            <button type="submit">{{.Name}}</button>
-          </form>
-        {{end}}
-      </li>
-      {{end}}
-    </ul>
-    <div id="gallery-switch-flash"></div>
-    <div class="dialog-actions">
-      <button type="button" onclick="document.getElementById('gallery-switch-dialog').close()">Cancel</button>
-    </div>
-  </dialog>
-  {{end}}{{end}}
 </body>
 </html>
 {{end}}

@@ -971,6 +971,15 @@ document.addEventListener('keydown', function(e) {
   if (handlePagesGridKey(e)) return;
 
   if (e.key === 'Escape') {
+    var gallerySwitcher = document.getElementById('gallery-switcher');
+    if (gallerySwitcher && gallerySwitcher.open) {
+      e.preventDefault();
+      gallerySwitcher.open = false;
+      var gallerySummary = gallerySwitcher.querySelector('summary');
+      if (gallerySummary) gallerySummary.focus();
+      return;
+    }
+
     if (isInput) { e.target.blur(); return; }
     if (document.querySelector('dialog[open]')) return;
     if (selectionArmed()) {
@@ -1062,8 +1071,14 @@ document.addEventListener('keydown', function(e) {
   if (e.key === '.') { if (cycleRatingCeiling(+1)) { e.preventDefault(); return; } }
 
   if (e.key === '\\') {
-    var swDlg = document.getElementById('gallery-switch-dialog');
-    if (swDlg) { e.preventDefault(); swDlg.showModal(); return; }
+    var gallerySwitcher = document.getElementById('gallery-switcher');
+    if (gallerySwitcher) {
+      e.preventDefault();
+      gallerySwitcher.open = !gallerySwitcher.open;
+      var gallerySummary = gallerySwitcher.querySelector('summary');
+      if (gallerySummary) gallerySummary.focus();
+      return;
+    }
   }
 
   if (e.key === 'g') {
@@ -3405,3 +3420,13 @@ function rejectTagFlow(btn, tagID, onSuccess) {
     }
   });
 }
+
+// Close the persistent gallery selector when the user clicks elsewhere.
+document.addEventListener('click', function(e) {
+  var gallerySwitcher = document.getElementById('gallery-switcher');
+  if (gallerySwitcher &&
+      gallerySwitcher.open &&
+      !gallerySwitcher.contains(e.target)) {
+    gallerySwitcher.open = false;
+  }
+});

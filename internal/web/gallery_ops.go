@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -127,23 +128,44 @@ func (s *Server) galleryRowsWithSnapshot(activeName string, activeImages, active
 	return out
 }
 
+func gallerySwitchTarget(raw string) string {
+	if raw == "" {
+		return "/"
+	}
+
+	u, err := url.ParseRequestURI(raw)
+	if err != nil || u.IsAbs() || u.Host != "" {
+		return "/"
+	}
+
+	switch u.Path {
+	case "/", "/categories", "/tags", "/collections", "/relations", "/settings":
+		return u.RequestURI()
+	default:
+		// IDs are gallery-local. Never carry an image/detail/session URL
+		// into another gallery where the same ID could mean something else.
+		return "/"
+	}
+}
+
 func (s *Server) gallerySwitchHandler(w http.ResponseWriter, r *http.Request) {
 	if !parseFormOK(w, r) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
+	target := gallerySwitchTarget(r.FormValue("return_to"))
 	if err := s.switchGallery(name); err != nil {
 		externalErr(w, r, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if isHTMXRequest(r) {
-		// Home, not a refresh: the ids in the current URL mean other rows
-		// in the new gallery.
-		w.Header().Set("HX-Redirect", "/")
+		// Preserve safe gallery-independent surfaces. Gallery-local detail
+		// URLs are reduced to the Images page by gallerySwitchTarget.
+		w.Header().Set("HX-Redirect", target)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func (s *Server) settingsGalleriesPost(w http.ResponseWriter, r *http.Request) {

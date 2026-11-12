@@ -765,6 +765,7 @@ type baseData struct {
 	Mascot              map[string]string
 	ActiveGallery       string
 	Galleries           []config.Gallery
+	GallerySwitchTarget string
 	VisibleCount        int
 	InboxCount          int
 	TagCount            int
@@ -867,6 +868,7 @@ func (s *Server) base(r *http.Request, nav, title string) baseData {
 		MonloaderPTRPresent: paired && (ml.PTR || ml.PTRSyncing || !monloaderUsable),
 		ActiveGallery:       s.activeGallery(),
 		Galleries:           galleries,
+		GallerySwitchTarget: gallerySwitchTarget(r.URL.RequestURI()),
 		VisibleCount:        visible,
 		InboxCount:          inbox,
 		TagCount:            tagCount,
