@@ -80,14 +80,11 @@
     </a>
   </div>
   {{else}}
-  <div class="no-results mascot-empty">
-    {{if $.Degraded}}{{with $.Mascot.panic}}<img src="{{.}}" alt="" class="mascot">{{end}}
-    {{else if or (not $.Query) (eq $.Query "inbox:true")}}{{with $.Mascot.sleep}}<img src="{{.}}" alt="" class="mascot">{{end}}
-    {{else}}{{with $.Mascot.lost}}<img src="{{.}}" alt="" class="mascot">{{end}}{{end}}
+  <div class="no-results">
     <div>
     {{if $.Degraded}}No images found. (≖_≖ )
     <p class="field-hint">The gallery folder can't be read, so nothing can be listed. Check its path in the configuration.</p>
-    {{else if eq $.Query "inbox:true"}}Inbox zero. (－ω－) zzZ
+    {{else if eq $.Query "inbox:true"}}Inbox zero.
     <p class="field-hint">New images land here. Press <kbd>Y</kbd> to sync now.</p>
     {{else if $.Query}}No images found. (￣～￣;)
     <p class="field-hint">Try fewer tags, or raise the rating ceiling in the footer.</p>
