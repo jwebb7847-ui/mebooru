@@ -1,25 +1,17 @@
-# ![Monbooru](/.github/assets/banner.webp)
+<p align="center">
+  <img src="branding/mebooru-mobius-master.png" width="320" alt="Mebooru Möbius logo">
+</p>
+
+# Mebooru
 
 Your own private, lightweight and fast booru: a tag-based image gallery, in the style of Danbooru, for your files.
 
-Designed for organizing your local media collection: images, videos, animated GIFs and manga archives. Tag it by hand or auto-tag it locally with ONNX models (WD14, JoyTag...), then search it by tag. Generation metadata from AI image tools (A1111/Forge, ComfyUI) is read too. The app itself never touches the internet; online features (downloading from boorus, reverse image lookup) live in [monloader](https://github.com/monbooru/monloader), an optional companion.
+Mebooru is a fork of [Monbooru](https://github.com/monbooru/monbooru), based on the audited v1.24.0 release. It preserves Monbooru's lightweight, local-first architecture while developing a distinct interface, workflow, privacy model, and optional AI-assisted organization features.
 
-**[Demo](https://monbooru.github.io/demo/)** · **[Documentation](https://monbooru.github.io/mondocs/)** · **[Install](#install)** · **[Releases](https://github.com/monbooru/monbooru/releases)** · **[Changelog](CHANGELOG.md)**
+Designed for organizing your local media collection: images, videos, animated GIFs and manga archives. Tag it by hand or auto-tag it locally with ONNX models (WD14, JoyTag...), then search it by tag. Generation metadata from AI image tools (A1111/Forge, ComfyUI) is read too. Mebooru itself never touches the internet; online features (downloading from boorus, reverse image lookup) live in [monloader](https://github.com/monbooru/monloader), an optional companion.
 
-<table>
-  <tr>
-    <td><img src="/.github/assets/gallery.webp" width="400"/></td>
-    <td><img src="/.github/assets/image.webp" width="400"/></td>
-  </tr>
-  <tr>
-    <td><img src="/.github/assets/sd.webp" width="400"/></td>
-    <td><img src="/.github/assets/tags.webp" width="400"/></td>
-  </tr>
-  <tr>
-    <td><img src="/.github/assets/inbox.webp" width="400"/></td>
-    <td><img src="/.github/assets/compare.webp" width="400"/></td>
-  </tr>
-</table>
+**[Upstream documentation](https://monbooru.github.io/mondocs/)** · **[Install](#install)** · **[Upstream Monbooru](https://github.com/monbooru/monbooru)** · **[Changelog](CHANGELOG.md)**
+
 
 ## Features
 
@@ -54,12 +46,12 @@ Designed for organizing your local media collection: images, videos, animated GI
 
 - **Optional password login**
 - **REST API** with scoped tokens, an OpenAPI spec, and built-in docs
-- **Plugins and themes**: drop one in the plugins or themes folder and turn it on in Settings; monbooru launches and supervises plugins for you
+- **Plugins and themes**: drop one in the plugins or themes folder and turn it on in Settings; Mebooru launches and supervises plugins for you
 - **Downloads and reverse lookup** through the optional [monloader](#related-applications) companion
 
 ## Install
 
-Monbooru runs on Linux (x86_64, arm64) and Windows (x86_64). Once started, it's at `http://localhost:8455`.
+Mebooru is currently developed and verified from source on Apple Silicon macOS. Its upstream Monbooru foundation also supports Linux (x86_64, arm64) and Windows (x86_64). Once started, Mebooru is available at `http://localhost:8455`.
 
 ### Docker
 
@@ -67,20 +59,18 @@ Edit the volume paths in [`docker/docker-compose.yml`](docker/docker-compose.yml
 
 For faster auto-tagging, use the `latest-cuda` image (NVIDIA) or `latest-openvino` (Intel GPU).
 
-### Download
+### Current installation status
 
-Download a build for your system from the [releases](https://github.com/monbooru/monbooru/releases), unpack it, and run it; a browser opens on a short setup page.
+Mebooru does not yet publish its own release binaries. The current development
+branch builds successfully from source on Apple Silicon macOS using Go 1.27.x.
 
-Downloads come in two flavours:
-
-- **lite** is just the program. Video, AVIF and JPEG XL thumbnails need ffmpeg on your system, and auto-tagging needs ONNX Runtime.
-- **bundled** carries ffmpeg and ONNX Runtime, so everything works out of the box.
-
-Beside the portable archives, Linux bundled builds also ship as an AppImage and as a Flatpak.
+Upstream [Monbooru releases](https://github.com/monbooru/monbooru/releases)
+remain available for Linux and Windows, but those packages contain stock
+Monbooru rather than Mebooru.
 
 ### Next steps
 
-The [documentation](https://monbooru.github.io/mondocs/) covers the first steps.
+The inherited [Monbooru documentation](https://monbooru.github.io/mondocs/) covers the current core functionality while Mebooru-specific documentation is developed.
 
 ## Warning
 
@@ -88,13 +78,13 @@ The [documentation](https://monbooru.github.io/mondocs/) covers the first steps.
 
 ## Technical overview
 
-Monbooru is a single self-contained Go binary, web assets embedded, with seven direct dependencies. Each gallery is one SQLite file: no database server, no cache layer, nothing else to run. Your images stay ordinary files and folders; the database and thumbnails live in a separate data directory, so backing up means copying that directory, and removing monbooru leaves your images where they were. The UI is server-rendered with htmx, with no JS framework and no frontend build step.
+Mebooru is a single self-contained Go binary, web assets embedded, with seven direct dependencies. Each gallery is one SQLite file: no database server, no cache layer, nothing else to run. Your images stay ordinary files and folders; the database and thumbnails live in a separate data directory, so backing up means copying that directory, and removing Mebooru leaves your images where they were. The UI is server-rendered with htmx, with no JS framework and no frontend build step.
 
 The heavy features stay out of the main process. Auto-tagging is off until you install a model from **Settings → Auto-Tagger**, and runs in a separate worker that unloads itself when idle. ffmpeg is optional, needed only for video, animated previews, AVIF and JPEG XL.
 
 ## Related applications
 
-Monbooru works offline. These optional companions add the online features:
+Mebooru works offline. These optional upstream companions add online features:
 
 ```mermaid
 ---
@@ -112,8 +102,8 @@ Public Tag Repository`"]
 browser extension`"]
     loader["`**monloader**
 downloader`"]
-    booru(["`**monbooru**
-Your self-hosted booru`"])
+    booru(["`**Mebooru**
+Your local booru`"])
 
     web -->|browse| sender
     sender -->|send URL| loader
@@ -134,8 +124,8 @@ contribute back`"| loader
     class web,ptr src;
 ```
 
-- **monbooru**: this application; organizes, tags, and serves your collection.
-- **[monloader](https://github.com/monbooru/monloader)**: downloader. Fetches files and per-post metadata (via gallery-dl) from supported boorus and galleries and pushes them into a monbooru gallery over the REST API. It also answers monbooru's reverse lookups against boorus, IQDB, SauceNAO and the Hydrus Public Tag Repository, to backfill tags and sources; when a matched post has a better file than your local copy, one click replaces it in place. The PTR connection can also pull tag aliases and implications into your catalog.
+- **Mebooru**: this application; organizes, tags, and serves your collection.
+- **[monloader](https://github.com/monbooru/monloader)**: downloader. Fetches files and per-post metadata (via gallery-dl) from supported boorus and galleries and pushes them into a Mebooru gallery over the REST API. It also answers Mebooru's reverse lookups against boorus, IQDB, SauceNAO and the Hydrus Public Tag Repository, to backfill tags and sources; when a matched post has a better file than your local copy, one click replaces it in place. The PTR connection can also pull tag aliases and implications into your catalog.
 - **[monsender](https://github.com/monbooru/monsender)**: browser extension; sends the URL of the page you're browsing to monloader.
 - **[monbooru-plugins](https://github.com/monbooru/monbooru-plugins)**: community registry of plugins, themes and extra taggers.
 
@@ -145,11 +135,10 @@ Bug reports, ideas and pull requests are welcome.
 
 See [CONTRIBUTING](CONTRIBUTING.md) for more information.
 
-Bugs and feature requests go in the GitHub issue tracker.
+Mebooru bugs, feature requests, and pull requests belong in this repository.
 
-Feel free to ask questions or discuss your setup in [Discussions](https://github.com/monbooru/monbooru/discussions), or on MonBooru Central, the community-run Discord. 
-
-<a href="https://discord.gg/t4TmGtKRzK"><img src="/.github/assets/discord.webp" width="640" alt="MonBooru Central, the community-run Discord. Join"/></a>
+For inherited Monbooru behavior, the upstream documentation and public
+Discussions remain useful references.
 
 ## License
 
@@ -157,13 +146,13 @@ Feel free to ask questions or discuss your setup in [Discussions](https://github
 
 ## Acknowledgements
 
-These cover monbooru and its companion repos ([monloader](https://github.com/monbooru/monloader), [monsender](https://github.com/monbooru/monsender), [mondocs](https://github.com/monbooru/mondocs), [monbooru-plugins](https://github.com/monbooru/monbooru-plugins)).
+Mebooru is built on Monbooru v1.24.0 and retains its AGPL-3.0 license, repository history, and contributor attribution. The upstream ecosystem also includes [monloader](https://github.com/monbooru/monloader), [monsender](https://github.com/monbooru/monsender), [mondocs](https://github.com/monbooru/mondocs), and [monbooru-plugins](https://github.com/monbooru/monbooru-plugins).
 
 Thanks to [@gary-host-laptop](https://github.com/gary-host-laptop) and [@CeareDelafont](https://github.com/CeareDelafont) for sustained contributions over time. Everyone credited in a release is listed in [CONTRIBUTORS](CONTRIBUTORS.md).
 
-Thanks to tamaki for the mon-chan visuals.
+Upstream Monbooru credits tamaki for the original mon-chan visuals.
 
-Thanks to [Danbooru](https://danbooru.donmai.us/) for shaping the booru style, and to [Hydrus Network](https://hydrusnetwork.github.io/hydrus/) a precursor in personal image and tag management that inspired monbooru.
+Thanks to [Danbooru](https://danbooru.donmai.us/) for shaping the booru style, and to [Hydrus Network](https://hydrusnetwork.github.io/hydrus/) a precursor in personal image and tag management that inspired Monbooru, whose architecture Mebooru inherits.
 
 This project is built on the work of others:
 
