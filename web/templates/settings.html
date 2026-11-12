@@ -333,7 +333,7 @@
 
                 {{if .HasBanner}}
                 <button type="button"
-                        class="btn-sm"
+                        class="btn-sm btn-gallery-edit-banner"
                         data-name="{{.Name}}"
                         data-banner-url="/internal/gallery/banner/{{.Name}}"
                         data-focal-x="{{printf "%.6f" .BannerFocalX}}"
@@ -344,7 +344,8 @@
 
                 <form hx-post="/settings/galleries/banner/clear"
                       hx-target="#flash-galleries"
-                      hx-swap="innerHTML">
+                      hx-swap="innerHTML"
+                      hx-confirm="Clear this Banner? This will remove the selected image and its saved positioning.">
                   <input type="hidden"
                          name="name"
                          value="{{.Name}}">
@@ -355,27 +356,12 @@
 
                 {{else}}
 
-                <form hx-post="/settings/galleries/banner"
-                      hx-target="#flash-galleries"
-                      hx-swap="innerHTML"
-                      hx-encoding="multipart/form-data">
-
-                  <input type="hidden"
-                         name="name"
-                         value="{{.Name}}">
-
-                  <input type="file"
-                         name="banner"
-                         accept="image/jpeg,image/png,image/webp"
-                         hidden
-                         onchange="if(this.files.length){this.form.requestSubmit()}">
-
-                  <button type="button"
-                          class="btn-sm"
-                          onclick="this.form.querySelector('input[type=file]').click()">
-                    Set Banner
-                  </button>
-                </form>
+                <button type="button"
+                        class="btn-sm"
+                        data-name="{{.Name}}"
+                        onclick="openGalleryBannerPicker(this.dataset.name)">
+                  Set Banner
+                </button>
 
                 {{end}}
 
@@ -601,31 +587,10 @@
       focal-position submission bug.
     -->
     <div class="gallery-banner-editor-toolbar">
-
-      <form id="gallery-banner-replace-form"
-            hx-post="/settings/galleries/banner"
-            hx-target="#flash-gallery-banner-crop"
-            hx-swap="innerHTML"
-            hx-encoding="multipart/form-data">
-
-        <input type="hidden"
-               id="gallery-banner-replace-name"
-               name="name">
-
-        <input type="file"
-               id="gallery-banner-replace-file"
-               name="banner"
-               accept="image/jpeg,image/png,image/webp"
-               hidden
-               onchange="if(this.files.length){this.form.requestSubmit()}">
-
-        <button type="button"
-                onclick="document.getElementById('gallery-banner-replace-file').click()">
-          Select Image
-        </button>
-
-      </form>
-
+      <button type="button"
+              onclick="openGalleryBannerPicker(document.getElementById('gallery-banner-crop-name').value)">
+        Select Image
+      </button>
     </div>
 
     <div id="gallery-banner-crop-viewport"
@@ -738,36 +703,28 @@
 
   function openGalleryBannerCrop(button) {
     var dialog =
-      document.getElementById(
-        'gallery-banner-crop-dialog'
-      );
+      document.getElementById('gallery-banner-crop-dialog');
 
     var img =
-      document.getElementById(
-        'gallery-banner-crop-image'
-      );
+      document.getElementById('gallery-banner-crop-image');
 
     var name = button.dataset.name;
 
-    galleryBannerCrop.x =
-      parseFloat(button.dataset.focalX || '0.5');
-
-    galleryBannerCrop.y =
-      parseFloat(button.dataset.focalY || '0.5');
-
-    if (!Number.isFinite(galleryBannerCrop.x)) {
-      galleryBannerCrop.x = 0.5;
+    if (!dialog || !img || !name) {
+      console.error(
+        'Gallery banner editor is missing required elements.'
+      );
+      return;
     }
 
-    if (!Number.isFinite(galleryBannerCrop.y)) {
-      galleryBannerCrop.y = 0.5;
-    }
+    var x = parseFloat(button.dataset.focalX);
+    var y = parseFloat(button.dataset.focalY);
 
     galleryBannerCrop.x =
-      clampBannerFocal(galleryBannerCrop.x);
+      Number.isFinite(x) ? clampBannerFocal(x) : 0.5;
 
     galleryBannerCrop.y =
-      clampBannerFocal(galleryBannerCrop.y);
+      Number.isFinite(y) ? clampBannerFocal(y) : 0.5;
 
     galleryBannerCrop.originalX =
       galleryBannerCrop.x;
@@ -775,17 +732,17 @@
     galleryBannerCrop.originalY =
       galleryBannerCrop.y;
 
-    document.getElementById(
-      'gallery-banner-crop-name'
-    ).value = name;
+    var nameInput =
+      document.getElementById('gallery-banner-crop-name');
 
-    document.getElementById(
-      'gallery-banner-replace-name'
-    ).value = name;
+    if (!nameInput) {
+      console.error(
+        'Gallery banner focal-point form is missing its gallery name field.'
+      );
+      return;
+    }
 
-    img.src =
-      button.dataset.bannerUrl +
-      '?crop_preview=' + Date.now();
+    nameInput.value = name;
 
     var topbar =
       document.querySelector('.gallery-banner-image');
@@ -793,9 +750,111 @@
     galleryBannerCrop.topbarOriginal =
       topbar ? topbar.style.objectPosition : null;
 
+    img.onload = function() {
+      applyGalleryBannerCropPreview();
+    };
+
+    img.onerror = function() {
+      console.error(
+        'Could not load gallery banner for editing:',
+        button.dataset.bannerUrl
+      );
+    };
+
+    img.src =
+      button.dataset.bannerUrl +
+      '?crop_preview=' +
+      Date.now();
+
     applyGalleryBannerCropPreview();
 
-    dialog.showModal();
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+  }
+
+  function autoOpenSelectedGalleryBanner() {
+    var params =
+      new URLSearchParams(
+        window.location.search
+      );
+
+    var name =
+      params.get('edit_banner');
+
+    if (!name) {
+      return;
+    }
+
+    var button = null;
+
+    document
+      .querySelectorAll(
+        '.btn-gallery-edit-banner'
+      )
+      .forEach(function(candidate) {
+        if (
+          candidate.dataset.name === name
+        ) {
+          button = candidate;
+        }
+      });
+
+    /*
+      Remove the one-time instruction before opening the
+      editor, so refresh/back navigation does not repeatedly
+      reopen it.
+    */
+    params.delete('edit_banner');
+
+    var cleanURL =
+      window.location.pathname;
+
+    var remaining =
+      params.toString();
+
+    if (remaining) {
+      cleanURL += '?' + remaining;
+    }
+
+    cleanURL +=
+      window.location.hash || '#galleries';
+
+    window.history.replaceState(
+      null,
+      '',
+      cleanURL
+    );
+
+    if (!button) {
+      return;
+    }
+
+    requestAnimationFrame(
+      function() {
+        openGalleryBannerCrop(button);
+      }
+    );
+  }
+
+  function openGalleryBannerPickerFromEditor() {
+    var cropDialog =
+      document.getElementById('gallery-banner-crop-dialog');
+
+    var nameInput =
+      document.getElementById('gallery-banner-crop-name');
+
+    if (!nameInput || !nameInput.value) {
+      return;
+    }
+
+    var name = nameInput.value;
+
+    if (cropDialog && cropDialog.open) {
+      cropDialog.close();
+    }
+
+    openGalleryBannerPicker(name);
   }
 
   function resetGalleryBannerCrop() {
@@ -978,6 +1037,77 @@
         }
       );
   })();
+
+  if (document.readyState === 'loading') {
+    document.addEventListener(
+      'DOMContentLoaded',
+      autoOpenSelectedGalleryBanner,
+      {once: true}
+    );
+  } else {
+    autoOpenSelectedGalleryBanner();
+  }
+  </script>
+
+  <dialog id="gallery-banner-picker-dialog"
+          class="gallery-banner-picker-dialog">
+
+    <p class="dlg-title">
+      Select Gallery Banner
+      {{template "webui/dialog_x"}}
+    </p>
+
+    <p class="field-hint">
+      Starts in this gallery's folder. Local desktop sessions can browse
+      parent folders; remote sessions remain confined to the gallery.
+    </p>
+
+    <div id="gallery-banner-picker-body">
+      <p class="field-hint">Loading…</p>
+    </div>
+
+  </dialog>
+
+  <script>
+  function openGalleryBannerPicker(name) {
+    var dialog =
+      document.getElementById('gallery-banner-picker-dialog');
+
+    var body =
+      document.getElementById('gallery-banner-picker-body');
+
+    dialog.dataset.galleryName = name;
+    body.innerHTML =
+      '<p class="field-hint">Loading…</p>';
+
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+
+    loadGalleryBannerPicker('');
+  }
+
+  function loadGalleryBannerPicker(rel) {
+    var dialog =
+      document.getElementById('gallery-banner-picker-dialog');
+
+    var name = dialog.dataset.galleryName;
+
+    if (!name) {
+      return;
+    }
+
+    var url =
+      '/internal/gallery/banner-picker/' +
+      encodeURIComponent(name) +
+      '?path=' +
+      encodeURIComponent(rel || '');
+
+    htmx.ajax('GET', url, {
+      target: '#gallery-banner-picker-body',
+      swap: 'innerHTML'
+    });
+  }
   </script>
 
   <dialog id="gallery-rename-dialog">

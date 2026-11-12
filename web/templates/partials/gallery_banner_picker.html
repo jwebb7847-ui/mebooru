@@ -1,0 +1,87 @@
+{{define "partials/gallery_banner_picker.html"}}
+
+<div class="gallery-banner-picker">
+
+  <div class="gallery-banner-picker-path">
+    <strong>{{.GalleryName}}</strong>
+    <code>{{.Current}}</code>
+  </div>
+
+  {{if not .AtRoot}}
+  <button type="button"
+          class="gallery-picker-folder gallery-picker-up"
+          data-rel="{{.Parent}}"
+          onclick="loadGalleryBannerPicker(this.dataset.rel)">
+    ↑ Parent folder
+  </button>
+  {{end}}
+
+  {{if .Entries}}
+  <div class="gallery-banner-picker-grid">
+
+    {{range .Entries}}
+
+      {{if .IsDir}}
+
+      <button type="button"
+              class="gallery-picker-folder"
+              data-rel="{{.Rel}}"
+              onclick="loadGalleryBannerPicker(this.dataset.rel)">
+        <span class="gallery-picker-folder-icon">▸</span>
+        <span>{{.Name}}</span>
+      </button>
+
+      {{else}}
+
+      <form hx-post="/settings/galleries/banner/select"
+            hx-target="#flash-gallery-banner-picker"
+            hx-swap="innerHTML"
+            class="gallery-picker-image-form">
+
+        <input type="hidden"
+               name="name"
+               value="{{$.GalleryName}}">
+
+        <input type="hidden"
+               name="path"
+               value="{{.Rel}}">
+
+        <button type="submit"
+                class="gallery-picker-image"
+                title="Use {{.Name}} as gallery banner">
+
+          <img src="{{.PreviewURL}}"
+               alt=""
+               loading="lazy">
+
+          <span>{{.Name}}</span>
+
+        </button>
+
+      </form>
+
+      {{end}}
+
+    {{end}}
+
+  </div>
+
+  {{else}}
+
+  <p class="field-hint">
+    No supported images or folders are available here.
+  </p>
+
+  {{end}}
+
+  {{if .Truncated}}
+  <p class="field-hint">
+    Only the first 500 entries are shown.
+  </p>
+  {{end}}
+
+  <div id="flash-gallery-banner-picker"></div>
+
+</div>
+
+{{end}}

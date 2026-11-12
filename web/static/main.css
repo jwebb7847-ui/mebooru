@@ -3102,3 +3102,130 @@ label.ptr-row:hover { background: var(--bg-input); }
   justify-content: flex-start;
   margin: 10px 0 4px;
 }
+
+/* ==========================================================
+   Gallery-rooted banner image picker
+   ========================================================== */
+
+.gallery-banner-picker-dialog {
+  width: min(1050px, 94vw);
+  max-height: 88vh;
+}
+
+.gallery-banner-picker-path {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.gallery-banner-picker-path code {
+  color: var(--fg-dim);
+}
+
+.gallery-banner-picker-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fill, minmax(150px, 1fr));
+
+  gap: 10px;
+
+  max-height: 62vh;
+  overflow-y: auto;
+
+  padding: 4px;
+}
+
+.gallery-picker-folder {
+  min-height: 42px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  text-align: left;
+}
+
+.gallery-picker-up {
+  margin-bottom: 10px;
+}
+
+.gallery-picker-folder-icon {
+  color: var(--link);
+}
+
+.gallery-picker-image-form {
+  margin: 0;
+}
+
+.gallery-picker-image {
+  width: 100%;
+  height: 100%;
+
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  padding: 5px;
+
+  text-align: left;
+
+  overflow: hidden;
+}
+
+.gallery-picker-image img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+
+  display: block;
+
+  object-fit: cover;
+
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.gallery-picker-image span {
+  display: block;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-size: 11px;
+}
+
+.gallery-picker-image:hover {
+  border-color: var(--link);
+}
+
+/* Keep confirmation-dialog close control pinned cleanly in the corner. */
+dialog .dlg-title {
+  position: relative;
+}
+
+dialog .dlg-title .dialog-x,
+dialog .dlg-title .dlg-x,
+dialog .dlg-title button[aria-label="Close"] {
+  position: absolute;
+  top: 0;
+  right: 0;
+  margin: 0;
+}
+
+/* Final dialog close-button alignment. */
+dialog .dlg-title {
+  position: relative;
+  padding-right: 48px;
+}
+
+dialog .dlg-title .dialog-x,
+dialog .dlg-title .dlg-x,
+dialog .dlg-title button[aria-label="Close"] {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  margin: 0;
+  transform: translateY(-50%);
+  line-height: 1;
+}

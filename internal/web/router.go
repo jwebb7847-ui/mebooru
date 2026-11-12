@@ -628,7 +628,11 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.write("POST /settings/galleries/banner", s.settingsGalleryBannerPost)
 	rt.write("POST /settings/galleries/banner/clear", s.settingsGalleryBannerClearPost)
 	rt.write("POST /settings/galleries/banner/focal", s.settingsGalleryBannerFocalPost)
+	rt.write("POST /settings/galleries/banner/select", s.settingsGalleryBannerSelectPost)
+
 	rt.read("GET /internal/gallery/banner/{name}", s.galleryBannerGet)
+	rt.read("GET /internal/gallery/banner-picker/{name}", s.galleryBannerPickerGet)
+	rt.read("GET /internal/gallery/banner-picker/{name}/preview", s.galleryBannerPickerPreviewGet)
 
 	rt.free("POST /api/v1/pair/request", s.pairRequest)
 	rt.free("GET /api/v1/pair/status", s.pairStatus)
