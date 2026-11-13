@@ -23,6 +23,16 @@ with:
 - explicit privacy boundaries for network-enabled features
 - future server use without clients directly sharing the SQLite database
 
+## Development baseline
+
+- `mebooru-foundation` is the fork's working branch. Its last code checkpoint, [`fbb5232`](https://github.com/jwebb7847-ui/mebooru/commit/fbb523264c233a4a163a6627432221c0f5c02f4d), includes the persistent gallery switcher, gallery banners and the native gallery image picker.
+- `main` remains at the upstream-derived v1.24.0 baseline. The [audited baseline tag](https://github.com/jwebb7847-ui/mebooru/tree/mebooru-audited-baseline-v1.24.0) identifies the original validation checkpoint.
+- The [cross-repository handoff](https://github.com/jwebb7847-ui/meloader/blob/main/docs/project/handoff.md) and [local audit runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md) record the current paired workflow. The Mac audit uses this development branch with an explicit config, loopback port 8455 and the disposable `Audit_A` gallery.
+
+## Acquisition boundary
+
+Meloader is the optional, explicitly WAN-capable acquisition companion. The preferred future UI is a selectable acquisition tab in Mebooru backed by the separate Meloader process. Use the local API boundary for the integration and keep the library core free of new outbound dependencies. Discuss the UI and privacy behavior before implementation.
+
 ## Compatibility policy
 
 For now, internal Monbooru identities such as the Go module path, package imports,
