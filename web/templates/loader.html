@@ -1,5 +1,6 @@
 {{define "loader.html"}}
-{{template "layout_head_bare" .}}
+{{template "layout_head" .}}
+{{template "layout_mid" .}}
 <section class="loader-page">
   <nav class="loader-tabs" aria-label="Loader">
     <a href="/loader"{{if eq .View "queue"}} aria-current="page"{{end}}>Queue</a>

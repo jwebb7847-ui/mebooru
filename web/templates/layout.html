@@ -9,7 +9,9 @@
 </head>
 <body data-gallery="{{.ActiveGallery}}">
   <div id="topbar">
+    {{if ne .ActiveNav "loader"}}
     <button id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+    {{end}}
     <a href="/" id="logo">
       <img src="{{.BooruLogo}}" alt="" class="topbar-logo">
       <span>{{wordmark .BooruName}}</span>
@@ -87,7 +89,9 @@
   {{end}}
   <div id="page-notice" class="degraded-banner" data-login-url="/login" hidden></div>
   <div id="main-layout"{{if .SidebarCollapsed}} class="sidebar-collapsed"{{end}}>
+    {{if ne .ActiveNav "loader"}}
     <aside id="sidebar">
+    {{end}}
 {{end}}
 
 {{define "layout_head_bare"}}
@@ -97,8 +101,10 @@
 {{end}}
 
 {{define "layout_mid"}}
+    {{if ne .ActiveNav "loader"}}
     </aside>
     <button id="sidebar-rail" type="button" aria-label="Toggle sidebar"></button>
+    {{end}}
     <main id="content">
 {{end}}
 
@@ -154,7 +160,7 @@
         <ul>
           <li><kbd>?</kbd><span>Toggle this overlay</span></li>
           <li data-when="#search-input, #sidebar-inner input[name=&#34;q&#34;]"><kbd>s</kbd><kbd>/</kbd><span>Focus search</span></li>
-          <li><kbd>b</kbd><span>Show / hide sidebar</span></li>
+          <li data-when="#sidebar-toggle"><kbd>b</kbd><span>Show / hide sidebar</span></li>
           <li><kbd>Esc</kbd><span>Close dialog &middot; back</span></li>
           <li><kbd>g</kbd><kbd>g</kbd><span>Gallery</span></li>
           <li><kbd>g</kbd><kbd>i</kbd><span>Inbox</span></li>
