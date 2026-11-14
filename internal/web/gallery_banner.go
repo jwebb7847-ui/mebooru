@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	maxGalleryBannerBytes int64 = 12 << 20 // 12 MiB
-	minGalleryBannerZoom        = 100
-	maxGalleryBannerZoom        = 300
+	maxGalleryBannerBytes    int64 = 12 << 20 // 12 MiB
+	minGalleryBannerZoom           = 10
+	defaultGalleryBannerZoom       = 100
+	maxGalleryBannerZoom           = 300
 )
 
 var galleryBannerTypes = map[string]bool{
@@ -36,7 +37,7 @@ func defaultGalleryPresentation() galleryPresentation {
 	return galleryPresentation{
 		FocalX: 0.5,
 		FocalY: 0.5,
-		Zoom:   minGalleryBannerZoom,
+		Zoom:   defaultGalleryBannerZoom,
 	}
 }
 
@@ -140,14 +141,6 @@ func (s *Server) galleryBannerURL(name string) string {
 	}
 
 	return "/internal/gallery/banner/" + name
-}
-
-func (presentation galleryPresentation) Position() string {
-	return fmt.Sprintf(
-		"%.2f%% %.2f%%",
-		presentation.FocalX*100,
-		presentation.FocalY*100,
-	)
 }
 
 func (presentation galleryPresentation) Scale() float64 {

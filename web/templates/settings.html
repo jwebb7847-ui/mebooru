@@ -625,7 +625,7 @@
       <div class="gallery-banner-zoom">
         <label for="gallery-banner-crop-zoom">Zoom</label>
         <input type="range" id="gallery-banner-crop-zoom" name="zoom_percent"
-               min="100" max="300" value="100">
+               min="10" max="300" value="100">
         <output id="gallery-banner-zoom-value" for="gallery-banner-crop-zoom">100%</output>
       </div>
 
@@ -669,8 +669,9 @@
     return Math.max(0, Math.min(1, v));
   }
 
-  function setGalleryBannerFraming(img, position, scale) {
-    img.style.setProperty('--gallery-banner-position', position);
+  function setGalleryBannerFraming(img, x, y, scale) {
+    img.style.setProperty('--gallery-banner-focal-x', x);
+    img.style.setProperty('--gallery-banner-focal-y', y);
     img.style.setProperty('--gallery-banner-scale', scale);
   }
 
@@ -687,14 +688,10 @@
       'gallery-banner-crop-y'
     );
 
-    var position =
-      (galleryBannerCrop.x * 100).toFixed(2) + '% ' +
-      (galleryBannerCrop.y * 100).toFixed(2) + '%';
-
     var zoom = document.getElementById('gallery-banner-crop-zoom').value;
     var scale = Number(zoom) / 100;
     document.getElementById('gallery-banner-zoom-value').value = zoom + '%';
-    setGalleryBannerFraming(img, position, scale);
+    setGalleryBannerFraming(img, galleryBannerCrop.x, galleryBannerCrop.y, scale);
 
     xInput.value = galleryBannerCrop.x.toFixed(6);
     yInput.value = galleryBannerCrop.y.toFixed(6);
@@ -711,7 +708,7 @@
         document.querySelector('.gallery-banner-image');
 
       if (topbar) {
-        setGalleryBannerFraming(topbar, position, scale);
+        setGalleryBannerFraming(topbar, galleryBannerCrop.x, galleryBannerCrop.y, scale);
       }
     }
   }
@@ -759,7 +756,8 @@
       document.querySelector('.gallery-banner-image');
 
     galleryBannerCrop.topbarOriginal = topbar ? {
-      position: topbar.style.getPropertyValue('--gallery-banner-position'),
+      x: topbar.style.getPropertyValue('--gallery-banner-focal-x'),
+      y: topbar.style.getPropertyValue('--gallery-banner-focal-y'),
       scale: topbar.style.getPropertyValue('--gallery-banner-scale')
     } : null;
 
@@ -770,6 +768,7 @@
       );
     };
 
+    img.removeAttribute('data-banner-sized');
     img.src =
       button.dataset.bannerUrl +
       '?crop_preview=' +
@@ -892,7 +891,7 @@
 
     if (galleryBannerCrop.topbarOriginal !== null) {
       var original = galleryBannerCrop.topbarOriginal;
-      setGalleryBannerFraming(topbar, original.position, original.scale);
+      setGalleryBannerFraming(topbar, original.x, original.y, original.scale);
     }
   }
 
@@ -904,7 +903,7 @@
       .close();
   }
 
-  function galleryBannerCropOverflow(viewport, img) {
+  function galleryBannerCropTravel(viewport, img) {
     if (!img.naturalWidth || !img.naturalHeight) {
       return {x: 0, y: 0};
     }
@@ -918,14 +917,8 @@
     ) * Number(document.getElementById('gallery-banner-crop-zoom').value) / 100;
 
     return {
-      x: Math.max(
-        0,
-        img.naturalWidth * scale - vw
-      ),
-      y: Math.max(
-        0,
-        img.naturalHeight * scale - vh
-      )
+      x: vw - img.naturalWidth * scale,
+      y: vh - img.naturalHeight * scale
     };
   }
 
@@ -977,8 +970,8 @@
           return;
         }
 
-        var overflow =
-          galleryBannerCropOverflow(
+        var travel =
+          galleryBannerCropTravel(
             viewport,
             img
           );
@@ -991,19 +984,19 @@
           event.clientY -
           galleryBannerCrop.pointerY;
 
-        if (overflow.x > 0) {
+        if (Math.abs(travel.x) > 0.01) {
           galleryBannerCrop.x =
             clampBannerFocal(
-              galleryBannerCrop.startX -
-              dx / overflow.x
+              galleryBannerCrop.startX +
+              dx / travel.x
             );
         }
 
-        if (overflow.y > 0) {
+        if (Math.abs(travel.y) > 0.01) {
           galleryBannerCrop.y =
             clampBannerFocal(
-              galleryBannerCrop.startY -
-              dy / overflow.y
+              galleryBannerCrop.startY +
+              dy / travel.y
             );
         }
 

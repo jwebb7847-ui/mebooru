@@ -2870,6 +2870,7 @@ label.ptr-row:hover { background: var(--bg-input); }
 
   width: calc(100% + var(--gallery-banner-extension));
   overflow: hidden;
+  container-type: size;
 
   opacity: 0.88;
 
@@ -2887,13 +2888,26 @@ label.ptr-row:hover { background: var(--bg-input); }
 }
 
 .gallery-banner-framing {
+  --gallery-banner-x: calc(100% * var(--gallery-banner-focal-x, 0.5));
+  --gallery-banner-y: calc(100% * var(--gallery-banner-focal-y, 0.5));
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: var(--gallery-banner-position, 50% 50%);
-  transform-origin: var(--gallery-banner-position, 50% 50%);
+  object-position: var(--gallery-banner-x) var(--gallery-banner-y);
+  transform-origin: var(--gallery-banner-x) var(--gallery-banner-y);
   transform: scale(var(--gallery-banner-scale, 1));
+}
+
+/* Size the full image before clipping it to the frame, including below 100%. */
+.gallery-banner-framing[data-banner-sized] {
+  position: absolute;
+  inset: auto;
+  left: var(--gallery-banner-x);
+  top: var(--gallery-banner-y);
+  width: calc(max(100cqw, 100cqh * var(--gallery-banner-aspect)) * var(--gallery-banner-scale, 1));
+  height: auto;
+  transform: translate(calc(-1 * var(--gallery-banner-x)), calc(-1 * var(--gallery-banner-y)));
 }
 
 .gallery-banner-crop-dialog {
@@ -2910,6 +2924,7 @@ label.ptr-row:hover { background: var(--bg-input); }
   margin: 14px 0;
 
   overflow: hidden;
+  container-type: size;
 
   background: var(--bg);
   border: 1px solid var(--border);
