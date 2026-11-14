@@ -2,7 +2,11 @@
 // branch on these strings.
 package outcome
 
-import "github.com/monbooru/monloader/internal/shared/contract"
+import (
+	"strings"
+
+	"github.com/monbooru/monloader/internal/shared/contract"
+)
 
 type Outcome string
 
@@ -55,3 +59,8 @@ func (e *CodedError) Error() string { return e.Code + ": " + e.Msg }
 // StrictTaxonomyPrefix also identifies strict taxonomy errors in stored queue
 // rows, which carry a code and message rather than the original Go error.
 const StrictTaxonomyPrefix = "strict blacklist: source taxonomy: "
+
+// IsStrictTaxonomyError recognizes the persisted queue diagnostic.
+func IsStrictTaxonomyError(code, message string) bool {
+	return strings.HasPrefix(strings.TrimPrefix(message, code+": "), StrictTaxonomyPrefix)
+}
