@@ -2830,29 +2830,27 @@ label.ptr-row:hover { background: var(--bg-input); }
 }
 
 
-/*
-  Reserved for future per-gallery banner artwork.
-
-  Later this will carry the selected gallery image with a
-  left-to-right background fade into the top-bar surface.
-*/
 #gallery-banner-slot {
+  --gallery-banner-extension: 0px;
+  position: relative;
   flex: 1 1 auto;
   min-width: 24px;
   height: 47px;
   align-self: stretch;
-  overflow: hidden;
   pointer-events: none;
 }
 
-/* The banner slot now owns the flexible space on wide layouts. */
 @media (min-width: 960px) {
   #topbar-right {
     margin-left: 0;
   }
+
+  /* With no job status or logout, cover the 16px gap and 16px right padding. */
+  #topbar:not(:has(#job-status > *, #topbar-right > form)) #gallery-banner-slot {
+    --gallery-banner-extension: 32px;
+  }
 }
 
-/* Don't let future gallery artwork crowd compact navigation. */
 @media (max-width: 959px) {
   #gallery-banner-slot {
     display: none;
@@ -2866,16 +2864,11 @@ label.ptr-row:hover { background: var(--bg-input); }
   }
 }
 
-/* Active gallery presentation banner. */
-#gallery-banner-slot {
-  position: relative;
-}
-
 .gallery-banner-image {
   position: absolute;
   inset: 0;
 
-  width: 100%;
+  width: calc(100% + var(--gallery-banner-extension));
   height: 100%;
 
   object-fit: cover;
@@ -2883,27 +2876,17 @@ label.ptr-row:hover { background: var(--bg-input); }
 
   opacity: 0.88;
 
-  /*
-    The image is fully transparent at the left edge and becomes fully visible
-    toward the right, allowing the ordinary top-bar background to flow into it.
-  */
-  -webkit-mask-image: linear-gradient(
+  /* Measure the fade against the original slot width as the image extends. */
+  --gallery-banner-fade: linear-gradient(
     to right,
     transparent 0%,
-    rgba(0,0,0,0.15) 18%,
-    rgba(0,0,0,0.70) 48%,
-    black 72%,
+    rgba(0,0,0,0.15) calc(18% - var(--gallery-banner-extension) * 0.18),
+    rgba(0,0,0,0.70) calc(48% - var(--gallery-banner-extension) * 0.48),
+    black calc(72% - var(--gallery-banner-extension) * 0.72),
     black 100%
   );
-
-  mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(0,0,0,0.15) 18%,
-    rgba(0,0,0,0.70) 48%,
-    black 72%,
-    black 100%
-  );
+  -webkit-mask-image: var(--gallery-banner-fade);
+  mask-image: var(--gallery-banner-fade);
 }
 
 /* Gallery banner focal-point editor. */
