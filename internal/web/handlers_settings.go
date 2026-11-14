@@ -49,6 +49,7 @@ type settingsData struct {
 	Desktop            desktop.Integration
 	DesktopJobWarning  string
 	PluginsRepoURL     string
+	LoaderSettings     loaderPanel
 }
 
 func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +107,7 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		PluginPaired:       s.pairedPeerCount(),
 		PluginRows:         s.pluginRows(),
 		PluginsDir:         s.pluginsDir(),
+		LoaderSettings:     s.loaderPanel(r, base, "/settings"),
 		Themes:             s.themeCluster(),
 		ThemesDir:          s.themesDir(),
 		DesktopProfile:     s.desktopLocal(r),

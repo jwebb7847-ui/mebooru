@@ -31,7 +31,9 @@ with:
 
 ## Acquisition boundary
 
-Meloader is the optional, explicitly WAN-capable acquisition companion. The preferred future UI is a selectable acquisition tab in Mebooru backed by the separate Meloader process. Use the local API boundary for the integration and keep the library core free of new outbound dependencies. Discuss the UI and privacy behavior before implementation.
+Meloader is the optional, explicitly WAN-capable acquisition companion. **Loader** opens its Queue, Watches, and PTR screens inside Mebooru. **Settings → Meloader** opens the companion settings. The screens use Meloader's configured browser origin and its own login. Pairing and the browser-facing Web URL are configured in **Settings → Plugins**. Use distinct origins for the two services. The Mebooru server's paired API client remains separate from the browser panels.
+
+The Loader queue shows the active gallery as the destination for new imports. Each gallery has its own media folder, database, and thumbnail cache. The queue is shared across galleries. Watches use Meloader's existing source and default gallery settings, with a manual default when created in Loader. [Paired audit instructions](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/loader-integration.md)
 
 ## Compatibility policy
 

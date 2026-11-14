@@ -385,6 +385,7 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.free("POST /upload", s.uploadPost)
 
 	rt.read("GET /{$}", s.galleryHandler)
+	rt.read("GET /loader", s.loaderPage)
 	rt.read("GET /", s.notFoundHandler)
 
 	// Switches the active gallery when the image lives in another one.

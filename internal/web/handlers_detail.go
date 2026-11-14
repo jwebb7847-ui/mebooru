@@ -161,6 +161,27 @@ type detailData struct {
 // External links go by sha because an image id can be reused after a delete.
 func (s *Server) imageByHashHandler(w http.ResponseWriter, r *http.Request) {
 	sha := r.PathValue("sha")
+	if name := r.URL.Query().Get("gallery"); name != "" {
+		s.set.RLock()
+		cx := s.set.Get(name)
+		if cx == nil || cx.DB == nil {
+			s.set.RUnlock()
+			s.notFoundHandler(w, r)
+			return
+		}
+		id, err := gallery.ImageIDBySHA(cx.DB.Read, sha)
+		s.set.RUnlock()
+		if err != nil {
+			s.notFoundHandler(w, r)
+			return
+		}
+		if err := s.switchGallery(cx.Name); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		http.Redirect(w, r, "/images/"+strconv.FormatInt(id, 10), http.StatusFound)
+		return
+	}
 	if d := s.db(); d != nil {
 		if id, err := gallery.ImageIDBySHA(d.Read, sha); err == nil {
 			http.Redirect(w, r, "/images/"+strconv.FormatInt(id, 10), http.StatusFound)
