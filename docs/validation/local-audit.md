@@ -105,6 +105,14 @@ The [authenticated Danbooru audit](negative-path-throughput.md#8-live-danbooru-a
 
 Stop the audit Meloader process before copying. Check for queued, running, or scheduled jobs and review them before launching copied state. Use a new unused destination and retain the source audit directory. Copy the whole state directory, including `monloader.toml`, `profiles/`, `queue.sqlite`, `taxonomy/`, gallery-dl config, and any SQLite sidecars present. Check where the original effective archive is configured, then copy that archive and any corresponding sidecars into the copy as `upgrade-archive.sqlite` with matching sidecar names. Check for absolute paths or symlinks in the copied config, profiles, and extractor options that still reference original state. Review effective routing and keep watches inactive for manual QA. Keep all config and credentials local.
 
+## Recover an interrupted import
+
+**VS Code — Meloader terminal.** After an unexpected stop, restart Meloader with the same config, queue state, and download archive. Keep Mebooru running or start it with the same gallery configuration.
+
+**Browser — Mebooru.** In **Loader → Queue**, locate the interrupted import and check its destination. Use **Retry** to rerun the interrupted window. Meloader bypasses the download archive for that retry because a fetched file may have reached the archive before Mebooru saved it. If strict verification is enabled, the retry checks the source and current blacklist before transferring media. Mebooru can report duplicates for files that were already committed.
+
+For a search, retry resolves the original window again. The source can return a different set if the listing changed. Check the result counts and links in the original gallery before using **Get next**. [Paired-app recovery evidence](loader-integration.md#paired-app-interruption-and-retry)
+
 ## Evidence to capture
 
 Record app SHAs, launch modes, tool versions, gallery, source and post IDs, result counts, and relevant redacted logs. A transport reset, HTTP refusal, missing executable, or rate limit must be distinguished from an actual mapping failure. An opt-in live pipeline test may write a synthetic valid-control PNG to `Audit_A`. See the [malformed-rating audit](negative-path-throughput.md#5-malformed-source-rating-against-the-running-audit-gallery) before rerunning it.

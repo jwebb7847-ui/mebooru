@@ -100,3 +100,16 @@ The 20-post Mac comparison used the same ID-bounded search and destination, `Aud
 The lower delay saved 3.224 s in the gallery-dl phase, about 12% in this pair. This phase includes source re-listing, pacing, and transfer. The live pair gives no breakdown of those costs and no estimate for a 200-file window. Both live runs approved all 20 posts. In the pinned gallery-dl loopback check, both delays requested the same 20 allowed files and made zero media requests for the blacklisted, unverified, and changed posts.
 
 Keep the 1.0 s default and close this pacing experiment. Revisit bulk throughput when a representative workload shows a specific bottleneck worth addressing.
+
+## Paired-app interruption and retry
+
+On 2026-11-14, the Linux loopback check used Meloader `2010577`, Mebooru `630e439`, and gallery-dl 1.32.19. A fixed e621-shaped search supplied ten posts and eight valid PNG files. With strict blacklist verification enabled, the Loader form queued the search for a fresh `Audit_A` gallery. A local proxy forwarded the first three ingest requests and held the fourth. At that point the archive contained all eight allowed downloads and Mebooru had committed three image rows. The test killed Meloader while the fourth upload was held and restarted it with the same SQLite queue and archive.
+
+| Phase | Observed result |
+| --- | --- |
+| Restart | The job showed **interrupted** and offered **Retry**. No media request ran automatically. |
+| Explicit **Retry** | Same job ID and gallery. Eight media requests, zero archive skips, five created, three duplicates, two blacklisted, and zero failures. |
+| Final gallery | Eight unique image rows with matching SHA-256 values, eight image files, eight thumbnails, and eight gallery-scoped queue links. The original three rows retained their IDs and hashes. `Audit_B` stayed empty. |
+| Strict blacklist | The two blocked posts made zero media requests across both attempts. |
+
+The fixture held the source listing fixed. The retry re-resolves a live search, so changes to that listing can change which posts the window contains. The [recovery runbook](local-audit.md#recover-an-interrupted-import) covers the operator steps.

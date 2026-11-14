@@ -27,7 +27,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 - **Meloader `main`** contains the Loader integration, cross-post taxonomy batching, and strict download timing from [PR #12](https://github.com/jwebb7847-ui/meloader/pull/12), [PR #13](https://github.com/jwebb7847-ui/meloader/pull/13), and [PR #14](https://github.com/jwebb7847-ui/meloader/pull/14). The merged code checkpoint is `de5da08`.
 - **Mebooru `mebooru-foundation`** contains the fork's library UI work. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
-- **Next milestone: Item 6.** Build on the Loader integration and its bounded Mac acceptance with reliability and observability work.
+- **Next milestone: Item 7.** Develop the broader Mebooru library experience.
 
 ## Milestones
 
@@ -59,11 +59,14 @@ The filing policy for named original characters and unusual namespaces passed Ma
 
 The native Mebooru **Loader** tab exposes Meloader's Queue, Watches, and PTR controls, with companion settings under **Settings → Meloader**. The browser surfaces use the separate Meloader origin and retain the existing pairing and library privacy boundary. The bounded Mac audits covered a 200-post Derpibooru import, gallery switching and result links, strict verification timing, and explicit archive replay. The 20-post pacing comparison closed with the 1.0 s default retained. [Integration and validation](docs/validation/loader-integration.md)
 
-### 6. Reliability and observability
+### 6. Reliability and observability — acceptance passed
 
 Improve acquisition diagnostics, retry visibility, structured timing, failure distinctions and regression monitoring without sacrificing snappiness.
 
-Start with job-scoped strict Derpibooru preflight diagnostics. Use the request, retry-wait, and outcome counts to distinguish source delays from local processing. [Diagnostic fields and loopback regression](docs/validation/loader-integration.md#strict-download-timing)
+- Job-scoped strict Derpibooru preflight diagnostics, distinct taxonomy failure labels, and the pinned gallery-dl regression are merged. [Diagnostic fields and loopback regression](docs/validation/loader-integration.md#strict-download-timing)
+- The SQLite restart regression verifies completed and queued work, explicit retry of an interrupted window, and the next continuation offset.
+- The paired-app interruption check recovered all missing allowed images, preserved existing library rows, and made zero media requests for blacklisted posts. [Evidence](docs/validation/loader-integration.md#paired-app-interruption-and-retry) · [Recovery steps](docs/validation/local-audit.md#recover-an-interrupted-import)
+- The 400-image loopback run remains the baseline for changes that affect bulk processing. [Bulk acceptance](docs/validation/negative-path-throughput.md#9-local-400-image-end-to-end-benchmark)
 
 ### 7. Broader Mebooru library experience
 
