@@ -339,6 +339,7 @@
                         data-banner-url="/internal/gallery/banner/{{.Name}}"
                         data-focal-x="{{printf "%.6f" .BannerFocalX}}"
                         data-focal-y="{{printf "%.6f" .BannerFocalY}}"
+                        data-zoom="{{.BannerZoom}}"
                         onclick="openGalleryBannerCrop(this)">
                   Edit Banner
                 </button>
@@ -573,13 +574,12 @@
           class="gallery-banner-crop-dialog">
 
     <p class="dlg-title">
-      Position Gallery Banner
+      Edit Gallery Banner
       {{template "webui/dialog_x"}}
     </p>
 
     <p class="field-hint">
-      Drag the image behind the fixed banner frame.
-      The saved focal point adapts automatically as the window width changes.
+      Adjust zoom and drag the image to frame the banner.
     </p>
 
     <!--
@@ -598,6 +598,7 @@
          class="gallery-banner-crop-viewport">
 
       <img id="gallery-banner-crop-image"
+           class="gallery-banner-framing"
            alt=""
            draggable="false">
 
@@ -620,6 +621,13 @@
       <input type="hidden"
              id="gallery-banner-crop-y"
              name="focal_y">
+
+      <div class="gallery-banner-zoom">
+        <label for="gallery-banner-crop-zoom">Zoom</label>
+        <input type="range" id="gallery-banner-crop-zoom" name="zoom_percent"
+               min="100" max="300" value="100">
+        <output id="gallery-banner-zoom-value" for="gallery-banner-crop-zoom">100%</output>
+      </div>
 
       <div id="flash-gallery-banner-crop"></div>
 
@@ -649,8 +657,6 @@
   var galleryBannerCrop = {
     x: 0.5,
     y: 0.5,
-    originalX: 0.5,
-    originalY: 0.5,
     pointerX: 0,
     pointerY: 0,
     startX: 0.5,
@@ -661,6 +667,11 @@
 
   function clampBannerFocal(v) {
     return Math.max(0, Math.min(1, v));
+  }
+
+  function setGalleryBannerFraming(img, position, scale) {
+    img.style.setProperty('--gallery-banner-position', position);
+    img.style.setProperty('--gallery-banner-scale', scale);
   }
 
   function applyGalleryBannerCropPreview() {
@@ -680,7 +691,10 @@
       (galleryBannerCrop.x * 100).toFixed(2) + '% ' +
       (galleryBannerCrop.y * 100).toFixed(2) + '%';
 
-    img.style.objectPosition = position;
+    var zoom = document.getElementById('gallery-banner-crop-zoom').value;
+    var scale = Number(zoom) / 100;
+    document.getElementById('gallery-banner-zoom-value').value = zoom + '%';
+    setGalleryBannerFraming(img, position, scale);
 
     xInput.value = galleryBannerCrop.x.toFixed(6);
     yInput.value = galleryBannerCrop.y.toFixed(6);
@@ -697,7 +711,7 @@
         document.querySelector('.gallery-banner-image');
 
       if (topbar) {
-        topbar.style.objectPosition = position;
+        setGalleryBannerFraming(topbar, position, scale);
       }
     }
   }
@@ -727,11 +741,7 @@
     galleryBannerCrop.y =
       Number.isFinite(y) ? clampBannerFocal(y) : 0.5;
 
-    galleryBannerCrop.originalX =
-      galleryBannerCrop.x;
-
-    galleryBannerCrop.originalY =
-      galleryBannerCrop.y;
+    document.getElementById('gallery-banner-crop-zoom').value = button.dataset.zoom || '100';
 
     var nameInput =
       document.getElementById('gallery-banner-crop-name');
@@ -748,12 +758,10 @@
     var topbar =
       document.querySelector('.gallery-banner-image');
 
-    galleryBannerCrop.topbarOriginal =
-      topbar ? topbar.style.objectPosition : null;
-
-    img.onload = function() {
-      applyGalleryBannerCropPreview();
-    };
+    galleryBannerCrop.topbarOriginal = topbar ? {
+      position: topbar.style.getPropertyValue('--gallery-banner-position'),
+      scale: topbar.style.getPropertyValue('--gallery-banner-scale')
+    } : null;
 
     img.onerror = function() {
       console.error(
@@ -883,8 +891,8 @@
     }
 
     if (galleryBannerCrop.topbarOriginal !== null) {
-      topbar.style.objectPosition =
-        galleryBannerCrop.topbarOriginal;
+      var original = galleryBannerCrop.topbarOriginal;
+      setGalleryBannerFraming(topbar, original.position, original.scale);
     }
   }
 
@@ -907,7 +915,7 @@
     var scale = Math.max(
       vw / img.naturalWidth,
       vh / img.naturalHeight
-    );
+    ) * Number(document.getElementById('gallery-banner-crop-zoom').value) / 100;
 
     return {
       x: Math.max(
@@ -922,6 +930,9 @@
   }
 
   (function () {
+    document.getElementById('gallery-banner-crop-zoom')
+      .addEventListener('input', applyGalleryBannerCropPreview);
+
     var viewport =
       document.getElementById(
         'gallery-banner-crop-viewport'

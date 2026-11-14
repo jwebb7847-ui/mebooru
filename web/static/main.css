@@ -2864,15 +2864,12 @@ label.ptr-row:hover { background: var(--bg-input); }
   }
 }
 
-.gallery-banner-image {
+.gallery-banner-frame {
   position: absolute;
   inset: 0;
 
   width: calc(100% + var(--gallery-banner-extension));
-  height: 100%;
-
-  object-fit: cover;
-  object-position: center;
+  overflow: hidden;
 
   opacity: 0.88;
 
@@ -2889,7 +2886,16 @@ label.ptr-row:hover { background: var(--bg-input); }
   mask-image: var(--gallery-banner-fade);
 }
 
-/* Gallery banner focal-point editor. */
+.gallery-banner-framing {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--gallery-banner-position, 50% 50%);
+  transform-origin: var(--gallery-banner-position, 50% 50%);
+  transform: scale(var(--gallery-banner-scale, 1));
+}
+
 .gallery-banner-crop-dialog {
   width: min(900px, 92vw);
 }
@@ -2918,12 +2924,8 @@ label.ptr-row:hover { background: var(--bg-input); }
 }
 
 .gallery-banner-crop-viewport img {
-  width: 100%;
-  height: 100%;
-
-  object-fit: cover;
-  object-position: 50% 50%;
-
+  position: absolute;
+  inset: 0;
   pointer-events: none;
   user-select: none;
 }
@@ -3108,6 +3110,18 @@ label.ptr-row:hover { background: var(--bg-input); }
   align-items: center;
   justify-content: flex-start;
   margin: 10px 0 4px;
+}
+
+.gallery-banner-zoom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.gallery-banner-zoom output {
+  min-width: 4ch;
+  text-align: right;
 }
 
 /* ==========================================================

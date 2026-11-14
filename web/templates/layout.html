@@ -59,8 +59,10 @@
 
     <div id="gallery-banner-slot" aria-hidden="true">
       {{with .GalleryBannerURL}}
-      <img src="{{.}}" alt="" class="gallery-banner-image"
-           style="object-position: {{$.GalleryBannerPosition}};">
+      <div class="gallery-banner-frame">
+        <img src="{{.}}" alt="" class="gallery-banner-image gallery-banner-framing"
+             style="--gallery-banner-position: {{$.GalleryBannerSettings.Position}}; --gallery-banner-scale: {{$.GalleryBannerSettings.Scale}};">
+      </div>
       {{end}}
     </div>
 
