@@ -40,6 +40,8 @@ func main() {
 	hashPassword := flag.String("hash-password", "", "print bcrypt hash of the given password and exit")
 	desktopMode := flag.Bool("desktop", defaultDesktop == "true", "desktop profile: OS-native paths, a log file, a browser at startup")
 	noBrowser := flag.Bool("no-browser", false, "with -desktop, do not open a browser at startup")
+	meloaderBinary := flag.String("meloader", "", "start this Meloader executable alongside Mebooru")
+	meloaderConfig := flag.String("meloader-config", "", "config file for the Meloader companion")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
@@ -117,6 +119,13 @@ func main() {
 	if err != nil {
 		fatalf("loading config: %v", err)
 	}
+	if *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
+		*meloaderBinary = cfg.Desktop.MeloaderBinary
+		*meloaderConfig = cfg.Desktop.MeloaderConfig
+	}
+	if (*meloaderBinary == "") != (*meloaderConfig == "") {
+		fatalf("Meloader launch requires both an executable and a config path")
+	}
 	if layout.Portable {
 		portableGallery(layout, cfg)
 	}
@@ -174,6 +183,17 @@ func main() {
 		}
 	}()
 
+	stopMeloader := func() {}
+	if *meloaderBinary != "" {
+		stop, err := launchMeloader(*meloaderBinary, *meloaderConfig)
+		if err != nil {
+			logx.Errorf("starting Meloader: %v", err)
+		} else {
+			stopMeloader = stop
+			defer stopMeloader()
+		}
+	}
+
 	if *desktopMode {
 		if !*noBrowser {
 			go func() {
@@ -209,6 +229,7 @@ func main() {
 		reportFatal("HTTP server: " + err.Error())
 		exitCode = 1
 	}
+	stopMeloader()
 	signal.Stop(quit)
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

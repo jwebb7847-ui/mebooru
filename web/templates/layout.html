@@ -9,7 +9,7 @@
 </head>
 <body data-gallery="{{.ActiveGallery}}">
   <div id="topbar">
-    {{if ne .ActiveNav "loader"}}
+    {{if not .FullWidth}}
     <button id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
     {{end}}
     <a href="/" id="logo">
@@ -88,20 +88,20 @@
   </div>
   {{end}}
   <div id="page-notice" class="degraded-banner" data-login-url="/login" hidden></div>
-  <div id="main-layout"{{if .SidebarCollapsed}} class="sidebar-collapsed"{{end}}>
-    {{if ne .ActiveNav "loader"}}
+  <div id="main-layout"{{if and .SidebarCollapsed (not .FullWidth)}} class="sidebar-collapsed"{{end}}>
+    {{if not .FullWidth}}
     <aside id="sidebar">
     {{end}}
 {{end}}
 
 {{define "layout_head_bare"}}
 {{template "layout_head" .}}
-<div id="sidebar-inner"></div>
+{{if not .FullWidth}}<div id="sidebar-inner"></div>{{end}}
 {{template "layout_mid" .}}
 {{end}}
 
 {{define "layout_mid"}}
-    {{if ne .ActiveNav "loader"}}
+    {{if not .FullWidth}}
     </aside>
     <button id="sidebar-rail" type="button" aria-label="Toggle sidebar"></button>
     {{end}}

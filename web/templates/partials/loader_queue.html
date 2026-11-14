@@ -1,0 +1,87 @@
+{{define "loader_queue"}}
+<div class="loader-queue">
+  {{if not .MonloaderPaired}}
+  <p>Connect Meloader in <a href="/settings#plugins">Settings → Plugins</a> to queue imports.</p>
+  {{else if not .ActiveGallery}}
+  <p>Choose a destination gallery to queue imports.</p>
+  {{else if .Degraded}}
+  <p>The destination gallery is unavailable.</p>
+  {{else}}
+  <form class="loader-import" method="post" action="/loader/import"
+        hx-post="/loader/import" hx-target="#loader-flash" hx-swap="innerHTML"
+        hx-on::after-request="if (event.detail.xhr.getResponseHeader('HX-Trigger') === 'loader-queue-updated') this.reset()">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <input type="hidden" name="_gallery" value="{{.ActiveGallery}}">
+    <label>Source URL <input type="url" name="url" placeholder="Paste a booru search, pool, or post URL" required></label>
+    <label>Post limit <input type="number" name="max_items" min="1" placeholder="Default"
+                             title="Lowers the configured search batch limit. Pools are imported whole."></label>
+    <span>Destination <strong>{{.ActiveGallery}}</strong></span>
+    <button type="submit" hx-disabled-elt="this">Queue import</button>
+  </form>
+  {{end}}
+  <div id="loader-flash" role="status"></div>
+  {{if .MonloaderPaired}}
+  <div id="loader-jobs" hx-get="/loader/jobs?page=1"
+       hx-trigger="load, every 5s [!confirmOpen() && !document.querySelector('#loader-jobs :focus')], loader-queue-updated from:body"
+       hx-target="this" hx-swap="outerHTML">Loading queue…</div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "loader_jobs"}}
+<div id="loader-jobs" hx-get="/loader/jobs?page={{if .Page}}{{.Page}}{{else}}1{{end}}"
+     hx-trigger="every 5s [!confirmOpen() && !document.querySelector('#loader-jobs :focus')], loader-queue-updated from:body"
+     hx-target="this" hx-swap="outerHTML">
+  {{if .Message}}
+  <p>{{.Message}} <a href="/settings#plugins">Open Plugins</a></p>
+  {{else}}
+  {{if .Paused}}<p class="field-hint">The import queue is paused.</p>{{end}}
+  {{if .Jobs}}
+  <div class="table-scroll">
+    <table class="data-table loader-jobs">
+      <thead><tr><th>Job</th><th>Source</th><th>Gallery</th><th>Status</th><th>Results</th><th>Actions</th></tr></thead>
+      <tbody>
+      {{range .Jobs}}
+        <tr>
+          <td>#{{.ID}}{{if .Root}}<br><span class="field-hint">From #{{.Root}}</span>{{end}}</td>
+          <td>{{if .URL}}{{.URL}}{{else if .MD5}}md5:{{.MD5}}{{else}}{{.Kind}}{{end}}{{with .Site}}<br><span class="field-hint">{{.}}</span>{{end}}</td>
+          <td>{{.Gallery}}</td>
+          <td>{{.Status}}{{with .Error}}<br><span class="field-hint">{{.}}</span>{{end}}</td>
+          <td>
+            {{with .Summary}}
+            {{if .Total}}{{.Total}} posts{{else}}–{{end}}
+            {{if .Created}} · {{.Created}} created{{end}}
+            {{if .Duplicate}} · {{.Duplicate}} duplicate{{end}}
+            {{if .Blacklisted}} · {{.Blacklisted}} blacklisted{{end}}
+            {{if gt .Skipped .Blacklisted}} · {{sub .Skipped .Blacklisted}} skipped{{end}}
+            {{if .Failed}} · {{.Failed}} failed{{end}}
+            {{end}}
+          </td>
+          <td>
+            {{if not .Live}}
+              {{if and (ne .Kind "ptr_lookup") (or (eq .Status "failed") (eq .Status "partial") (eq .Status "interrupted") (eq .Status "canceled"))}}
+              <button type="button" hx-post="/loader/jobs/{{.ID}}/retry" hx-target="#loader-flash" hx-swap="innerHTML" hx-disabled-elt="this">Retry</button>
+              {{end}}
+              {{if and .Capped (eq .Status "succeeded") (eq .ID (index $.Latest .Series))}}
+              <button type="button" hx-post="/loader/jobs/{{.ID}}/continue" hx-target="#loader-flash" hx-swap="innerHTML" hx-disabled-elt="this">Get next batch</button>
+              {{end}}
+            {{end}}
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="field-hint">{{if .Total}}No jobs on this page.{{else}}No imports queued.{{end}}</p>
+  {{end}}
+  {{if or .Prev .Next}}
+  <div class="loader-pages">
+    {{if .Prev}}<button type="button" hx-get="/loader/jobs?page={{.Prev}}">Previous</button>{{end}}
+    <span>Page {{.Page}}</span>
+    {{if .Next}}<button type="button" hx-get="/loader/jobs?page={{.Next}}">Next</button>{{end}}
+  </div>
+  {{end}}
+  {{end}}
+</div>
+{{end}}

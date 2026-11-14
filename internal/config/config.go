@@ -341,10 +341,11 @@ type UIConfig struct {
 	ThumbnailFit string `toml:"thumbnail_fit"`
 }
 
-// DesktopConfig holds only the tray switch: start-at-login and the menu
-// entry live where the platform reads them.
+// Start-at-login and the menu entry live where the platform reads them.
 type DesktopConfig struct {
-	Tray bool `toml:"tray"`
+	Tray           bool   `toml:"tray"`
+	MeloaderBinary string `toml:"meloader_binary,omitempty"`
+	MeloaderConfig string `toml:"meloader_config,omitempty"`
 }
 
 type LogConfig struct {

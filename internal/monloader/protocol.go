@@ -22,6 +22,9 @@ import (
 var monloaderRoutes = []struct{ Method, Path string }{
 	{http.MethodGet, "/api/v1/queue"},
 	{http.MethodGet, "/api/v1/queue/{id}"},
+	{http.MethodPost, "/api/v1/queue"},
+	{http.MethodPost, "/api/v1/queue/{id}/retry"},
+	{http.MethodPost, "/api/v1/queue/{id}/continue"},
 	{http.MethodGet, "/api/v1/ptr/status"},
 	{http.MethodPost, "/api/v1/metadata"},
 	{http.MethodPost, "/api/v1/replace"},

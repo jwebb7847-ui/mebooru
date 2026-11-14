@@ -55,6 +55,28 @@ Designed for organizing your local media collection: images, videos, animated GI
 
 Mebooru is currently developed and verified from source on Apple Silicon macOS. Its upstream Monbooru foundation also supports Linux (x86_64, arm64) and Windows (x86_64). Once started, Mebooru is available at `http://localhost:8455`.
 
+### Open Mebooru with Meloader
+
+Build Meloader from its repository and pair it with Mebooru once. To start
+your existing Meloader configuration when Mebooru opens, set these paths
+in Mebooru's config:
+
+```toml
+[desktop]
+meloader_binary = "/absolute/path/to/monloader"
+meloader_config = "/absolute/path/to/monloader.toml"
+```
+
+Launch Mebooru with `-desktop=true`. It opens only the Mebooru interface and
+stops the companion it launched when you quit the Mebooru process. Keep any
+environment overrides your Meloader setup needs, including the gallery-dl
+and archive paths. For a single run, `-meloader` and `-meloader-config`
+specify the same paths on the command line.
+
+Use **Loader → Queue** to submit imports into the active gallery through
+the paired API. Watches, PTR, and Advanced queue use the Meloader Web URL
+configured in **Settings → Plugins**.
+
 ### Docker
 
 Edit the volume paths in [`docker/docker-compose.yml`](docker/docker-compose.yml), then run `docker compose up -d`.

@@ -89,6 +89,17 @@ button.footer-rating-link { color: var(--fg-dim); }
 .loader-frame { display: block; width: 100%; height: max(420px, calc(100dvh - 175px)); border: 0; background: var(--bg); }
 #meloader .loader-frame { border: 1px solid var(--border); }
 .loader-message, .loader-open { margin: 8px 16px; }
+.loader-queue { margin: 16px; min-width: 0; }
+.loader-import, .loader-pages { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 16px; }
+.loader-import { margin-bottom: 12px; }
+.loader-import label { display: grid; gap: 4px; }
+.loader-import label:has(input[type="url"]) { flex: 1 1 22rem; min-width: 0; }
+.loader-import input[type="number"] { width: 10ch; }
+.loader-import > span { align-self: center; }
+.loader-jobs { margin-top: 8px; }
+.loader-jobs td { overflow-wrap: anywhere; }
+.loader-jobs td:nth-child(2) { max-width: 48ch; }
+.loader-pages { align-items: center; margin-top: 10px; }
 
 #job-status {
   font-size: 12px;

@@ -386,6 +386,9 @@ func (s *Server) registerRoutes(rt *routes) {
 
 	rt.read("GET /{$}", s.galleryHandler)
 	rt.read("GET /loader", s.loaderPage)
+	rt.free("GET /loader/jobs", s.loaderJobs)
+	rt.free("POST /loader/import", s.loaderImport)
+	rt.free("POST /loader/jobs/{id}/{action}", s.loaderJobAction)
 	rt.read("GET /", s.notFoundHandler)
 
 	// Switches the active gallery when the image lives in another one.
@@ -796,6 +799,10 @@ type baseData struct {
 	// unreachable link reports no PTR, so it counts as present.
 	MonloaderPTRPresent bool
 	PairNotice          webui.PairNotice
+}
+
+func (d baseData) FullWidth() bool {
+	return d.ActiveNav == "loader" || d.ActiveNav == "relations" || d.ActiveNav == "categories"
 }
 
 // main.js writes it; the name and the "collapsed" value must match.
