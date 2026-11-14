@@ -1,9 +1,0 @@
-{{define "partials/sort_direction.html"}}
-<select id="search-order" name="order" aria-label="Sort direction"
-        {{if not .Manual}}onchange="submitSearch()"{{end}}
-        {{if .OOB}}hx-swap-oob="true"{{end}}
-        {{if eq .Sort "random"}}disabled title="Shuffle again to change random order"{{end}}>
-  <option value="desc" {{if or (ne .Order "asc") (eq .Sort "random")}}selected{{end}}>{{if eq .Sort "newest"}}Newest first{{else if eq .Sort "filesize"}}Largest first{{else if eq .Sort "order"}}Reverse{{else if eq .Sort "similarity"}}Most similar first{{else if eq .Sort "random"}}Shuffled{{else}}Descending{{end}}</option>
-  <option value="asc" {{if eq .Sort "random"}}hidden{{else if eq .Order "asc"}}selected{{end}}>{{if eq .Sort "newest"}}Oldest first{{else if eq .Sort "filesize"}}Smallest first{{else if eq .Sort "order"}}Forward{{else if eq .Sort "similarity"}}Least similar first{{else}}Ascending{{end}}</option>
-</select>
-{{end}}

@@ -1,9 +1,14 @@
 {{define "partials/sort_select.html"}}
-<select name="sort" id="search-sort" aria-label="Sort" onchange="applySortChange(this)"{{if .SortSelectOOB}} hx-swap-oob="true"{{end}}>
-  <option value="newest"   {{if eq .Sort "newest"}}selected{{end}}>Date added</option>
-  <option value="filesize" {{if eq .Sort "filesize"}}selected{{end}}>File size</option>
-  <option value="order"    {{if eq .Sort "order"}}selected{{end}}>Collection order</option>
-  {{if eq .Sort "random"}}<option value="random" selected>Random</option>{{end}}
-  {{if eq .Sort "similarity"}}<option value="similarity" selected>Similarity</option>{{end}}
-</select>
+<span id="search-sort-controls"{{if .OOB}} hx-swap-oob="true"{{end}}>
+  {{$sort := or .Sort "newest"}}
+  {{$order := or .Order (defaultSortOrder $sort)}}
+  <select id="search-sort" aria-label="Sort" onchange="applySortChange(this)">
+    {{range sortChoices .Query $sort}}
+    <option value="{{.Sort}}:{{.Order}}"{{if and (eq .Sort $sort) (or (eq .Order $order) (eq .Sort "random"))}} selected{{end}}>{{.Label}}</option>
+    {{end}}
+  </select>
+  <input type="hidden" name="sort" value="{{$sort}}">
+  <input type="hidden" name="order" value="{{$order}}">
+  {{if and (eq $sort "random") .Seed}}<input type="hidden" name="seed" value="{{.Seed}}">{{end}}
+</span>
 {{end}}

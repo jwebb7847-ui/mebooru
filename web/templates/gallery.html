@@ -4,12 +4,10 @@
 {{template "layout_mid" .}}
 
 <div id="gallery-header">
-  <form id="search-form" hx-get="/" hx-target="#gallery-grid" hx-push-url="true" hx-swap="innerHTML">
+  <form id="search-form" hx-get="/" hx-target="#gallery-grid" hx-push-url="true" hx-swap="innerHTML" hx-sync="this:replace">
     {{template "partials/search_input.html" .Query}}
     <span class="search-controls">
-      {{template "partials/sort_select.html" .}}
-      {{template "partials/sort_direction.html" (dict "Sort" .Sort "Order" .Order)}}
-      {{if .RandomSeed}}<input type="hidden" name="seed" value="{{.RandomSeed}}">{{end}}
+      {{template "partials/sort_select.html" (dict "Query" .Query "Sort" .Sort "Order" .Order "Seed" .RandomSeed)}}
       <button type="submit">Search</button>
       <button type="button" id="fav-filter-btn" class="{{if hasFavFilter .Query}}active{{end}}"
               onclick="toggleFavFilter()" title="Show favorites (F)">♥&#xFE0E;</button>

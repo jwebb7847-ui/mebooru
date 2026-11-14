@@ -57,7 +57,6 @@ type galleryData struct {
 	InboxUploadActive bool
 	AcceptFileTypes   string
 	SimilarityPercent map[int64]int
-	SortSelectOOB     bool
 	PluginSlot        pluginSlotView
 	CountURL          string
 	PagerPrev         string
@@ -318,7 +317,6 @@ func (s *Server) galleryHandler(w http.ResponseWriter, r *http.Request) {
 	if htmxGridTarget {
 		// The sort select and status bar sit outside the swap target, so
 		// only the fragment sends them out of band.
-		data.SortSelectOOB = true
 		data.StatusOOB = true
 		s.renderTemplate(w, "partials/gallery_htmx.html", data)
 		return

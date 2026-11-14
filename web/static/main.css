@@ -378,7 +378,8 @@ button.footer-rating-link { color: var(--fg-dim); }
 #gallery-header #search-input { padding-left: 26px; }
 #search-form > .search-input-wrap { flex: 1 1 240px; min-width: 0; }
 .search-controls { display: flex; gap: 6px; align-items: center; flex: 0 1 auto; min-width: 0; }
-#search-sort { flex: 0 1 auto; min-width: 0; }
+#search-sort-controls { min-width: 0; }
+#search-sort { max-width: 100%; }
 .gallery-header-end { display: flex; gap: 8px; align-items: center; margin-left: auto; flex: none; }
 .gallery-header-end:not(:has(#save-search-btn)) { display: none; }
 @container gallery-header (max-width: 774px) {
@@ -389,7 +390,6 @@ button.footer-rating-link { color: var(--fg-dim); }
   .search-controls { flex: 0 1 100%; gap: 4px; }
   #gallery-header select { padding: 0 6px; }
   #gallery-header .search-controls button { padding: 0 8px; }
-  #search-order { min-width: 0; }
 }
 .result-count { color: var(--fg); }
 #batch-count { color: var(--fg); }
