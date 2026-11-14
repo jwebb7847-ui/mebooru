@@ -389,7 +389,7 @@ button.footer-rating-link { color: var(--fg-dim); }
   .search-controls { flex: 0 1 100%; gap: 4px; }
   #gallery-header select { padding: 0 6px; }
   #gallery-header .search-controls button { padding: 0 8px; }
-  #gallery-header select[name="order"] { appearance: none; padding: 0 8px; text-align: center; }
+  #search-order { min-width: 0; }
 }
 .result-count { color: var(--fg); }
 #batch-count { color: var(--fg); }

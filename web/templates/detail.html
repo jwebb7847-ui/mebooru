@@ -16,10 +16,7 @@
           <option value="filesize" {{if eq .BackSort "filesize"}}selected{{end}}>File size</option>
           <option value="order"    {{if eq .BackSort "order"}}selected{{end}}>Collection order</option>
         </select>
-        <select name="order" aria-label="Sort direction">
-          <option value="desc" {{if ne .BackOrder "asc"}}selected{{end}}>↓</option>
-          <option value="asc"  {{if eq .BackOrder "asc"}}selected{{end}}>↑</option>
-        </select>
+        {{template "partials/sort_direction.html" (dict "Order" .BackOrder "Manual" true)}}
         <button type="submit">Search</button>
       </span>
     </form>

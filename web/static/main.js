@@ -261,8 +261,11 @@ function cycleRatingCeiling(delta) {
 // Collection order forces asc: a descending pick carried over would
 // render the collection backwards.
 function applySortChange(sortEl) {
+  var orderEl = document.getElementById('search-order');
+  if (orderEl) {
+    orderEl.disabled = sortEl.value === 'random';
+  }
   if (sortEl.value === 'order') {
-    var orderEl = document.querySelector('#search-form select[name="order"]');
     if (orderEl) orderEl.value = 'asc';
   }
   // A seed belongs to the random sort; left on the form it rides into the
@@ -290,17 +293,15 @@ function cycleSort() {
 
 function flipSortDirection() {
   var orderEl = document.querySelector('#search-form select[name="order"]');
-  if (!orderEl) return false;
+  if (!orderEl || orderEl.disabled) return false;
   orderEl.value = orderEl.value === 'asc' ? 'desc' : 'asc';
   return submitSearch();
 }
 
-// Dispatch, not form.submit(): htmx listens for the submit event, which
-// submit() never fires.
 function submitSearch() {
   var form = document.getElementById('search-form');
   if (!form) return false;
-  form.dispatchEvent(new Event('submit', { bubbles: true }));
+  form.requestSubmit();
   return true;
 }
 

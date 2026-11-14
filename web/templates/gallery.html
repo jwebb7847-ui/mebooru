@@ -8,10 +8,7 @@
     {{template "partials/search_input.html" .Query}}
     <span class="search-controls">
       {{template "partials/sort_select.html" .}}
-      <select name="order" aria-label="Sort direction" onchange="submitSearch()">
-        <option value="desc" {{if eq .Order "desc"}}selected{{end}}>↓</option>
-        <option value="asc"  {{if eq .Order "asc"}}selected{{end}}>↑</option>
-      </select>
+      {{template "partials/sort_direction.html" (dict "Sort" .Sort "Order" .Order)}}
       {{if .RandomSeed}}<input type="hidden" name="seed" value="{{.RandomSeed}}">{{end}}
       <button type="submit">Search</button>
       <button type="button" id="fav-filter-btn" class="{{if hasFavFilter .Query}}active{{end}}"
