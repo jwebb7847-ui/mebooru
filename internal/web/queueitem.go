@@ -92,7 +92,7 @@ func itemView(it queue.Item, ctx map[string]any) itemDisplay {
 		d.Outcome, d.OutcomeCls = "canceled", "o-canceled"
 	case it.ErrorCode != "":
 		d.Outcome, d.OutcomeCls, d.OutcomeTitle = errorLabel(it.ErrorCode), "o-failed", it.Error
-		if strings.HasPrefix(strings.TrimPrefix(it.Error, it.ErrorCode+": "), outcome.StrictTaxonomyPrefix) {
+		if outcome.IsStrictTaxonomyError(it.ErrorCode, it.Error) {
 			switch it.ErrorCode {
 			case outcome.ErrCodeRateLimited:
 				d.Outcome = "taxonomy rate limited"

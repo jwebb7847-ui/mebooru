@@ -351,6 +351,10 @@ func (j *Job) owesArchivedPostLocked() bool {
 			return true
 		case outcome.ErrCodeMonbooruRejected, outcome.ErrCodeMappingFailed:
 			return !j.Force
+		case outcome.ErrCodeRateLimited, outcome.ErrCodeDownloadFailed:
+			// Keep the existing watched-window recovery for strict taxonomy
+			// refusals, previously reported as mapping failures.
+			return !j.Force && outcome.IsStrictTaxonomyError(it.ErrorCode, it.Error)
 		}
 		return false
 	})
