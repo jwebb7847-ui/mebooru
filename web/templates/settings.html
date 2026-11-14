@@ -25,6 +25,7 @@
     <a href="#general">General</a>
     <a href="#galleries">Galleries</a>
     <a href="#plugins">Plugins<span id="settings-pair-count" class="nav-count">{{with len .PairNotice.Items}} ({{.}}){{end}}</span></a>
+    <a href="#meloader">Meloader</a>
     <a href="#tagger">Tagger</a>
     <a href="#relations">Relations</a>
     <a href="#auth">Auth</a>
@@ -1315,6 +1316,11 @@
     if (stash && stash.h && outer) outer.innerHTML = stash.h;
   });
   </script>
+
+  <section id="meloader" class="settings-section">
+    {{template "webui/settings_section_header" dict "Title" "Meloader"}}
+    {{template "partials/loader_panel.html" (dict "Panel" .LoaderSettings "Title" "Meloader settings" "Lazy" true)}}
+  </section>
 
   <section id="plugins" class="settings-section">
     {{template "webui/settings_section_header" dict "Title" "Plugins"}}

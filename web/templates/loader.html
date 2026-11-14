@@ -1,0 +1,13 @@
+{{define "loader.html"}}
+{{template "layout_head_bare" .}}
+<section class="loader-page">
+  <nav class="loader-tabs" aria-label="Loader">
+    <a href="/loader"{{if eq .View "queue"}} aria-current="page"{{end}}>Queue</a>
+    <a href="/loader?view=watches"{{if eq .View "watches"}} aria-current="page"{{end}}>Watches</a>
+    <a href="/loader?view=ptr"{{if eq .View "ptr"}} aria-current="page"{{end}}>PTR</a>
+    <a class="loader-settings-link" href="/settings#meloader">Meloader settings</a>
+  </nav>
+  {{template "partials/loader_panel.html" (dict "Panel" .Panel "Title" "Meloader" "Lazy" false)}}
+</section>
+{{template "layout_end" .}}
+{{end}}

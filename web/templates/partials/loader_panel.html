@@ -1,0 +1,9 @@
+{{define "partials/loader_panel.html"}}
+<div class="loader-panel">
+  {{with .Panel.Message}}<p class="field-hint loader-message">{{.}}</p>{{end}}
+  {{with .Panel.FrameURL}}
+  <iframe class="loader-frame" title="{{$.Title}}" src="{{.}}"{{if $.Lazy}} loading="lazy"{{end}} referrerpolicy="no-referrer"></iframe>
+  {{end}}
+  {{with .Panel.OpenURL}}<a class="loader-open field-hint" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in Meloader</a>{{end}}
+</div>
+{{end}}

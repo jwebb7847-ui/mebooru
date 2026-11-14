@@ -148,7 +148,7 @@ func gallerySwitchTarget(raw string) string {
 	}
 
 	switch u.Path {
-	case "/", "/categories", "/tags", "/collections", "/relations", "/settings":
+	case "/", "/categories", "/tags", "/collections", "/relations", "/settings", "/loader":
 		return u.RequestURI()
 	default:
 		// IDs are gallery-local. Never carry an image/detail/session URL
