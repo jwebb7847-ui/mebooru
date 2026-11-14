@@ -59,8 +59,10 @@
 
     <div id="gallery-banner-slot" aria-hidden="true">
       {{with .GalleryBannerURL}}
-      <img src="{{.}}" alt="" class="gallery-banner-image"
-           style="object-position: {{$.GalleryBannerPosition}};">
+      <div class="gallery-banner-frame">
+        <img src="{{.}}" alt="" class="gallery-banner-image gallery-banner-framing"
+             style="--gallery-banner-focal-x: {{$.GalleryBannerSettings.FocalX}}; --gallery-banner-focal-y: {{$.GalleryBannerSettings.FocalY}}; --gallery-banner-scale: {{$.GalleryBannerSettings.Scale}};">
+      </div>
       {{end}}
     </div>
 
@@ -70,16 +72,6 @@
            hx-trigger="load, every 2s"
            hx-swap="outerHTML"
            hx-vals='{"pair":"{{.PairNotice.Key}}"}'></div>
-      {{if not .Degraded}}
-      <span id="sync-flash"></span>
-      <form id="sync-form" hx-post="/internal/sync" hx-swap="none"
-            hx-on:htmx:before-request="document.getElementById('job-status').innerHTML='<span class=&quot;job-running&quot;>syncing…</span>'"
-            hx-on:sync-started="document.getElementById('job-status').setAttribute('hx-trigger','every 2s');htmx.process('#job-status')"
-            hx-on:htmx:response-error="document.getElementById('sync-flash').innerHTML=event.detail.xhr.responseText;refreshJobStatus();setTimeout(function(){var el=document.getElementById('sync-flash');if(el)el.innerHTML='';},5000)"
-            style="display:inline">
-        <button type="submit" class="topbar-action" title="Look for files added, moved or deleted in the gallery folder (Y)">[⟳ sync]</button>
-      </form>
-      {{end}}
       {{if .AuthEnabled}}
         <form method="POST" action="/logout" style="display:inline">
           <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
@@ -142,6 +134,15 @@
     </div>
     <div id="footer-right">
       {{template "webui/peer_light" .MonloaderLight}}<span class="footer-peer-sep"> · </span><span class="footer-wide">{{template "footer_version" dict "D" .}} · <a href="#" id="footer-shortcuts" onclick="openShortcutSheet();return false">shortcuts</a> · </span><a href="{{.DocURL}}" target="_blank" rel="noopener">help</a><span class="footer-wide"> · <a href="/api/v1/docs" target="_blank" rel="noopener">API</a></span>
+      {{if not .Degraded}}
+      <span id="sync-flash"></span>
+      <form id="sync-form" hx-post="/internal/sync" hx-swap="none"
+            hx-on:htmx:before-request="document.getElementById('job-status').innerHTML='<span class=&quot;job-running&quot;>syncing…</span>'"
+            hx-on:sync-started="document.getElementById('job-status').setAttribute('hx-trigger','every 2s');htmx.process('#job-status')"
+            hx-on:htmx:response-error="document.getElementById('sync-flash').innerHTML=event.detail.xhr.responseText;refreshJobStatus();setTimeout(function(){var el=document.getElementById('sync-flash');if(el)el.innerHTML='';},5000)">
+        <button type="submit" class="footer-sync" title="Look for files added, moved or deleted in the gallery folder (Y)">[⟳ sync]</button>
+      </form>
+      {{end}}
     </div>
   </footer>
   {{template "webui/confirm_dialog"}}

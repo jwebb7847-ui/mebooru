@@ -776,7 +776,7 @@ type baseData struct {
 	Galleries             []config.Gallery
 	GallerySwitchTarget   string
 	GalleryBannerURL      string
-	GalleryBannerPosition string
+	GalleryBannerSettings galleryPresentation
 	VisibleCount          int
 	InboxCount            int
 	TagCount              int
@@ -881,7 +881,7 @@ func (s *Server) base(r *http.Request, nav, title string) baseData {
 		Galleries:             galleries,
 		GallerySwitchTarget:   gallerySwitchTarget(r.URL.RequestURI()),
 		GalleryBannerURL:      s.galleryBannerURL(s.activeGallery()),
-		GalleryBannerPosition: s.galleryBannerPosition(s.activeGallery()),
+		GalleryBannerSettings: s.loadGalleryPresentation(s.activeGallery()),
 		VisibleCount:          visible,
 		InboxCount:            inbox,
 		TagCount:              tagCount,

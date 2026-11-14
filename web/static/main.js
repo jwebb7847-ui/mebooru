@@ -3430,3 +3430,14 @@ document.addEventListener('click', function(e) {
     gallerySwitcher.open = false;
   }
 });
+
+function sizeGalleryBannerImage(img) {
+  if (!img.naturalWidth || !img.naturalHeight) return;
+  img.style.setProperty('--gallery-banner-aspect', img.naturalWidth / img.naturalHeight);
+  img.setAttribute('data-banner-sized', '');
+}
+
+document.querySelectorAll('img.gallery-banner-framing').forEach(function (img) {
+  img.addEventListener('load', function () { sizeGalleryBannerImage(img); });
+  sizeGalleryBannerImage(img);
+});

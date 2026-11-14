@@ -58,6 +58,19 @@ button.footer-gallery:hover, button.footer-rating-link:hover { color: var(--fg);
 #peer-light:empty, #peer-light:empty + .footer-peer-sep { display: none; }
 button.footer-rating-link { color: var(--fg-dim); }
 
+#footer-right { margin-inline-start: auto; justify-content: flex-end; }
+#sync-flash:empty { display: none; }
+.footer-sync {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--link);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.footer-sync:hover { color: var(--fg); }
+
 #nav a.nav-images      { --nav-hue: var(--nav-images); }
 #nav a.nav-inbox       { --nav-hue: var(--nav-inbox); }
 #nav a.nav-categories  { --nav-hue: var(--nav-categories); }
@@ -2817,29 +2830,27 @@ label.ptr-row:hover { background: var(--bg-input); }
 }
 
 
-/*
-  Reserved for future per-gallery banner artwork.
-
-  Later this will carry the selected gallery image with a
-  left-to-right background fade into the top-bar surface.
-*/
 #gallery-banner-slot {
+  --gallery-banner-extension: 0px;
+  position: relative;
   flex: 1 1 auto;
   min-width: 24px;
   height: 47px;
   align-self: stretch;
-  overflow: hidden;
   pointer-events: none;
 }
 
-/* The banner slot now owns the flexible space on wide layouts. */
 @media (min-width: 960px) {
   #topbar-right {
     margin-left: 0;
   }
+
+  /* With no job status or logout, cover the 16px gap and 16px right padding. */
+  #topbar:not(:has(#job-status > *, #topbar-right > form)) #gallery-banner-slot {
+    --gallery-banner-extension: 32px;
+  }
 }
 
-/* Don't let future gallery artwork crowd compact navigation. */
 @media (max-width: 959px) {
   #gallery-banner-slot {
     display: none;
@@ -2853,47 +2864,52 @@ label.ptr-row:hover { background: var(--bg-input); }
   }
 }
 
-/* Active gallery presentation banner. */
-#gallery-banner-slot {
-  position: relative;
-}
-
-.gallery-banner-image {
+.gallery-banner-frame {
   position: absolute;
   inset: 0;
 
-  width: 100%;
-  height: 100%;
-
-  object-fit: cover;
-  object-position: center;
+  width: calc(100% + var(--gallery-banner-extension));
+  overflow: hidden;
+  container-type: size;
 
   opacity: 0.88;
 
-  /*
-    The image is fully transparent at the left edge and becomes fully visible
-    toward the right, allowing the ordinary top-bar background to flow into it.
-  */
-  -webkit-mask-image: linear-gradient(
+  /* Measure the fade against the original slot width as the image extends. */
+  --gallery-banner-fade: linear-gradient(
     to right,
     transparent 0%,
-    rgba(0,0,0,0.15) 18%,
-    rgba(0,0,0,0.70) 48%,
-    black 72%,
+    rgba(0,0,0,0.15) calc(18% - var(--gallery-banner-extension) * 0.18),
+    rgba(0,0,0,0.70) calc(48% - var(--gallery-banner-extension) * 0.48),
+    black calc(72% - var(--gallery-banner-extension) * 0.72),
     black 100%
   );
-
-  mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(0,0,0,0.15) 18%,
-    rgba(0,0,0,0.70) 48%,
-    black 72%,
-    black 100%
-  );
+  -webkit-mask-image: var(--gallery-banner-fade);
+  mask-image: var(--gallery-banner-fade);
 }
 
-/* Gallery banner focal-point editor. */
+.gallery-banner-framing {
+  --gallery-banner-x: calc(100% * var(--gallery-banner-focal-x, 0.5));
+  --gallery-banner-y: calc(100% * var(--gallery-banner-focal-y, 0.5));
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--gallery-banner-x) var(--gallery-banner-y);
+  transform-origin: var(--gallery-banner-x) var(--gallery-banner-y);
+  transform: scale(var(--gallery-banner-scale, 1));
+}
+
+/* Size the full image before clipping it to the frame, including below 100%. */
+.gallery-banner-framing[data-banner-sized] {
+  position: absolute;
+  inset: auto;
+  left: var(--gallery-banner-x);
+  top: var(--gallery-banner-y);
+  width: calc(max(100cqw, 100cqh * var(--gallery-banner-aspect)) * var(--gallery-banner-scale, 1));
+  height: auto;
+  transform: translate(calc(-1 * var(--gallery-banner-x)), calc(-1 * var(--gallery-banner-y)));
+}
+
 .gallery-banner-crop-dialog {
   width: min(900px, 92vw);
 }
@@ -2908,6 +2924,7 @@ label.ptr-row:hover { background: var(--bg-input); }
   margin: 14px 0;
 
   overflow: hidden;
+  container-type: size;
 
   background: var(--bg);
   border: 1px solid var(--border);
@@ -2922,12 +2939,8 @@ label.ptr-row:hover { background: var(--bg-input); }
 }
 
 .gallery-banner-crop-viewport img {
-  width: 100%;
-  height: 100%;
-
-  object-fit: cover;
-  object-position: 50% 50%;
-
+  position: absolute;
+  inset: 0;
   pointer-events: none;
   user-select: none;
 }
@@ -3112,6 +3125,18 @@ label.ptr-row:hover { background: var(--bg-input); }
   align-items: center;
   justify-content: flex-start;
   margin: 10px 0 4px;
+}
+
+.gallery-banner-zoom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.gallery-banner-zoom output {
+  min-width: 4ch;
+  text-align: right;
 }
 
 /* ==========================================================
