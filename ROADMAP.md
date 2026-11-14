@@ -27,7 +27,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 - **Meloader `main`** contains the Loader integration, cross-post taxonomy batching, and strict download timing from [PR #12](https://github.com/jwebb7847-ui/meloader/pull/12), [PR #13](https://github.com/jwebb7847-ui/meloader/pull/13), and [PR #14](https://github.com/jwebb7847-ui/meloader/pull/14). The merged code checkpoint is `de5da08`.
 - **Mebooru `mebooru-foundation`** contains the fork's library UI work. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
-- **Next milestone: Item 6.** Build on the Loader integration and its bounded Mac acceptance with reliability and observability work.
+- **Next milestone: Item 7.** Develop the broader Mebooru library experience.
 
 ## Milestones
 
