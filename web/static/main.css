@@ -58,6 +58,19 @@ button.footer-gallery:hover, button.footer-rating-link:hover { color: var(--fg);
 #peer-light:empty, #peer-light:empty + .footer-peer-sep { display: none; }
 button.footer-rating-link { color: var(--fg-dim); }
 
+#footer-right { margin-inline-start: auto; justify-content: flex-end; }
+#sync-flash:empty { display: none; }
+.footer-sync {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--link);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.footer-sync:hover { color: var(--fg); }
+
 #nav a.nav-images      { --nav-hue: var(--nav-images); }
 #nav a.nav-inbox       { --nav-hue: var(--nav-inbox); }
 #nav a.nav-categories  { --nav-hue: var(--nav-categories); }
