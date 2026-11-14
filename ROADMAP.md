@@ -63,7 +63,10 @@ The native Mebooru **Loader** tab exposes Meloader's Queue, Watches, and PTR con
 
 Improve acquisition diagnostics, retry visibility, structured timing, failure distinctions and regression monitoring without sacrificing snappiness.
 
-Start with job-scoped strict Derpibooru preflight diagnostics. Use the request, retry-wait, and outcome counts to distinguish source delays from local processing. [Diagnostic fields and loopback regression](docs/validation/loader-integration.md#strict-download-timing)
+- Job-scoped strict Derpibooru preflight diagnostics, distinct taxonomy failure labels, and the pinned gallery-dl regression are merged. [Diagnostic fields and loopback regression](docs/validation/loader-integration.md#strict-download-timing)
+- Verify that the SQLite queue preserves completed and queued work across restart. Cover explicit retry of an interrupted window and the next continuation offset in the Go race suite.
+- Exercise the download-to-ingest interruption with both apps and local fixtures. Check for archive skips, missing allowed imports, and duplicate library rows on recovery.
+- Record the supported recovery steps and close Milestone 6 once the automated checks pass. Use the 400-image loopback run as the baseline for any change that affects bulk processing.
 
 ### 7. Broader Mebooru library experience
 
