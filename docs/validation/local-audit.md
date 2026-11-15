@@ -16,6 +16,24 @@ The earlier audit checkouts were `$HOME/Documents/VSC/meloader-rating-qa` at `3a
 
 The configured Mebooru galleries include `Audit_A`, `Audit_B`, and `home`. All queue tests here target `Audit_A`. The Mebooru config is authoritative for its media and database paths. The copied audit setup isolates Meloader state and still targets the dedicated Mebooru audit gallery.
 
+## Verify the paired Mac app in Finder
+
+**Mac — Terminal.** Stop any foreground audit servers in their terminals and verify that ports 8455 and 8456 are free using the listener check below. With Git and Go 1.27.4 available, build the verified candidate in a fresh checkout.
+
+```sh
+qa_dir=$(mktemp -d "$HOME/Documents/VSC/mebooru-app-qa.XXXXXX") &&
+  git clone --branch mebooru-foundation https://github.com/jwebb7847-ui/mebooru.git "$qa_dir/mebooru" &&
+  git clone https://github.com/jwebb7847-ui/meloader.git "$qa_dir/meloader" &&
+  git -C "$qa_dir/mebooru" checkout --detach 261f6ef60b0ebb184174fde8ff6400798baeb4ba &&
+  git -C "$qa_dir/meloader" checkout --detach 8ac2d7077596a72db6012b5f281267afe472c749 &&
+  (cd "$qa_dir/mebooru" && sh packaging/build-macos-app.sh "$qa_dir/meloader") &&
+  open "$qa_dir/mebooru/dist"
+```
+
+**Mac — Finder.** Double-click `Mebooru.app`. Mebooru should open in the browser and launch Meloader. The app looks under `~/Library/Application Support/monbooru` and `~/Library/Application Support/monloader` by default. To validate the custom Audit TOMLs, use the explicit-config procedure in [Launch the paired audit services](#launch-the-paired-audit-services). A fresh default profile may show initial setup and require a new pairing.
+
+**Browser — Mebooru and Meloader.** Finish any Mebooru setup, then use [Meloader → Pairing](http://127.0.0.1:8456/settings#pairing) and approve the request in **Mebooru → Settings → Plugins** if prompted. If the default profile cannot find gallery-dl, set `[gallerydl].binary_path` in the default Meloader TOML to the absolute executable path shown above. Quit Mebooru before editing the TOML and reopen it from Finder. Select a disposable gallery, submit a small known-safe import under **Loader → Queue**, and verify that the completed row has an **Open in gallery** link for an imported item. Quit through Mebooru's Settings and verify both listeners stopped. Reopen from Finder and confirm the pairing and queue history persist.
+
 ## Inspect before launch
 
 **VS Code — control terminal.** Check which app currently owns each port.

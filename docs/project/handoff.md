@@ -1,6 +1,6 @@
 # Mebooru and Meloader project handoff
 
-Status reviewed 2026-11-14.
+Status reviewed 2026-11-15.
 
 ## Start here
 
@@ -35,4 +35,9 @@ Source taxonomy answers what a source says a tag means. Cross-source synonyms an
 
 ## Resume here
 
-Resume with [Item 7, Broader Mebooru library experience](../../ROADMAP.md#7-broader-mebooru-library-experience). [Item 6](../../ROADMAP.md#6-reliability-and-observability--acceptance-passed) passed the SQLite restart regression and the [paired-app interruption and retry check](../validation/loader-integration.md#paired-app-interruption-and-retry). The [Loader integration](../validation/loader-integration.md) passed the Mac audit and merged into Meloader `main` at `de5da08` and Mebooru `mebooru-foundation` at `630e439`. [Item 2's 400-image bulk acceptance](../validation/negative-path-throughput.md#9-local-400-image-end-to-end-benchmark) passed on those builds. The 400-image run replaced the 1,000-image plan. The 10,000-image run remains deferred. [Item 4](../../ROADMAP.md#4-further-booru-coverage--complete) is complete. [Filing and alias evidence](../validation/derpibooru-filing.md) records the live Derpibooru payloads, automated regressions and Mac Trace acceptance for [PR #10](https://github.com/jwebb7847-ui/meloader/pull/10) and [PR #11](https://github.com/jwebb7847-ui/meloader/pull/11). The [opt-in pre-download blacklist](../validation/blacklist-timing.md) passed the Mac audit. The [architecture defaults](../architecture/source-semantics-proposal.md#product-decisions) are approved. Item 3 is complete, including [live Danbooru acceptance](../validation/negative-path-throughput.md#8-live-danbooru-acceptance).
+The paired Mac app is merged at Mebooru `261f6ef`. The remaining personal-use acceptance check is a Finder launch, a small import into a disposable gallery, and a quit and reopen on the operator's Mac. Use the [exact build and acceptance steps](../validation/local-audit.md#verify-the-paired-mac-app-in-finder).
+
+- [Mebooru gallery hardening](https://github.com/jwebb7847-ui/mebooru/pull/6) validated archives before restore and confined archive and banner file operations. The [comparison scan](https://github.com/jwebb7847-ui/meloader/actions/runs/43672218586) reported 7 findings after hardening, down from 30. The seven existing results are four user-selected gallery path warnings, two deliberate bit-preserving integer conversions, and one allocation with an existing request limit.
+- [Meloader setup and PTR hardening](https://github.com/jwebb7847-ui/meloader/pull/20) is on `main`. The [Go tests](https://github.com/jwebb7847-ui/meloader/actions/runs/43670178912) and [CodeQL workflow](https://github.com/jwebb7847-ui/meloader/actions/runs/43670179050) completed at the paired reference revision `8ac2d70`.
+- [Core verification](https://github.com/jwebb7847-ui/meloader/actions/runs/43672218586) passed on native Linux x86-64 and ARM64, Windows x86-64, and Intel and Apple Silicon macOS. [Mac bundle verification](https://github.com/jwebb7847-ui/meloader/actions/runs/43672674910) built and verified the signature and checked the companion's startup, web frame policy and shutdown on both Mac architectures. Finder launch, native installers on Linux and Windows, and public Mac notarization are distinct checks.
+- [Item 6 reliability](../../ROADMAP.md#6-reliability-and-observability--acceptance-passed) includes queue restart, explicit interruption recovery, and a 400-image loopback acceptance check. Use its measured baseline before changing bulk-import behavior.

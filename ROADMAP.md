@@ -1,7 +1,7 @@
 # Meloader / Mebooru project roadmap
 
 > Working architecture and development plan, maintained for this fork.
-> Last reviewed 2026-11-14. [Project handoff](docs/project/handoff.md) · [Local audit runbook](docs/validation/local-audit.md)
+> Last reviewed 2026-11-15. [Project handoff](docs/project/handoff.md) · [Local audit runbook](docs/validation/local-audit.md)
 
 ## North star
 
@@ -25,9 +25,9 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 ## Current work and branches
 
-- **Meloader `main`** contains the Loader integration, cross-post taxonomy batching, and strict download timing from [PR #12](https://github.com/jwebb7847-ui/meloader/pull/12), [PR #13](https://github.com/jwebb7847-ui/meloader/pull/13), and [PR #14](https://github.com/jwebb7847-ui/meloader/pull/14). The merged code checkpoint is `de5da08`.
-- **Mebooru `mebooru-foundation`** contains the fork's library UI work. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
-- **Next milestone: Item 7.** Develop the broader Mebooru library experience.
+- **Meloader `main`** contains the Loader integration, queue restart recovery, the branding update and setup/PTR hardening. The source revision used for pre-packaging checks is `8ac2d70`.
+- **Mebooru `mebooru-foundation`** contains the integrated Loader and packaged Mac launcher. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
+- **Next acceptance check.** Open the paired Mac app in Finder and run a bounded import in a disposable gallery. Follow the [Mac app acceptance steps](docs/validation/local-audit.md#verify-the-paired-mac-app-in-finder).
 
 ## Milestones
 
@@ -68,13 +68,13 @@ Improve acquisition diagnostics, retry visibility, structured timing, failure di
 - The paired-app interruption check recovered all missing allowed images, preserved existing library rows, and made zero media requests for blacklisted posts. [Evidence](docs/validation/loader-integration.md#paired-app-interruption-and-retry) · [Recovery steps](docs/validation/local-audit.md#recover-an-interrupted-import)
 - The 400-image loopback run remains the baseline for changes that affect bulk processing. [Bulk acceptance](docs/validation/negative-path-throughput.md#9-local-400-image-end-to-end-benchmark)
 
-### 7. Broader Mebooru library experience
+### 7. Broader Mebooru library experience — integrated workflow accepted
 
-Develop browsing, review, organization, relationships and cross-source vocabulary consistency as distinct capabilities beyond source-taxonomy interpretation.
+The integrated queue shows import results and opens the destination gallery. The Mac audit reported Job #38 succeeded with 155 created and 45 blacklisted from a 200-post window after service connectivity was restored. Gallery restore and banner handling were hardened before packaging. Cross-source vocabulary consistency remains separate feature work. [Mebooru hardening PR](https://github.com/jwebb7847-ui/mebooru/pull/6)
 
-### 8. Naming and packaging cleanup — deferred
+### 8. Naming and packaging — personal Mac app candidate
 
-Complete invasive Monloader/Monbooru naming migration only when architecture and compatibility are stable.
+Current names appear in the UI. Retain legacy command, configuration and protocol identifiers for existing installs. The paired app candidate built and ran on Intel and Apple Silicon macOS runners. Core binaries also passed native Linux x86-64, Linux ARM64 and Windows x86-64 checks. Finder launch and live import on the operator's Mac are pending. A signed, notarized public release is a separate distribution step. [Meloader branding PR](https://github.com/jwebb7847-ui/meloader/pull/19) · [Mac app PR](https://github.com/jwebb7847-ui/mebooru/pull/7) · [Native verification](https://github.com/jwebb7847-ui/meloader/actions/runs/43672218586) · [Mac app verification](https://github.com/jwebb7847-ui/meloader/actions/runs/43672674910)
 
 ## Local VS Code testing protocol
 
