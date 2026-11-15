@@ -1,1 +1,1 @@
-https://monbooru.github.io/mondocs/index.html
+https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md

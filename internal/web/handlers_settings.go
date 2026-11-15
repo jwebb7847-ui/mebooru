@@ -388,7 +388,7 @@ func (s *Server) settingsMonloaderPost(w http.ResponseWriter, r *http.Request) {
 	webURL := strings.TrimSpace(r.FormValue("monloader_url"))
 	apiURL := strings.TrimSpace(r.FormValue("api_url"))
 	if !httpURLOrBlank(webURL) || !httpURLOrBlank(apiURL) {
-		writeInlineFlash(w, "err", "The monloader addresses must be http(s) URLs. Nothing was saved.")
+		writeInlineFlash(w, "err", "The Meloader addresses must be http(s) URLs. Nothing was saved.")
 		return
 	}
 	if err := s.withConfig(func(c *config.Config) error {
@@ -403,7 +403,7 @@ func (s *Server) settingsMonloaderPost(w http.ResponseWriter, r *http.Request) {
 		writeInlineFlash(w, "err", "Could not save: "+err.Error())
 		return
 	}
-	logx.Infof("settings: monloader link updated")
+	logx.Infof("settings: Meloader link updated")
 	writeInlineFlash(w, "ok", "Meloader addresses saved.")
 	link := s.monloaderLink()
 	conn := s.ml.Status().Conn

@@ -725,7 +725,7 @@ var Version = "dev"
 var RepoURL = "https://github.com/jwebb7847-ui/mebooru"
 
 // DocURL is set at build time via -ldflags.
-var DocURL = "https://monbooru.github.io/mondocs/index.html"
+var DocURL = "https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md"
 
 // Variant names the provider build, set via -ldflags; empty on the CPU build.
 var Variant = ""

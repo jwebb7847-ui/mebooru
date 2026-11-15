@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Monbooru
+Name=Mebooru
 Comment=Lightweight and fast private booru
 Exec=monbooru -desktop
 Icon=monbooru

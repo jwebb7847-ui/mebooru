@@ -316,7 +316,7 @@ func (s *Server) fetchSource(w http.ResponseWriter, r *http.Request) {
 	s.ml.Fetches.Record(galleryName, id, monloader.StatePending, "")
 	if err := s.ml.EnqueueMetadataFetch(r.Context(), id, galleryName, url); err != nil {
 		s.ml.Fetches.Clear(galleryName, id)
-		externalErr(w, r, "could not reach monloader: "+err.Error(), http.StatusBadGateway)
+		externalErr(w, r, "could not reach Meloader: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	respondFetchPending(w, r, id)
@@ -361,7 +361,7 @@ func (s *Server) lookupImage(w http.ResponseWriter, r *http.Request) {
 			externalErr(w, r, err.Error(), http.StatusConflict)
 			return
 		}
-		externalErr(w, r, "could not reach monloader: "+err.Error(), http.StatusBadGateway)
+		externalErr(w, r, "could not reach Meloader: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	respondFetchPending(w, r, id)
@@ -394,7 +394,7 @@ func (s *Server) replaceImage(w http.ResponseWriter, r *http.Request) {
 	s.ml.Fetches.Record(galleryName, id, monloader.StatePending, "")
 	if err := s.ml.EnqueueReplace(r.Context(), id, galleryName, src.URL); err != nil {
 		s.ml.Fetches.Clear(galleryName, id)
-		externalErr(w, r, "could not reach monloader: "+err.Error(), http.StatusBadGateway)
+		externalErr(w, r, "could not reach Meloader: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	respondFetchPending(w, r, id)

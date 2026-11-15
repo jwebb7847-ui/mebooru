@@ -3,7 +3,7 @@
 <div class="flash flash-err">{{.Err}}</div>
 {{else}}
 <div class="flash flash-ok" id="ptr-contrib-result" data-job-id="{{.JobID}}">
-  handed {{.Sent}} to monloader for upload{{if .Refused}} ({{.Refused}} not sent){{end}}.
+  handed {{.Sent}} to Meloader for upload{{if .Refused}} ({{.Refused}} not sent){{end}}.
   {{if .Monloader}}<a href="{{.Monloader}}/ptr" target="_blank" rel="noopener">contribution history</a>{{end}}
 </div>
 {{range .RefusedRows}}

@@ -50,10 +50,10 @@ appimage_finish() {
   mkdir -p "$app/usr/share/metainfo"
   sh packaging/metainfo.sh "$APP.desktop" > "$app/usr/share/metainfo/$APPID.appdata.xml"
 
-  out="dist/${APP}_${VERSION#v}_${arch}.AppImage"
+  out="dist/mebooru_${VERSION#v}_${arch}.AppImage"
   rm -f "$out" "$out.zsync"
   ARCH=$arch "./$work/appimagetool" --appimage-extract-and-run \
-    -u "gh-releases-zsync|monbooru|$APP|latest|${APP}_*_${arch}.AppImage.zsync" \
+    -u "gh-releases-zsync|jwebb7847-ui|mebooru|latest|mebooru_*_${arch}.AppImage.zsync" \
     --runtime-file "$work/runtime" "$app" "$out"
   mv "${out##*/}.zsync" dist/
   rm -rf "$app"

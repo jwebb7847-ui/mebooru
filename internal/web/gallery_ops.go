@@ -250,8 +250,8 @@ func (s *Server) settingsGalleryRenamePost(w http.ResponseWriter, r *http.Reques
 	}
 	if oldName != newName {
 		if err := s.ml.GalleryRenamed(r.Context(), oldName, newName); err != nil {
-			logx.Warnf("gallery: telling monloader about the rename of %q: %v", oldName, err)
-			writeInlineFlash(w, "warn", fmt.Sprintf("Renamed %s to %s. monloader could not be told, so its default gallery and site targets still name %s.", oldName, newName, oldName))
+			logx.Warnf("gallery: telling Meloader about the rename of %q: %v", oldName, err)
+			writeInlineFlash(w, "warn", fmt.Sprintf("Renamed %s to %s. Meloader could not be told, so its default gallery and site targets still name %s.", oldName, newName, oldName))
 			return
 		}
 	}

@@ -74,7 +74,7 @@ func (s *Server) fetchStatusHandler(w http.ResponseWriter, r *http.Request) {
 		writeFetchOutcome(w, "warn", lookupMissBody(e.Msg, e.Hashes))
 	case monloader.StateCanceled:
 		s.ml.Fetches.Clear(s.activeGallery(), id)
-		writeFetchOutcome(w, "warn", "monloader dropped this job before it ran; nothing was looked up.")
+		writeFetchOutcome(w, "warn", "Meloader dropped this job before it ran; nothing was looked up.")
 	case monloader.StateAlreadyExists:
 		s.ml.Fetches.Clear(s.activeGallery(), id)
 		writeFetchOutcome(w, "warn", alreadyExistsBody(e.Msg))
@@ -120,7 +120,7 @@ func lookupMissBody(trail, hashes string) string {
 		b.WriteString(`<div class="field-hint">A miss can happen when the file was compressed or re-encoded, since its hash no longer matches the original.`)
 		// Similarity services serve the online walk; the PTR is hash-only.
 		if trail == "" || len(online) > 0 {
-			b.WriteString(` Set up a similarity lookup service in monloader so it can still find such copies.`)
+			b.WriteString(` Set up a similarity lookup service in Meloader so it can still find such copies.`)
 		}
 		b.WriteString(`</div>`)
 	}
@@ -154,17 +154,17 @@ func linkifyTrailEntry(entry string) string {
 	}
 }
 
-// Keyed on monloader's stable queue error codes.
+// Keyed on Meloader's stable queue error codes.
 var fetchFailureMessages = map[string]string{
-	contract.CodeUnsupportedURL:      "monloader can't fetch this source URL.",
-	contract.CodeNetworkUnreachable:  "monloader couldn't reach the source.",
-	contract.CodeAuthRequired:        "The source needs a login monloader doesn't have.",
-	contract.CodeBlocked:             "The source blocked monloader's fetch.",
+	contract.CodeUnsupportedURL:      "Meloader can't fetch this source URL.",
+	contract.CodeNetworkUnreachable:  "Meloader couldn't reach the source.",
+	contract.CodeAuthRequired:        "The source needs a login Meloader doesn't have.",
+	contract.CodeBlocked:             "The source blocked Meloader's fetch.",
 	contract.CodeRateLimited:         "The source is rate-limiting; try again later.",
 	contract.CodeDownloadFailed:      "The source fetch failed on monloader.",
-	contract.CodeMonbooruUnreachable: "monloader fetched the source but couldn't apply the tags.",
-	contract.CodeMonbooruRejected:    "monloader fetched the source but couldn't apply the tags.",
-	contract.CodeMappingFailed:       "monloader couldn't read the source's metadata.",
+	contract.CodeMonbooruUnreachable: "Meloader fetched the source but couldn't apply the tags.",
+	contract.CodeMonbooruRejected:    "Meloader fetched the source but couldn't apply the tags.",
+	contract.CodeMappingFailed:       "Meloader couldn't read the source's metadata.",
 }
 
 func fetchFailureMessage(state, msg string) string {

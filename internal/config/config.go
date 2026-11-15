@@ -752,18 +752,26 @@ func fillDerivedPaths(cfg *Config) {
 	}
 }
 
+func envNames(key string) (string, string) {
+	suffix := strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
+	return "MEBOORU_" + strings.ReplaceAll(suffix, "MONLOADER", "MELOADER"), "MONBOORU_" + suffix
+}
+
 func envOverride[T any](cfg *Config, key string, field func(*Config) *T, parse func(string) (T, error)) {
-	variable := "MONBOORU_" + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
-	raw := os.Getenv(variable)
-	if raw == "" {
+	current, legacy := envNames(key)
+	for _, variable := range []string{current, legacy} {
+		raw := os.Getenv(variable)
+		if raw == "" {
+			continue
+		}
+		v, err := parse(raw)
+		if err != nil {
+			logx.Warnf("config: ignoring %s: %v", variable, err)
+			continue
+		}
+		pinEnv(cfg, key, variable, field, v)
 		return
 	}
-	v, err := parse(raw)
-	if err != nil {
-		logx.Warnf("config: ignoring %s=%q: %v", variable, raw, err)
-		return
-	}
-	pinEnv(cfg, key, variable, field, v)
 }
 
 func pinEnv[T any](cfg *Config, key, variable string, field func(*Config) *T, v T) {
@@ -800,7 +808,8 @@ func applyEnvOverrides(cfg *Config) {
 	envOverride(cfg, "tagger.execution_provider", provider, parseProvider)
 	// Deployments that still export the old MONBOORU_TAGGER_USE_CUDA keep
 	// the GPU.
-	if raw := os.Getenv("MONBOORU_TAGGER_USE_CUDA"); raw != "" && os.Getenv("MONBOORU_TAGGER_EXECUTION_PROVIDER") == "" {
+	currentProviderEnv, legacyProviderEnv := envNames("tagger.execution_provider")
+	if raw := os.Getenv("MONBOORU_TAGGER_USE_CUDA"); raw != "" && os.Getenv(currentProviderEnv) == "" && os.Getenv(legacyProviderEnv) == "" {
 		if useCUDA, err := strconv.ParseBool(raw); err != nil {
 			logx.Warnf("config: ignoring MONBOORU_TAGGER_USE_CUDA=%q: %v", raw, err)
 		} else if useCUDA {

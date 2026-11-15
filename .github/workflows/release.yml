@@ -143,25 +143,6 @@ jobs:
             --tag ghcr.io/${{ steps.img.outputs.NAME }}:${{ github.ref_name }}${{ matrix.suffix }} \
             $(printf 'ghcr.io/${{ steps.img.outputs.NAME }}@sha256:%s ' *)
 
-      - name: Login to GHCR (legacy namespace)
-        continue-on-error: true
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: leqwin
-          password: ${{ secrets.GHCR_LEGACY_TOKEN }}
-
-      - name: Push ${{ matrix.variant }} to legacy namespace
-        continue-on-error: true
-        run: |
-          latest=""
-          if [ "${{ startsWith(github.ref, 'refs/tags/') }}" = "true" ]; then
-            latest="--tag ghcr.io/leqwin/monbooru:latest${{ matrix.suffix }}"
-          fi
-          docker buildx imagetools create $latest \
-            --tag ghcr.io/leqwin/monbooru:${{ github.ref_name }}${{ matrix.suffix }} \
-            ghcr.io/${{ steps.img.outputs.NAME }}:${{ github.ref_name }}${{ matrix.suffix }}
-
   release:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')

@@ -54,7 +54,7 @@ func (s *Server) setupMiddleware(next http.Handler) http.Handler {
 		// An API client would take the wizard's HTML 200 for an answer,
 		// so it gets a JSON refusal.
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			contract.WriteError(w, http.StatusConflict, contract.CodeSetupRequired, "monbooru has not been set up yet")
+			contract.WriteError(w, http.StatusConflict, contract.CodeSetupRequired, "Mebooru has not been set up yet")
 			return
 		}
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)

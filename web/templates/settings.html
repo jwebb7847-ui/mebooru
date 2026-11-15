@@ -132,7 +132,7 @@
         </div>
         <div class="field">
           <label>Where received files go</label>
-          <span class="field-hint">Uploads, and files sent by monloader or the API.</span>
+          <span class="field-hint">Uploads, and files sent by Meloader or the API.</span>
           <div class="dest-row">
             <div class="dest-part">
               <label for="default_upload_folder">folder</label>
@@ -1153,10 +1153,10 @@
           onsubmit="setTimeout(function(){document.getElementById('gallery-export-dialog').close()}, 100)">
       <p class="dlg-title">Export gallery <strong id="gallery-export-src"></strong>{{template "webui/dialog_x"}}</p>
       <div class="field">
-        <label><input type="radio" name="format" value="db" checked> Database (.db): SQLite snapshot, monbooru format</label>
+        <label><input type="radio" name="format" value="db" checked> Database (.db): SQLite snapshot, Mebooru format</label>
       </div>
       <div class="field">
-        <label><input type="radio" name="format" value="json"> JSON (.json): human-readable dump, monbooru format</label>
+        <label><input type="radio" name="format" value="json"> JSON (.json): human-readable dump, Mebooru format</label>
       </div>
       <div class="field">
         <label><input type="radio" name="format" value="light"> Light (.json): images<->tags only, no monbooru-specific data, missing images left out</label>
@@ -1699,7 +1699,7 @@
       {{template "webui/auth_password_section" (dict "AuthEnabled" $cfg.Auth.EnablePassword "HasPassword" (ne $cfg.Auth.PasswordHash "") "Pinned" (or ($cfg.EnvPinned "auth.password_hash") ($cfg.EnvPinned "auth.enable_password")))}}
       <div class="settings-sub">
         <h4>API Tokens</h4>
-        <p class="field-hint">For scripts and apps that talk to monbooru. A token is shown once, when you create it.</p>
+        <p class="field-hint">For scripts and apps that talk to Mebooru. A token is shown once, when you create it.</p>
         {{template "webui/auth_tokens" (dict "Tokens" $cfg.Auth.Tokens)}}
         <form hx-post="/settings/auth/tokens" hx-target="#flash-auth" hx-swap="innerHTML" style="margin-top:8px"
               hx-on:token-created="this.reset()">
@@ -1754,7 +1754,7 @@
             <tbody>
               {{template "maintenance_row" dict "Title" "Compute hashes" "Desc" "Compute the hashes used to find look-alikes and known images, for images missing them" "URL" "/settings/maintenance/compute-hashes" "Verb" "Compute" "Mark" "long job" "JobKick" true "Confirm" "Compute the missing perceptual hashes and md5 digests?" "ConfirmDanger" "The md5 pass reads every file in the gallery from disk. Long-running; blocks other jobs until it finishes. Safe to cancel and resume." "ConfirmOK" "Compute"}}
               {{template "maintenance_row" dict "Title" "Meta tags" "Desc" "Add highres, animated, greyscale... to existing images; new images get them automatically" "URL" "/settings/maintenance/meta-tags" "Verb" "Generate" "Mark" "long job" "JobKick" true "Confirm" "Derive meta tags for every image in this gallery?" "ConfirmDanger" "Reads a thumbnail per image. Long-running; blocks other jobs until it finishes. Safe to cancel and resume." "ConfirmOK" "Generate"}}
-              {{template "maintenance_row" dict "Title" "Remove meta tags" "Desc" "Remove those tags again; a tag a source also added stays" "URL" "/settings/maintenance/meta-tags/remove" "Verb" "Remove" "Mark" "long job" "Danger" true "JobKick" true "Confirm" "Remove every meta tag monbooru derived?" "ConfirmDanger" "Tags you added by hand, and tags a source also vouches for, are kept." "ConfirmOK" "Remove"}}
+              {{template "maintenance_row" dict "Title" "Remove meta tags" "Desc" "Remove those tags again; a tag a source also added stays" "URL" "/settings/maintenance/meta-tags/remove" "Verb" "Remove" "Mark" "long job" "Danger" true "JobKick" true "Confirm" "Remove every meta tag Mebooru derived?" "ConfirmDanger" "Tags you added by hand, and tags a source also vouches for, are kept." "ConfirmOK" "Remove"}}
               {{template "maintenance_row" dict "Title" "Index ComfyUI workflows" "Desc" "Rebuild what comfyui: searches look through; new images are indexed automatically" "URL" "/settings/maintenance/index-workflows" "Verb" "Index" "Mark" "long job" "JobKick" true "Confirm" "Rebuild the ComfyUI workflow index?" "ConfirmDanger" "Re-reads every stored workflow. Long-running; blocks other jobs until it finishes. Safe to cancel and resume." "ConfirmOK" "Index"}}
               {{template "maintenance_row" dict "Title" "Re-extract metadata" "Desc" "Read prompts and generation settings from every file again" "URL" "/settings/maintenance/re-extract-metadata" "Verb" "Re-extract" "Mark" "long job" "Confirm" "Re-parse metadata for every image in this gallery?" "ConfirmDanger" "Long-running job; blocks other jobs until it finishes." "ConfirmOK" "Re-extract"}}
             </tbody>
@@ -1768,7 +1768,7 @@
           <div class="table-scroll">
           <table class="maintenance-table">
             <tbody>
-              {{template "maintenance_row" dict "Title" "Look up unsourced images" "Accent" "peer-accent" "Desc" "Run the scheduled lookup now on the images that are due" "URL" "/settings/maintenance/lookup-due" "Verb" "Look up" "JobKick" true "Confirm" "Look up the images that are due now?" "ConfirmDanger" "Online lookups count against monloader's daily budget." "ConfirmOK" "Look up" "Disabled" (not .MonloaderUsable) "DisabledReason" (monloaderOffReason .MonloaderConn) "MlGated" true}}
+              {{template "maintenance_row" dict "Title" "Look up unsourced images" "Accent" "peer-accent" "Desc" "Run the scheduled lookup now on the images that are due" "URL" "/settings/maintenance/lookup-due" "Verb" "Look up" "JobKick" true "Confirm" "Look up the images that are due now?" "ConfirmDanger" "Online lookups count against Meloader's daily budget." "ConfirmOK" "Look up" "Disabled" (not .MonloaderUsable) "DisabledReason" (monloaderOffReason .MonloaderConn) "MlGated" true}}
             </tbody>
           </table>
           </div>
@@ -1781,7 +1781,7 @@
           <table class="maintenance-table">
             <tbody>
               {{template "maintenance_row" dict "Title" "Vacuum database" "Desc" "Shrink the database file after deleting many images" "URL" "/settings/maintenance/vacuum-db" "Verb" "Vacuum" "Mark" "long job" "Confirm" "Compact the SQLite database now?" "ConfirmDanger" "Holds a database lock for the duration of the VACUUM; other jobs and queries will wait." "ConfirmOK" "Vacuum"}}
-              {{template "maintenance_row" dict "Title" "Free memory" "Desc" "Release memory monbooru holds, including a loaded tagger model" "URL" "/settings/maintenance/free-memory" "Verb" "Free"}}
+              {{template "maintenance_row" dict "Title" "Free memory" "Desc" "Release memory Mebooru holds, including a loaded tagger model" "URL" "/settings/maintenance/free-memory" "Verb" "Free"}}
             </tbody>
           </table>
           </div>
@@ -1916,7 +1916,7 @@
         {{if .MonloaderPaired}}
         <div class="field">
           <input type="hidden" name="lookup_switches" value="1">
-          <label class="peer-accent{{if not .MonloaderUsable}} label-off{{end}}"{{if not .MonloaderUsable}} title="{{monloaderOffReason .MonloaderConn}}"{{else if .MonloaderPTRSyncing}} title="monloader's PTR index is still syncing"{{else if not .MonloaderPTR}} title="the PTR index is off on monloader"{{end}}><input type="checkbox" name="lookup_ptr"{{if $sched.LookupPTR}} checked{{end}}> Look up unsourced images in the Public Tag Repository</label>
+          <label class="peer-accent{{if not .MonloaderUsable}} label-off{{end}}"{{if not .MonloaderUsable}} title="{{monloaderOffReason .MonloaderConn}}"{{else if .MonloaderPTRSyncing}} title="Meloader's PTR index is still syncing"{{else if not .MonloaderPTR}} title="the PTR index is off on Meloader"{{end}}><input type="checkbox" name="lookup_ptr"{{if $sched.LookupPTR}} checked{{end}}> Look up unsourced images in the Public Tag Repository</label>
         </div>
         <div class="field">
           <label class="peer-accent{{if not .MonloaderUsable}} label-off{{end}}"{{if not .MonloaderUsable}} title="{{monloaderOffReason .MonloaderConn}}"{{end}}><input type="checkbox" name="lookup_booru"{{if $sched.LookupBooru}} checked{{end}}> Look up unsourced images on online boorus</label>

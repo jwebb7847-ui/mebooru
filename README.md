@@ -49,21 +49,23 @@ Designed for organizing your local media collection: images, videos, animated GI
 - **Optional password login**
 - **REST API** with scoped tokens, an OpenAPI spec, and built-in docs
 - **Plugins and themes**: drop one in the plugins or themes folder and turn it on in Settings; Mebooru launches and supervises plugins for you
-- **Downloads and reverse lookup** through the optional [monloader](#related-applications) companion
+- **Downloads and reverse lookup** through the optional [Meloader](#related-applications) companion
 
 ## Install
 
 Mebooru is currently developed and verified from source on Apple Silicon macOS. Its upstream Monbooru foundation also supports Linux (x86_64, arm64) and Windows (x86_64). Once started, Mebooru is available at `http://localhost:8455`.
 
+Build from the `mebooru-foundation` branch with `go build -o mebooru ./cmd/monbooru`. The command directory and default config name retain their historical spelling.
+
 ### Open Mebooru with Meloader
 
-On macOS and Linux, build Meloader from its repository and pair it with Mebooru once. To start
+On macOS and Linux, build [Meloader](https://github.com/jwebb7847-ui/meloader) from its repository and pair it with Mebooru once. To start
 your existing Meloader configuration when Mebooru opens, set these paths
 in Mebooru's config:
 
 ```toml
 [desktop]
-meloader_binary = "/absolute/path/to/monloader"
+meloader_binary = "/absolute/path/to/meloader"
 meloader_config = "/absolute/path/to/monloader.toml"
 ```
 
@@ -85,11 +87,11 @@ the same companion options when restarting Mebooru, or start Meloader in its
 own terminal with the same configuration. **Settings → Plugins → Save
 addresses** updates the connection settings for the existing companion.
 
+New environment settings can use `MEBOORU_`, such as `MEBOORU_SERVER_BIND_ADDRESS` and `MEBOORU_MELOADER_API_URL`. Existing `MONBOORU_` variables still work. When both are set to valid values, the new name takes precedence.
+
 ### Docker
 
-Edit the volume paths in [`docker/docker-compose.yml`](docker/docker-compose.yml), then run `docker compose up -d`.
-
-For faster auto-tagging, use the `latest-cuda` image (NVIDIA) or `latest-openvino` (Intel GPU).
+The inherited [Compose example](docker/docker-compose.yml) pulls upstream images by default. To run the forks, build both images from their fork checkouts and use those image tags in the Compose file. Keep the service names and volume paths when updating an existing deployment.
 
 ### Current installation status
 
@@ -116,7 +118,7 @@ The heavy features stay out of the main process. Auto-tagging is off until you i
 
 ## Related applications
 
-Mebooru works offline. These optional upstream companions add online features:
+Mebooru works offline. These optional applications add online features:
 
 ```mermaid
 ---
@@ -132,7 +134,7 @@ flowchart LR
 Public Tag Repository`"]
     sender["`**monsender**
 browser extension`"]
-    loader["`**monloader**
+    loader["`**Meloader**
 downloader`"]
     booru(["`**Mebooru**
 Your local booru`"])
@@ -157,8 +159,8 @@ contribute back`"| loader
 ```
 
 - **Mebooru**: this application; organizes, tags, and serves your collection.
-- **[monloader](https://github.com/monbooru/monloader)**: downloader. Fetches files and per-post metadata (via gallery-dl) from supported boorus and galleries and pushes them into a Mebooru gallery over the REST API. It also answers Mebooru's reverse lookups against boorus, IQDB, SauceNAO and the Hydrus Public Tag Repository, to backfill tags and sources; when a matched post has a better file than your local copy, one click replaces it in place. The PTR connection can also pull tag aliases and implications into your catalog.
-- **[monsender](https://github.com/monbooru/monsender)**: browser extension; sends the URL of the page you're browsing to monloader.
+- **[Meloader](https://github.com/jwebb7847-ui/meloader)**: downloader. Fetches files and per-post metadata (via gallery-dl) from supported boorus and galleries and pushes them into a Mebooru gallery over the REST API. It also answers Mebooru's reverse lookups against boorus, IQDB, SauceNAO and the Hydrus Public Tag Repository, to backfill tags and sources; when a matched post has a better file than your local copy, one click replaces it in place. The PTR connection can also pull tag aliases and implications into your catalog.
+- **[monsender](https://github.com/monbooru/monsender)**: browser extension; sends the URL of the page you're browsing to Meloader.
 - **[monbooru-plugins](https://github.com/monbooru/monbooru-plugins)**: community registry of plugins, themes and extra taggers.
 
 ## Contributing
@@ -192,7 +194,7 @@ This project is built on the work of others:
 - [SQLite](https://sqlite.org/), through the pure-Go [modernc.org/sqlite](https://gitlab.com/cznic/sqlite) driver, stores each gallery.
 - [ONNX Runtime](https://onnxruntime.ai/), through [onnxruntime_go](https://github.com/yalue/onnxruntime_go), runs the auto-tagger. The supported models are the work of [SmilingWolf](https://huggingface.co/SmilingWolf) (WD SwinV2 v3), [animetimm](https://huggingface.co/animetimm) (EVA02), [fancyfeast](https://huggingface.co/fancyfeast) (JoyTag), [Camais03](https://huggingface.co/Camais03) (Camie Tagger v2), and [PixAI](https://huggingface.co/pixai-labs) (PixAI Tagger v1.0, in [noaione](https://huggingface.co/noaione)'s ONNX export).
 - [ffmpeg](https://ffmpeg.org/) decodes video, AVIF and JPEG XL for thumbnails and hover previews; the bundled downloads carry a trimmed build of it from [ffmpeg-builds](https://github.com/monbooru/ffmpeg-builds), statically linked with [libwebp](https://chromium.googlesource.com/webm/libwebp), [dav1d](https://code.videolan.org/videolan/dav1d) and [libjxl](https://github.com/libjxl/libjxl).
-- monloader is mostly a wrapper for [gallery-dl](https://github.com/mikf/gallery-dl), which does the actual scraping. Reverse lookups by image similarity are answered by [IQDB](https://iqdb.org/) and [SauceNAO](https://saucenao.com/); md5 lookups by the boorus themselves. The PTR tag lookup syncs against the [Hydrus Public Tag Repository](https://hydrusnetwork.github.io/hydrus/PTR.html) (PTR) via [Hydrus Network](https://github.com/hydrusnetwork/hydrus)'s repository protocol; the tags, aliases, and implications it serves are the work of the hydrus community.
+- Meloader is mostly a wrapper for [gallery-dl](https://github.com/mikf/gallery-dl), which does the actual scraping. Reverse lookups by image similarity are answered by [IQDB](https://iqdb.org/) and [SauceNAO](https://saucenao.com/); md5 lookups by the boorus themselves. The PTR tag lookup syncs against the [Hydrus Public Tag Repository](https://hydrusnetwork.github.io/hydrus/PTR.html) (PTR) via [Hydrus Network](https://github.com/hydrusnetwork/hydrus)'s repository protocol; the tags, aliases, and implications it serves are the work of the hydrus community.
 - monsender's in-page image detection uses code from [ushiro](https://github.com/gary-host-laptop/ushiro) by gary-host-laptop and [behind!](https://github.com/kubuzetto/behind) by kubuzetto, originally under MPL-2.0.
 - The mondocs site is built with [Hugo](https://gohugo.io/).
 

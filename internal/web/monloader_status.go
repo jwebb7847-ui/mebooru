@@ -35,7 +35,7 @@ func (s *Server) monloaderStatusHandler(w http.ResponseWriter, r *http.Request) 
 func (s *Server) monloaderLight(conn, version, mismatch, seen string) webui.PeerLight {
 	paired := s.pairedWith(monloader.App)
 	l := webui.PeerLight{
-		Peer: monloader.App, Conn: conn, Version: version, Mismatch: mismatch, Seen: seen,
+		Peer: "Meloader", Conn: conn, Version: version, Mismatch: mismatch, Seen: seen,
 		StatusURL: "/internal/monloader-status",
 		PauseURL:  "/internal/monloader/disconnect", ResumeURL: "/internal/monloader/reconnect",
 		CheckNow: paired, Paired: paired,

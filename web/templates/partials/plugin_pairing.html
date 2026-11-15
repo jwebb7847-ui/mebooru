@@ -9,7 +9,7 @@
     <tbody>
       {{range .Pending}}
       <tr>
-        <td class="stack-head"><strong>{{.App}}</strong>{{if .Version}} <span class="field-hint">{{.Version}}</span>{{end}}
+        <td class="stack-head"><strong>{{.DisplayName}}</strong>{{if .Version}} <span class="field-hint">{{.Version}}</span>{{end}}
           {{if .Repair}}<span class="status-badge status-warn">re-pair</span>{{end}}</td>
         <td data-label="Source">{{.Source}}</td>
         <td data-label="Scopes">{{range $i, $s := .Scopes}}{{if $i}} {{end}}{{$s}}{{end}}</td>

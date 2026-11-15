@@ -108,7 +108,7 @@
     <main id="content">
 {{end}}
 
-{{define "footer_version"}}<span id="footer-version"{{if .OOB}} hx-swap-oob="true"{{end}} title="page loaded in {{pageLoadMs .D.RequestStart}} ms"><a href="{{.D.RepoURL}}" target="_blank" rel="noopener">monbooru{{if .D.Build}} ({{.D.Build}}){{end}}</a> {{.D.Version}}</span>{{end}}
+{{define "footer_version"}}<span id="footer-version"{{if .OOB}} hx-swap-oob="true"{{end}} title="page loaded in {{pageLoadMs .D.RequestStart}} ms"><a href="{{.D.RepoURL}}" target="_blank" rel="noopener">Mebooru{{if .D.Build}} ({{.D.Build}}){{end}}</a> {{.D.Version}}</span>{{end}}
 
 {{define "footer_hidden"}}<span id="footer-hidden" class="footer-hidden"{{if .OOB}} hx-swap-oob="true"{{end}}>{{with .N}}<span class="footer-sep-strong">::</span><span class="footer-hidden-n">{{.}} hidden<span class="footer-wide"> {{plural . "image" "images"}} in the current search</span></span>{{end}}</span>{{end}}
 
@@ -212,7 +212,7 @@
           <li data-when="#batch-bar.visible"><kbd>d</kbd><span>Download as a zip</span></li>
           <li data-when="#batch-bar.visible #batch-transfer"><kbd>T</kbd><span>Transfer</span></li>
           <li data-when="#batch-invert"><kbd>I</kbd><span>Invert</span></li>
-          <li data-when="#batch-bar.visible .peer-accent:not([disabled])"><kbd>L</kbd><span>Find tags (monloader)</span></li>
+          <li data-when="#batch-bar.visible .peer-accent:not([disabled])"><kbd>L</kbd><span>Find tags (Meloader)</span></li>
           <li data-when="#batch-bar.visible"><kbd>Delete</kbd><span>Delete</span></li>
           <li><kbd>Shift</kbd>+<kbd>click</kbd><span>Extend the selection</span></li>
           <li data-when=".plugin-card .plugin-btn, #plugin-batch-bar.visible .plugin-btn"><kbd>x</kbd><kbd>1-9</kbd><span>Run Nth plugin</span></li>

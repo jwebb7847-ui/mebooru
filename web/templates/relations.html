@@ -8,7 +8,7 @@
   <div class="relations-hub-cols">
     <section id="find" class="settings-section">
       <h3>Find relations</h3>
-      <p class="field-hint">Monbooru lists pairs of images that look alike or share unusual tags. Go through them one pair at a time and say how they are related.</p>
+      <p class="field-hint">Mebooru lists pairs of images that look alike or share unusual tags. Go through them one pair at a time and say how they are related.</p>
       {{- $emptyQueue := and (eq .Counts.QueueOpen 0) (eq .Counts.QueueSkipped 0) -}}
       <div class="relations-header-row">
         <form hx-post="/relations/find-pairs" hx-target="#flash-relations" hx-swap="innerHTML"

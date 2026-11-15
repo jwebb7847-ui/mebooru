@@ -230,7 +230,7 @@ func (s *Server) renderContribReceipt(w http.ResponseWriter, items []contract.Co
 	receipt, ok := monloader.ReadContribReceipt(items, resp.Results)
 	if !ok {
 		s.renderTemplate(w, "partials/ptr_contrib_flash.html", map[string]any{
-			"Err": fmt.Sprintf("monloader answered %d of %d items; check its contribution history", len(resp.Results), len(items)),
+			"Err": fmt.Sprintf("Meloader answered %d of %d items; check its contribution history", len(resp.Results), len(items)),
 		})
 		return
 	}

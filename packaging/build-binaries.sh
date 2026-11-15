@@ -21,7 +21,7 @@ build() {
     gui="-H windowsgui"
   fi
 
-  name="monbooru_${VERSION#v}_portable_${shape}_${os}_${arch}"
+  name="mebooru_${VERSION#v}_portable_${shape}_${os}_${arch}"
   dir="stage/$name"
   rm -rf "$dir"
   mkdir -p "$dir"
