@@ -10,7 +10,7 @@ Last reported by the operator on the Apple Silicon MacBook Air on 2026-11-14. Ve
 | Meloader | `$HOME/Documents/VSC/meloader-alias-qa` · detached at `574fd4e` for the alias Mac check | `$HOME/Library/Application Support/Monloader Audit Main Upgrade/monloader.toml` · `127.0.0.1:8456` |
 | gallery-dl | Isolated `1.32.19` executable | `$HOME/Library/Application Support/Meloader Validation/gallery-dl-1.32.19/bin/gallery-dl` |
 
-The repository Go modules declare Go 1.27.3. The last recorded Mac Go version was 1.27.4. The two apps use the upstream command names `monbooru` and `monloader`. Reuse the **Main Upgrade** audit state for the paired check.
+The repository Go modules declare Go 1.27.4. The last recorded Mac Go version was 1.27.4. The two apps use the upstream command names `monbooru` and `monloader`. Reuse the **Main Upgrade** audit state for the paired check.
 
 The earlier audit checkouts were `$HOME/Documents/VSC/meloader-rating-qa` at `3aa5aca`, `$HOME/Documents/VSC/meloader-item4-qa` at `0b7ff78`, and `$HOME/Documents/VSC/meloader-blacklist-qa` at `eb6edd3` for the Trace prefill check. The original Meloader audit state is in `$HOME/Library/Application Support/Monloader Audit`. See the [blacklist validation notes](blacklist-timing.md#live-mac-acceptance) and the [alias acceptance notes](derpibooru-filing.md#mac-alias-acceptance).
 
