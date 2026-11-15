@@ -54,7 +54,7 @@ func (s *Server) pairRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Contract > plugins.Contract {
-		msg := fmt.Sprintf("%s speaks plugin contract %d, this monbooru speaks %d", body.App, body.Contract, plugins.Contract)
+		msg := fmt.Sprintf("%s speaks plugin contract %d, this Mebooru speaks %d", body.App, body.Contract, plugins.Contract)
 		logx.Warnf("pairing: refused: %s", msg)
 		contract.WriteJSON(w, http.StatusConflict, contract.Error{Error: msg, Code: "contract_unsupported"})
 		return
@@ -198,7 +198,7 @@ func (s *Server) monloaderLightDisconnect(w http.ResponseWriter, r *http.Request
 		if err := s.setPluginPaused(monloader.App, true); err != nil {
 			logx.Errorf("pairing: pause failed: %v", err)
 		}
-		logx.Infof("pairing: monloader link paused from %s", session.ClientIP(r))
+		logx.Infof("pairing: Meloader link paused from %s", session.ClientIP(r))
 	}
 	s.renderMonloaderLight(w, r, peer.ConnPaused, "")
 }
@@ -210,7 +210,7 @@ func (s *Server) monloaderLightReconnect(w http.ResponseWriter, r *http.Request)
 	if err := s.setPluginPaused(monloader.App, false); err != nil {
 		logx.Errorf("pairing: resume failed: %v", err)
 	}
-	logx.Infof("pairing: monloader link resumed from %s", session.ClientIP(r))
+	logx.Infof("pairing: Meloader link resumed from %s", session.ClientIP(r))
 	s.renderMonloaderLight(w, r, "", "")
 }
 
@@ -224,7 +224,7 @@ func (s *Server) teardownMonloaderPairing(r *http.Request) error {
 			logx.Errorf("pairing: remove failed: %v", err)
 		}
 	})
-	logx.Infof("pairing: removed monloader pairing from %s", session.ClientIP(r))
+	logx.Infof("pairing: removed Meloader pairing from %s", session.ClientIP(r))
 	return notifyErr
 }
 

@@ -36,7 +36,7 @@ func runHealthcheck(argv []string) {
 
 // Not config.LoadWithDefaults, which writes a default config where none exists.
 func resolveHealthAddr(configPath string) string {
-	addr := os.Getenv("MONBOORU_SERVER_BIND_ADDRESS")
+	addr := cmp.Or(os.Getenv("MEBOORU_SERVER_BIND_ADDRESS"), os.Getenv("MONBOORU_SERVER_BIND_ADDRESS"))
 	if addr == "" && configPath != "" {
 		var mc struct {
 			Server struct {

@@ -294,7 +294,7 @@ func (s *Server) tagRulesAnswers(ctx context.Context, tag *models.Tag, aliases [
 		return nil, "old"
 	}
 	if err != nil || len(answers) == 0 {
-		logx.Warnf("monloader rules for %s: %v", tag.Name, err)
+		logx.Warnf("Meloader rules for %s: %v", tag.Name, err)
 		return nil, "unreachable"
 	}
 	return answers, "live"
@@ -313,13 +313,13 @@ func (s *Server) buildTagPath(tag *models.Tag, aliases []models.Tag, answers []m
 		spelled, quiet = aliasLanes(tag.CategoryName, aliases, answers[1:], web, catColor)
 	}
 	if p.Monloader != "live" {
-		note := pathLane{Kind: "note", Name: "monloader", NameClass: "dim",
+		note := pathLane{Kind: "note", Name: "Meloader", NameClass: "dim",
 			Span: &pathBox{Parts: []pathPart{part("not paired, no site lanes  ", "dim"), part("[pair…]", "link")}, Href: "/settings#plugins"}}
 		switch p.Monloader {
 		case "unreachable":
 			note.Span = &pathBox{Parts: []pathPart{part("unreachable, no site lanes", "dim")}}
 		case "old":
-			note.Span = &pathBox{Parts: []pathPart{part("monloader v1.14.0 or newer shows site lanes", "dim")}}
+			note.Span = &pathBox{Parts: []pathPart{part("An updated Meloader build shows site lanes", "dim")}}
 		}
 		own = []pathLane{note}
 	}
@@ -443,7 +443,7 @@ func siteLanes(name, cat string, rules monloader.TagRules, web string, catColor 
 		lanes = append(lanes, lane)
 	}
 	if len(lanes) == 0 {
-		lanes = []pathLane{{Kind: "note", Name: "monloader", NameClass: "dim", Span: &pathBox{Parts: []pathPart{part("no site configured", "dim")}}}}
+		lanes = []pathLane{{Kind: "note", Name: "Meloader", NameClass: "dim", Span: &pathBox{Parts: []pathPart{part("no site configured", "dim")}}}}
 	}
 	return lanes
 }
@@ -974,11 +974,11 @@ func tagPathSVG(tag *models.Tag, p tagPath, avail float64) template.HTML {
 	b.f(`<defs><marker id="tp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="tp-dim"/></marker></defs>`)
 	if ml {
 		b.f(`<line x1="%g" y1="6" x2="%g" y2="6" class="tp-sml" stroke-width="2"/>`, c.x1, c.x3+tp3W)
-		b.text(c.x1, 20, "set in monloader", "ml", 11, "start", true)
+		b.text(c.x1, 20, "set in Meloader", "ml", 11, "start", true)
 		b.text(c.x3+tp3W, 20, "Settings → Sites, Rules", "dim", 10, "end", false)
 	}
 	b.f(`<line x1="%g" y1="6" x2="%g" y2="6" class="tp-slink" stroke-width="2"/>`, c.tx, c.gx+c.gw)
-	b.text(c.tx, 20, "set in monbooru", "link", 11, "start", true)
+	b.text(c.tx, 20, "set in Mebooru", "link", 11, "start", true)
 	where := "this page"
 	if p.hasTaggerLane() {
 		where = "Settings → Auto-Tagger · this page"

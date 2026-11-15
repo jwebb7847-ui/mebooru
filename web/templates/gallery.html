@@ -264,7 +264,7 @@
 
     <label class="batch-lookup-op"><input type="radio" name="batch-lookup-mode" value="hash" onchange="updateBatchLookupSummary()"> Find each image on boorus by its hash</label>
     <div class="batch-lookup-sub">
-      <label{{if not .MonloaderPTR}} title="{{if .MonloaderPTRSyncing}}the Public Tag Repository index is still syncing{{else if not .MonloaderUsable}}{{monloaderOffReason .MonloaderConn}}{{else}}the PTR index is off on monloader{{end}}"{{end}}><input type="checkbox" id="batch-lookup-ptr"{{if .MonloaderPTR}} checked{{else}} disabled{{end}} onchange="updateBatchLookupSummary()"> Public Tag Repository <span class="field-hint">offline copy, free</span></label>
+      <label{{if not .MonloaderPTR}} title="{{if .MonloaderPTRSyncing}}the Public Tag Repository index is still syncing{{else if not .MonloaderUsable}}{{monloaderOffReason .MonloaderConn}}{{else}}the PTR index is off on Meloader{{end}}"{{end}}><input type="checkbox" id="batch-lookup-ptr"{{if .MonloaderPTR}} checked{{else}} disabled{{end}} onchange="updateBatchLookupSummary()"> Public Tag Repository <span class="field-hint">offline copy, free</span></label>
       <label><input type="checkbox" id="batch-lookup-booru" checked onchange="updateBatchLookupSummary()"> Online boorus <span class="field-hint">uses each site's request limit, one request per image</span></label>
       <label><input type="checkbox" id="batch-lookup-unsourced" checked onchange="updateBatchLookupSummary()"> Only images with no source <span class="field-hint" id="batch-lookup-unsourced-count"></span></label>
     </div>

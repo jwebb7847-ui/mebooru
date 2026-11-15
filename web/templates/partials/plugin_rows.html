@@ -4,7 +4,7 @@
   <div class="peer-row">
     <div class="peer-head">
       {{if .Paired}}<span class="footer-dot footer-dot-{{.Conn}}" title="{{.Conn}}"></span>{{end}}
-      <strong>{{.Name}}</strong>
+      <strong>{{if .Companion}}Meloader{{else}}{{.Name}}{{end}}</strong>
       {{if .Version}}<span class="field-hint">{{.Version}}</span>{{end}}
       {{if .Companion}}<span class="status-badge status-ok">companion</span>{{end}}
       {{if .SelfManaged}}<span class="status-badge status-faint">self-managed</span>{{end}}
@@ -47,7 +47,7 @@
     {{if .Awaiting}}
     <div class="peer-line field-hint">Approved. Waiting for {{.Name}} to finish.</div>
     {{else if and (not .Paired) .Companion}}
-    <div class="peer-line field-hint">Not paired yet. In monloader click "Connect to monbooru", then approve the request above.</div>
+    <div class="peer-line field-hint">Not paired yet. In Meloader click "Connect to Mebooru", then approve the request above.</div>
     {{else if and (not .Paired) (not .Refused)}}
     <div class="peer-line field-hint">Not paired yet. Its buttons appear once it offers to pair and you approve it above.</div>
     {{end}}
@@ -68,7 +68,7 @@
       {{if or (not .Installed) .Enabled}}
       <form hx-post="/settings/plugins/{{.Name}}/remove" hx-target="#plugin-rows" hx-swap="outerHTML"
             hx-confirm="Remove the {{.Name}} pairing?" data-confirm-ok="Remove"
-            data-confirm-danger="{{if .Installed}}{{.Name}} stops, and must pair again when you enable it.{{else}}{{.Name}} must pair again before it can call monbooru.{{end}}" style="display:inline">
+            data-confirm-danger="{{if .Installed}}{{.Name}} stops, and must pair again when you enable it.{{else}}{{if .Companion}}Meloader{{else}}{{.Name}}{{end}} must pair again before it can call Mebooru.{{end}}" style="display:inline">
         <button type="submit" class="btn-sm btn-danger">Remove</button>
       </form>
       {{end}}

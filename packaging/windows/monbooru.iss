@@ -1,7 +1,7 @@
-#define MyAppName "Monbooru"
+#define MyAppName "Mebooru"
 #define MyAppExeName "monbooru.exe"
-#define MyAppPublisher "monbooru"
-#define MyAppURL "https://github.com/monbooru/monbooru"
+#define MyAppPublisher "Mebooru"
+#define MyAppURL "https://github.com/jwebb7847-ui/mebooru"
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
@@ -18,12 +18,12 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={autopf}\Monbooru
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
 OutputDir=..\..\dist
-OutputBaseFilename=monbooru_{#MyAppVersion}_{#MyAppTools}_windows_amd64_setup
+OutputBaseFilename=mebooru_{#MyAppVersion}_{#MyAppTools}_windows_amd64_setup
 SetupIconFile=..\icons\monbooru.ico
 Compression=lzma2
 SolidCompression=yes

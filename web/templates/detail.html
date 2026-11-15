@@ -588,8 +588,8 @@
                   {{end}}onclick="clearSlots('autotag-error'); document.getElementById('autotag-dialog').showModal()">Auto-tag</button>
           {{end}}
           {{if .MonloaderPaired}}
-          <button type="button" class="btn-hash-lookup peer-accent" data-peer-title="Find tags and sources for this file on online boorus via monloader"
-                  {{if .MonloaderUsable}}title="Find tags and sources for this file on online boorus via monloader"
+          <button type="button" class="btn-hash-lookup peer-accent" data-peer-title="Find tags and sources for this file on online boorus via Meloader"
+                  {{if .MonloaderUsable}}title="Find tags and sources for this file on online boorus via Meloader"
                   {{else}}disabled title="{{monloaderOffReason .MonloaderConn}}"
                   {{end}}hx-post="/images/{{.Image.ID}}/lookup" hx-vals='{"backend":"booru"}'
                   hx-target="#fetch-pending" hx-swap="innerHTML"
@@ -851,12 +851,12 @@
                           hx-target="#fetch-status" hx-swap="innerHTML"
                           style="display:inline">
                       <input type="hidden" name="url" value="{{.URL}}">
-                      <button type="submit" class="btn-link-accent peer-accent" data-peer-title="Refresh tags from this source via monloader"{{if not $.MonloaderUsable}} disabled{{end}} title="{{if $.MonloaderUsable}}Refresh tags from this source via monloader{{else}}{{monloaderOffReason $.MonloaderConn}}{{end}}">[refresh]</button>
+                      <button type="submit" class="btn-link-accent peer-accent" data-peer-title="Refresh tags from this source via Meloader"{{if not $.MonloaderUsable}} disabled{{end}} title="{{if $.MonloaderUsable}}Refresh tags from this source via Meloader{{else}}{{monloaderOffReason $.MonloaderConn}}{{end}}">[refresh]</button>
                     </form>{{else if and $.MonloaderPaired (isPTRSite .Site)}}<form hx-post="/images/{{$.Image.ID}}/lookup"
                           hx-target="#fetch-status" hx-swap="innerHTML"
                           style="display:inline">
                       <input type="hidden" name="backend" value="ptr">
-                      <button type="submit" class="btn-link-accent peer-accent" data-peer-title="Refresh tags from the Public Tag Repository via monloader"{{if not $.MonloaderUsable}} disabled{{end}} title="{{if $.MonloaderUsable}}Refresh tags from the Public Tag Repository via monloader{{else}}{{monloaderOffReason $.MonloaderConn}}{{end}}">[refresh]</button>
+                      <button type="submit" class="btn-link-accent peer-accent" data-peer-title="Refresh tags from the Public Tag Repository via Meloader"{{if not $.MonloaderUsable}} disabled{{end}} title="{{if $.MonloaderUsable}}Refresh tags from the Public Tag Repository via Meloader{{else}}{{monloaderOffReason $.MonloaderConn}}{{end}}">[refresh]</button>
                     </form>{{end}}
                       {{if and $.MonloaderPaired (upgradable .)}}<form hx-post="/images/{{$.Image.ID}}/replace"
                           hx-target="#fetch-status" hx-swap="innerHTML"
@@ -867,7 +867,7 @@
                           style="display:inline">
                       <input type="hidden" name="site" value="{{.Site}}">
                       <input type="hidden" name="post_id" value="{{.PostID}}">
-                      <button type="submit" class="btn-link-accent peer-accent" data-peer-title="Replace the local file with the one this source serves via monloader"{{if not $.MonloaderUsable}} disabled{{end}} title="{{if $.MonloaderUsable}}Replace the local file with the one this source serves via monloader{{else}}{{monloaderOffReason $.MonloaderConn}}{{end}}">[upgrade]</button>
+                      <button type="submit" class="btn-link-accent peer-accent" data-peer-title="Replace the local file with the one this source serves via Meloader"{{if not $.MonloaderUsable}} disabled{{end}} title="{{if $.MonloaderUsable}}Replace the local file with the one this source serves via Meloader{{else}}{{monloaderOffReason $.MonloaderConn}}{{end}}">[upgrade]</button>
                     </form>{{end}}
                       {{if and $.MonloaderPaired .UpgradeKept}}{{template "partials/source_remove_form.html" dict "ImageID" $.Image.ID "CSRFToken" $.CSRFToken "Fields" (dict "site" .Site "post_id" .PostID "keep" "0") "Action" "sources/keep" "Title" "Offer this upgrade again" "Label" "[allow upgrade]"}}{{end}}
                     </span>

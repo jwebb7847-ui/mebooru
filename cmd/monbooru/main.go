@@ -151,7 +151,7 @@ func main() {
 	srv, err := internalweb.NewServer(cfg, *configPath, jobManager, profile)
 	if err != nil {
 		if freshConfig && inContainer() {
-			logx.Warnf("monbooru wrote %s with default settings meant for the docker image.", *configPath)
+			logx.Warnf("Mebooru wrote %s with default settings meant for the docker image.", *configPath)
 			logx.Warnf("edit gallery_path (your images), paths.data_path (db + thumbnails) and paths.model_path (optional auto-taggers), then run it again. docs: %s", internalweb.DocURL)
 		}
 		fatalf("creating web server: %v", err)
@@ -174,7 +174,7 @@ func main() {
 
 	srvErr := make(chan error, 1)
 	go func() {
-		logx.Infof("monbooru listening on %s", cfg.Server.BindAddress)
+		logx.Infof("Mebooru listening on %s", cfg.Server.BindAddress)
 		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			srvErr <- err
 		}

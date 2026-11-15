@@ -111,6 +111,9 @@ func (s *Server) monloaderRow() pluginRowView {
 	paused := s.cfg.Monloader.Paused
 	s.cfgMu.RUnlock()
 	name, scopes := s.pairedTokenInfo(monloader.App)
+	if name == monloader.App+" (paired)" {
+		name = "Meloader (paired)"
+	}
 	return pluginRowView{
 		Name:         monloader.App,
 		Version:      ml.Version,
@@ -173,15 +176,25 @@ func (s *Server) pairViewData() map[string]any {
 func (s *Server) pairNotice() webui.PairNotice {
 	n := webui.PairNotice{Href: "/settings#plugins"}
 	for _, req := range s.pairs.ListPending() {
-		n.Items = append(n.Items, webui.PairItem{App: req.App, Source: req.Source, Version: req.Version, Repair: req.Repair, ExpiresAt: req.ExpiresAt()})
+		n.Items = append(n.Items, webui.PairItem{App: peerDisplayName(req.App), Source: req.Source, Version: req.Version, Repair: req.Repair, ExpiresAt: req.ExpiresAt()})
 	}
 	return n
+}
+
+// Keep pairing actions keyed by the protocol name.
+func peerDisplayName(app string) string {
+	if app == monloader.App {
+		return "Meloader"
+	}
+	return app
 }
 
 type pendingOffer struct {
 	peer.Req
 	SessionNote bool
 }
+
+func (o pendingOffer) DisplayName() string { return peerDisplayName(o.App) }
 
 // A managed plugin is a process on this box, which outranks a session
 // already. The offer's name is unauthenticated, so it counts as one only

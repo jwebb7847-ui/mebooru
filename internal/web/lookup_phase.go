@@ -18,7 +18,7 @@ func (s *Server) lookupDuePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.ml.Usable() {
-		writeInlineFlash(w, "err", "monloader is unreachable")
+		writeInlineFlash(w, "err", "Meloader is unreachable")
 		return
 	}
 	s.cfgMu.RLock()

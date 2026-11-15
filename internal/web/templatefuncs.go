@@ -15,6 +15,7 @@ import (
 	"github.com/monbooru/monbooru/internal/models"
 	"github.com/monbooru/monbooru/internal/peer"
 	"github.com/monbooru/monbooru/internal/search"
+	"github.com/monbooru/monbooru/internal/shared/contract"
 	"github.com/monbooru/monbooru/internal/shared/webui"
 	"github.com/monbooru/monbooru/internal/tags"
 	"github.com/monbooru/monbooru/internal/upgrade"
@@ -304,17 +305,18 @@ var addedViaLabels = map[string]string{
 	models.OriginIngest:   "found on disk",
 	models.OriginExtract:  "extracted from an archive",
 	models.OriginGenerate: "built from a collection",
+	contract.AppMonloader: "Meloader",
 }
 
 func addedViaLabel(origin string) string { return cmp.Or(addedViaLabels[origin], origin) }
 
 var monloaderOffReasons = map[string]string{
-	peer.ConnPaused:   "monloader is paused",
-	peer.ConnRejected: "monloader rejected the token",
+	peer.ConnPaused:   "Meloader is paused",
+	peer.ConnRejected: "Meloader rejected the token",
 }
 
 func monloaderOffReason(conn string) string {
-	return cmp.Or(monloaderOffReasons[conn], "monloader is not responding")
+	return cmp.Or(monloaderOffReasons[conn], "Meloader is not responding")
 }
 
 // At most four glyphs; the unit promotes at 999500 because anything

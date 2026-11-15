@@ -4,7 +4,7 @@
   {{range $l.Backends}}
   {{if .Tried}}
   <div class="field-hint lookup-history">{{.Label}}:
-    {{if not .QueuedAt.IsZero}}queued {{localTime .QueuedAt}}, waiting on monloader.
+    {{if not .QueuedAt.IsZero}}queued {{localTime .QueuedAt}}, waiting on Meloader.
     {{else if .Exhausted}}nothing found after {{.Attempts}} tries, last on {{localDate .LastAt}}.
     {{else}}{{lookupResultLabel .LastResult}} on {{localDate .LastAt}}{{if and $l.Candidate .Retrying}}, due again {{localDate .NextDueAt}}{{end}}.{{end}}
     {{if and .Exhausted $l.Candidate}}<form hx-post="/images/{{$l.ImageID}}/scheduled-lookup/reset" hx-target="#scheduled-lookup" hx-swap="outerHTML"

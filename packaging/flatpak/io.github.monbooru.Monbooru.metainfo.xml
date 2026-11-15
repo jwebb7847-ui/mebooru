@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.monbooru.Monbooru</id>
-  <name>Monbooru</name>
+  <name>Mebooru</name>
   <summary>Lightweight and fast private booru</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>AGPL-3.0-only</project_license>
@@ -14,8 +14,8 @@
       and a manga reader. The interface runs in a browser tab instead of as a standalone app.
     </p>
     <p>
-      Monbooru itself never contacts the internet. Downloading from boorus and
-      reverse image lookup live in monloader, a separate optional companion.
+      Mebooru itself never contacts the internet. Downloading from boorus and
+      reverse image lookup live in Meloader, a separate optional companion.
     </p>
   </description>
 
@@ -26,9 +26,9 @@
     <category>Viewer</category>
   </categories>
 
-  <url type="homepage">https://github.com/monbooru/monbooru</url>
-  <url type="bugtracker">https://github.com/monbooru/monbooru/issues</url>
-  <url type="help">https://monbooru.github.io/mondocs/index.html</url>
+  <url type="homepage">https://github.com/jwebb7847-ui/mebooru</url>
+  <url type="bugtracker">https://github.com/jwebb7847-ui/mebooru/issues</url>
+  <url type="help">https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md</url>
 
   <screenshots>
     <screenshot type="default">

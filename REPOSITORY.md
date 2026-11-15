@@ -1,1 +1,1 @@
-https://github.com/monbooru/monbooru
+https://github.com/jwebb7847-ui/mebooru
