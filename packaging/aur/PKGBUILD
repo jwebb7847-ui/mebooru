@@ -2,9 +2,9 @@
 pkgname=monloader
 pkgver=0.0.0
 pkgrel=1
-pkgdesc='Downloader companion for monbooru, wrapping gallery-dl'
+pkgdesc='Downloader companion for Mebooru, wrapping gallery-dl'
 arch=('x86_64' 'aarch64')
-url='https://github.com/monbooru/monloader'
+url='https://github.com/jwebb7847-ui/meloader'
 license=('AGPL-3.0-only')
 depends=('glibc' 'gallery-dl>=1.32.19')
 makedepends=('go')
@@ -12,7 +12,7 @@ source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
 
 build() {
-  cd "$pkgname-$pkgver"
+  cd "${url##*/}-$pkgver"
   export CGO_CPPFLAGS="${CPPFLAGS}"
   export CGO_CFLAGS="${CFLAGS}"
   export CGO_CXXFLAGS="${CXXFLAGS}"
@@ -31,7 +31,7 @@ build() {
 }
 
 package() {
-  cd "$pkgname-$pkgver"
+  cd "${url##*/}-$pkgver"
   install -Dm755 "$pkgname" "$pkgdir/usr/bin/$pkgname"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "packaging/$pkgname.desktop" \
