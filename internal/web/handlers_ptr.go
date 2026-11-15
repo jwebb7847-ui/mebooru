@@ -31,7 +31,6 @@ type ptrEngine interface {
 	AccessKey() string
 	SetAccessKey(key string)
 	DataPath() string
-	SetDataPath(path string) bool
 	Address() string
 	SetAddress(addr string) bool
 	SetMinFreeGB(gb int)
@@ -156,11 +155,12 @@ func (s *Server) ptrRetry(w http.ResponseWriter, r *http.Request) {
 	s.ptrRedirect(w, r, "ok", "retrying ptr sync")
 }
 
-// While an index is open, the data path and the address wait for a restart.
+// The index directory is configured at launch. A running index keeps its
+// repository address until restart.
 func (s *Server) savePTR(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimSpace(r.FormValue("data_path"))
-	if path == "" {
-		s.refuseSave(w, r, "Data path required.")
+	path := s.ptr.DataPath()
+	if r.Form.Has("data_path") && strings.TrimSpace(r.FormValue("data_path")) != path {
+		s.refuseSave(w, r, "Set the PTR data path in the config file or environment, then restart Meloader.")
 		return
 	}
 	// An absent field keeps its stored value; a posted one that does not
@@ -168,10 +168,10 @@ func (s *Server) savePTR(w http.ResponseWriter, r *http.Request) {
 	var bad []string
 	var edits []func(*config.Config)
 	if r.Form.Has("address") {
-		if v := strings.TrimSpace(r.FormValue("address")); config.IsHTTPURL(v) {
+		if v := strings.TrimSpace(r.FormValue("address")); config.ValidPTRAddress(v) {
 			edits = append(edits, func(c *config.Config) { c.PTR.Address = v })
 		} else {
-			bad = append(bad, "address must be an http(s) URL")
+			bad = append(bad, "address must use HTTPS, or HTTP with a literal loopback IP")
 		}
 	}
 	if r.Form.Has("fetch_sleep") {
@@ -192,8 +192,6 @@ func (s *Server) savePTR(w http.ResponseWriter, r *http.Request) {
 		s.refuseSave(w, r, strings.Join(bad, "; ")+" - nothing was saved.")
 		return
 	}
-	// A running sync is not repointed, so the engine never checks the new
-	// path; unchecked, it would break the lookup backend at the next restart.
 	enabled := r.FormValue("enabled") == "1"
 	if enabled {
 		if err := ptr.CheckDataPath(path); err != nil {
@@ -202,7 +200,6 @@ func (s *Server) savePTR(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	err := s.cfg.Update(func(c *config.Config) error {
-		c.PTR.DataPath = path
 		if v := strings.TrimSpace(r.FormValue("access_key")); v != "" {
 			c.PTR.AccessKey = v
 		}
@@ -215,23 +212,13 @@ func (s *Server) savePTR(w http.ResponseWriter, r *http.Request) {
 		s.refuseSave(w, r, "Could not save: "+err.Error())
 		return
 	}
-	var later []string
-	if s.ptr.DataPath() != path {
-		later = append(later, "data path")
-	}
-	if s.ptr.Address() != s.cfg.Current().PTR.Address {
-		later = append(later, "address")
-	}
+	addressPending := s.ptr.Address() != s.cfg.Current().PTR.Address
 	if err := s.applyPTREnabled(enabled); err != nil {
 		s.redirectFlash(w, r, "err", "Saved, but the sync could not start: "+err.Error())
 		return
 	}
-	if len(later) > 0 {
-		verb := "applies"
-		if len(later) > 1 {
-			verb = "apply"
-		}
-		s.redirectFlash(w, r, "ok", "Saved. The new "+strings.Join(later, " and ")+" "+verb+" after a restart, since an index is open.")
+	if addressPending {
+		s.redirectFlash(w, r, "ok", "Saved. The new address applies after a restart, since an index is open.")
 		return
 	}
 	s.redirectFlash(w, r, "ok", "Saved.")
