@@ -1,12 +1,15 @@
 package desktop
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,14 +21,43 @@ type Instance struct {
 
 const maxHealthBody = 4 << 10
 
-// A proxy would answer for a LAN address and read as a running instance.
-var probeTransport = &http.Transport{DisableKeepAlives: true}
-
-// Probe reports found false only when nothing answered, the one case where
-// binding is safe.
+// Probe checks for an instance on this machine using a fixed health request.
+// A local interface address supports installs that bind to a specific LAN IP.
 func Probe(addr string, timeout time.Duration) (inst Instance, found bool) {
-	client := &http.Client{Timeout: timeout, Transport: probeTransport}
-	resp, err := client.Get("http://" + addr + "/health")
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return Instance{}, false
+	}
+	number, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || number == 0 {
+		return Instance{}, false
+	}
+	if strings.EqualFold(host, "localhost") {
+		start := time.Now()
+		if inst, found := Probe(net.JoinHostPort("127.0.0.1", port), timeout); found {
+			return inst, true
+		}
+		if remaining := timeout - time.Since(start); remaining > 0 {
+			return Probe(net.JoinHostPort("::1", port), remaining)
+		}
+		return Instance{}, false
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil || !localProbeIP(ip) {
+		return Instance{}, false
+	}
+	destination := netip.AddrPortFrom(ip, uint16(number)).String()
+	client := &http.Client{
+		Timeout:       timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, destination)
+			},
+		},
+	}
+	resp, err := client.Get("http://localhost/health")
 	if err != nil {
 		return Instance{}, false
 	}
@@ -39,6 +71,22 @@ func Probe(addr string, timeout time.Duration) (inst Instance, found bool) {
 	}
 	_ = json.Unmarshal(body, &inst)
 	return inst, true
+}
+
+func localProbeIP(ip netip.Addr) bool {
+	if ip.IsLoopback() {
+		return true
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil || ip.Zone() != "" {
+		return false
+	}
+	for _, addr := range addrs {
+		if prefix, err := netip.ParsePrefix(addr.String()); err == nil && prefix.Addr().Unmap() == ip.Unmap() {
+			return true
+		}
+	}
+	return false
 }
 
 func LoopbackAddr(addr string) string {

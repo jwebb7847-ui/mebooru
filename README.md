@@ -98,6 +98,19 @@ New environment settings can use `MELOADER_`, such as `MELOADER_SERVER_BIND_ADDR
 
 The inherited [Compose example](docker/docker-compose.yml) pulls upstream Monloader. To run this fork in Docker, build an image from this checkout and use its tag in the Compose file. Reuse the existing config volume and service DNS names when updating. The [upstream documentation](https://monbooru.github.io/mondocs/addons/monloader/index.html) and [upstream releases](https://github.com/monbooru/monloader/releases) refer to Monloader.
 
+### Public Tag Repository
+
+Set the index directory with `[ptr].data_path` or
+`MONLOADER_PTR_DATA_PATH`, then restart Meloader. The web settings display the
+configured directory.
+
+PTR connections verify the TLS certificate and hostname using the system
+trust store. For a repository with a private CA or self-signed certificate,
+obtain the appropriate PEM certificate from the operator over a trusted
+channel. Set `[ptr].tls_ca_file` or `MONLOADER_PTR_TLS_CA_FILE` and restart.
+The certificate must be valid for the hostname in `[ptr].address`. HTTP is
+allowed for literal loopback addresses.
+
 ## Warning
 
 > **Intended for local network use.** Meloader's UI is not designed to be exposed to the public internet.

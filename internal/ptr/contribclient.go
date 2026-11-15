@@ -3,7 +3,6 @@ package ptr
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,12 +14,6 @@ func (c *client) SetAccessKey(key string) {
 	c.keyMu.Lock()
 	c.accessKey = key
 	c.keyMu.Unlock()
-}
-
-func (c *client) key() string {
-	c.keyMu.RLock()
-	defer c.keyMu.RUnlock()
-	return c.accessKey
 }
 
 func (c *client) setAddress(addr string) {
@@ -41,24 +34,13 @@ func (c *client) fetchSleep() time.Duration {
 	return c.sleep
 }
 
-func (c *client) address() string {
-	c.keyMu.RLock()
-	defer c.keyMu.RUnlock()
-	return c.addr
-}
-
 // Unlike get, doContrib keeps the server's own error text (a ban reason,
 // the velocity refusal) in a *ServerError: the operator reads it.
 func (c *client) doContrib(ctx context.Context, method, path string, q url.Values, body io.Reader) ([]byte, error) {
-	u := c.address() + path
-	if len(q) > 0 {
-		u += "?" + q.Encode()
-	}
-	req, err := http.NewRequestWithContext(ctx, method, u, body)
+	req, err := c.request(ctx, method, path, q, body)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Hydrus-Key", c.key())
 	if method == http.MethodPost {
 		// hydrus documents this type for its zlib-compressed JSON bodies.
 		req.Header.Set("Content-Type", "application/json")
@@ -68,13 +50,7 @@ func (c *client) doContrib(ctx context.Context, method, path string, q url.Value
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		// *url.Error carries the full URL, and the account paths put a
-		// key in the query string.
-		var uerr *url.Error
-		if errors.As(err, &uerr) {
-			err = uerr.Err
-		}
-		return nil, &retryable{err: fmt.Errorf("reaching the repository at %s: %w", path, err)}
+		return nil, repositoryConnectionError(err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxUpdateBytes+1))

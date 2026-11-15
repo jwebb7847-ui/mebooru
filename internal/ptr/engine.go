@@ -273,12 +273,36 @@ func (e *Engine) Delete() error {
 	e.mu.Lock()
 	e.everReady = false
 	e.mu.Unlock()
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		if err := os.Remove(indexPath(e.cfg.DataPath) + suffix); err != nil && !os.IsNotExist(err) {
-			return err
+	if e.cfg.DataPath == "" {
+		return errors.New("no ptr data path is set")
+	}
+	root, err := os.OpenRoot(e.cfg.DataPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for _, base := range []string{dbFile, contribFile} {
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			name := base + suffix
+			fi, err := root.Lstat(name)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if !fi.Mode().IsRegular() {
+				return fmt.Errorf("refusing to remove non-regular PTR file %s", name)
+			}
+			if err := root.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
 		}
 	}
-	return removeContribStore(e.cfg.DataPath)
+	return nil
 }
 
 // Pause and Resume set the state themselves rather than leave it to the
@@ -376,20 +400,6 @@ func (e *Engine) DataPath() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.cfg.DataPath
-}
-
-// SetDataPath answers false under a running sync: an open index keeps its
-// path until the next boot.
-func (e *Engine) SetDataPath(path string) bool {
-	e.lifecycleMu.Lock()
-	defer e.lifecycleMu.Unlock()
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.store != nil {
-		return e.cfg.DataPath == path
-	}
-	e.cfg.DataPath = path
-	return true
 }
 
 // SetMinFreeGB takes only mu: lifecycleMu would stall a save for a slow Enable.
@@ -849,8 +859,6 @@ func FreeBytes(path string) int64 {
 	}
 }
 
-func indexPath(dataPath string) string { return dataPath + "/" + dbFile }
-
 // CheckDataPath never creates the folder: a missing path is an unmounted
 // volume, and an index built there would die with the container.
 func CheckDataPath(path string) error {
@@ -864,14 +872,24 @@ func CheckDataPath(path string) error {
 }
 
 func IndexExists(dataPath string) bool {
-	_, err := os.Stat(indexPath(dataPath))
-	return err == nil
+	root, err := os.OpenRoot(dataPath)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	fi, err := root.Lstat(dbFile)
+	return err == nil && fi.Mode().IsRegular()
 }
 
 func indexDiskBytes(dataPath string) int64 {
+	root, err := os.OpenRoot(dataPath)
+	if err != nil {
+		return 0
+	}
+	defer root.Close()
 	var total int64
 	for _, suffix := range []string{"", "-wal", "-shm"} {
-		if fi, err := os.Stat(indexPath(dataPath) + suffix); err == nil {
+		if fi, err := root.Lstat(dbFile + suffix); err == nil && fi.Mode().IsRegular() {
 			total += fi.Size()
 		}
 	}

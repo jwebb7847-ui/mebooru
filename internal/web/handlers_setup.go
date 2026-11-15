@@ -105,8 +105,8 @@ func (s *Server) renderSetup(w http.ResponseWriter, r *http.Request, d setupData
 	d.CSRFToken = s.csrf(r)
 	d.Paired = s.hasPairedToken(contract.AppMonbooru)
 	d.Integration = s.desktopIntegration()
-	if d.APIURL != "" {
-		if inst, found := desktop.Probe(desktop.LoopbackAddr(hostPort(d.APIURL)), monbooruProbeTimeout); found && inst.App == contract.AppMonbooru {
+	if addr := hostPort(s.cfg.Current().Monbooru.APIURL); desktop.IsLoopbackAddr(addr) {
+		if inst, found := desktop.Probe(addr, monbooruProbeTimeout); found && inst.App == contract.AppMonbooru {
 			d.Found = true
 			d.FoundVersion = inst.Version
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -169,6 +170,7 @@ type PTRConfig struct {
 	// Kept off /config: the index runs to tens of GB.
 	DataPath   string  `toml:"data_path"`
 	Address    string  `toml:"address"`
+	TLSCAFile  string  `toml:"tls_ca_file,omitempty"`
 	AccessKey  string  `toml:"access_key"`
 	FetchSleep float64 `toml:"fetch_sleep"`
 	// The initial sync refuses to start with less free space than this.
@@ -183,6 +185,20 @@ const PublicAccessKey = "4a285629721ca442541ef2c15ea17d1f7f7578b0c3f4f5f2a05f8f0
 
 func (p PTRConfig) EffectiveAccessKey() string {
 	return cmp.Or(p.AccessKey, PublicAccessKey)
+}
+
+// ValidPTRAddress permits plaintext only on literal loopback addresses.
+// The same rule applies to sync and contribution requests.
+func ValidPTRAddress(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return false
+	}
+	if u.Scheme == "https" {
+		return true
+	}
+	ip, err := netip.ParseAddr(u.Hostname())
+	return u.Scheme == "http" && err == nil && ip.IsLoopback()
 }
 
 type LookupConfig struct {
@@ -397,6 +413,7 @@ func mapPaths(cfg *Config, base string, f func(path, base string) string) {
 	cfg.GalleryDL.CookiesDir = f(cfg.GalleryDL.CookiesDir, base)
 	cfg.GalleryDL.SupportedSitesPath = f(cfg.GalleryDL.SupportedSitesPath, base)
 	cfg.PTR.DataPath = f(cfg.PTR.DataPath, base)
+	cfg.PTR.TLSCAFile = f(cfg.PTR.TLSCAFile, base)
 	for i := range cfg.Sites {
 		cfg.Sites[i].Cookies = f(cfg.Sites[i].Cookies, base)
 	}
@@ -689,6 +706,7 @@ func applyEnvOverrides(cfg *Config) {
 	envOverride("MONLOADER_LOG_LEVEL", &cfg.Log.Level, parseString)
 	envOverride("MONLOADER_PTR_DATA_PATH", &cfg.PTR.DataPath, parseString)
 	envOverride("MONLOADER_PTR_ADDRESS", &cfg.PTR.Address, parseString)
+	envOverride("MONLOADER_PTR_TLS_CA_FILE", &cfg.PTR.TLSCAFile, parseString)
 	envOverride("MONLOADER_PTR_ACCESS_KEY", &cfg.PTR.AccessKey, parseString)
 	envOverride("MONLOADER_LOOKUP_SAUCENAO_API_KEY", &cfg.Lookup.Saucenao.APIKey, parseString)
 	envOverride("MONLOADER_LOOKUP_IQDB_URL", &cfg.Lookup.Iqdb.URL, parseString)
