@@ -1,7 +1,7 @@
-#define MyAppName "Monloader"
+#define MyAppName "Meloader"
 #define MyAppExeName "monloader.exe"
-#define MyAppPublisher "monbooru"
-#define MyAppURL "https://github.com/monbooru/monloader"
+#define MyAppPublisher "Meloader"
+#define MyAppURL "https://github.com/jwebb7847-ui/meloader"
 
 [Setup]
 AppId={{B2F3BE18-1C24-5C94-8D9C-1F09E7061D2B}
@@ -10,12 +10,12 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={autopf}\Monloader
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
 OutputDir=..\..\dist
-OutputBaseFilename=monloader_{#MyAppVersion}_{#MyAppTools}_windows_amd64_setup
+OutputBaseFilename=meloader_{#MyAppVersion}_{#MyAppTools}_windows_amd64_setup
 SetupIconFile=..\icons\monloader.ico
 Compression=lzma2
 SolidCompression=yes

@@ -106,7 +106,7 @@ func (s *Server) DesktopHook() desktop.Hook {
 	return desktop.Hook{
 		App:        s.desktopApp,
 		Name:       s.titleName(),
-		Comment:    "Downloader for monbooru",
+		Comment:    "Downloader for Mebooru",
 		Categories: "Graphics;Photography;",
 		Icon:       icon,
 	}
@@ -187,12 +187,12 @@ func (s *Server) desktopStopPrompt(verb, gerund string) string {
 	running, queued := s.queue.InFlight()
 	total := running + queued
 	if total == 0 {
-		return verb + " monloader?"
+		return verb + " Meloader?"
 	}
 	if total == 1 {
-		return fmt.Sprintf("%s monloader? 1 job is running or waiting; %s cancels it, and the queue keeps it for a retry.", verb, gerund)
+		return fmt.Sprintf("%s Meloader? 1 job is running or waiting; %s cancels it, and the queue keeps it for a retry.", verb, gerund)
 	}
-	return fmt.Sprintf("%s monloader? %d jobs are running or waiting; %s cancels them, and the queue keeps them for a retry.", verb, total, gerund)
+	return fmt.Sprintf("%s Meloader? %d jobs are running or waiting; %s cancels them, and the queue keeps them for a retry.", verb, total, gerund)
 }
 
 func (s *Server) desktopQuitPrompt() string { return s.desktopStopPrompt("Stop", "stopping") }

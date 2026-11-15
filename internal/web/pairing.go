@@ -82,7 +82,7 @@ func (s *Server) monbooruPairConnect(w http.ResponseWriter, r *http.Request) {
 func (s *Server) startMonbooruPairing(ctx context.Context) error {
 	cfg := s.cfg.Current()
 	if strings.TrimSpace(cfg.Monbooru.APIURL) == "" {
-		return errors.New("set the monbooru API URL first")
+		return errors.New("set the Mebooru API URL first")
 	}
 	peerSecret := apitoken.NewSecret()
 	tok := apitoken.FromSecret(contract.AppMonbooru+" (paired)", peerSecret, config.AllScopes)
@@ -91,10 +91,10 @@ func (s *Server) startMonbooruPairing(ctx context.Context) error {
 	defer cancel()
 	requestID, err := s.client.PairRequest(reqCtx, peerSecret, pairSelfURL(cfg), Version, []string{config.ScopeRead, config.ScopeWrite})
 	if err != nil {
-		return errors.New("Could not reach monbooru: " + err.Error())
+		return errors.New("Could not reach Mebooru: " + err.Error())
 	}
 	s.setPairAttempt(&outboundPair{requestID: requestID, token: tok})
-	logx.Infof("pairing: requested pairing with monbooru")
+	logx.Infof("pairing: requested pairing with Mebooru")
 	return nil
 }
 
@@ -146,16 +146,16 @@ func (s *Server) claimMonbooruPair(ctx context.Context, att *outboundPair) (msg 
 			s.setPairAttempt(att) // restore so a later poll retries
 			return "Could not save: " + err.Error(), false
 		}
-		logx.Infof("pairing: connected to monbooru")
+		logx.Infof("pairing: connected to Mebooru")
 		return "", true
 	case string(pairing.Denied):
 		s.takePairAttempt(att)
-		logx.Infof("pairing: monbooru denied the request")
-		return "Request denied in monbooru.", false
+		logx.Infof("pairing: Mebooru denied the request")
+		return "Request denied in Mebooru.", false
 	case "not_found":
 		s.takePairAttempt(att)
-		logx.Infof("pairing: monbooru no longer has the request")
-		return "monbooru no longer has this request - connect again.", false
+		logx.Infof("pairing: Mebooru no longer has the request")
+		return "Mebooru no longer has this request - connect again.", false
 	}
 	return "", false
 }
@@ -164,7 +164,7 @@ func (s *Server) claimMonbooruPair(ctx context.Context, att *outboundPair) (msg 
 // ages out on its own.
 func (s *Server) monbooruPairCancel(w http.ResponseWriter, r *http.Request) {
 	s.clearPairAttempt()
-	logx.Infof("pairing: canceled the pending monbooru attempt")
+	logx.Infof("pairing: canceled the pending Mebooru attempt")
 	s.render(w, "monbooru_pair", s.monbooruPairData(r, ""))
 }
 
@@ -178,10 +178,10 @@ func (s *Server) monbooruPairRemove(w http.ResponseWriter, r *http.Request) {
 	s.clearPairAttempt()
 	msg := ""
 	if err := s.notifyMonbooruTeardown(peerToken); err != nil {
-		logx.Errorf("pairing: could not notify monbooru of teardown: %v", err)
-		msg = "Removed here, but could not reach monbooru - remove the pairing in monbooru too."
+		logx.Errorf("pairing: could not notify Mebooru of teardown: %v", err)
+		msg = "Removed here, but could not reach Mebooru. Remove the pairing there too."
 	}
-	logx.Infof("pairing: removed monbooru pairing")
+	logx.Infof("pairing: removed Mebooru pairing")
 	s.render(w, "monbooru_pair", s.monbooruPairData(r, msg))
 	s.renderAuthTokensOOB(w)
 	s.renderDefaultGalleryOOB(w, r)

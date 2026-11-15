@@ -11,8 +11,8 @@ permissions:
   packages: write
 
 env:
-  GO_VERSION: '1.27.3'
-  GO_SHA256_LINUX_AMD64: '65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40'
+  GO_VERSION: '1.27.4'
+  GO_SHA256_LINUX_AMD64: '7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840'
   GDL_VERSION: '1.32.19'
   GDL_SHA256_LINUX_AMD64: '9662483cafa72f51ce4b2153aebd620256a9ab536218674b8794f7b3ece11c29'
   GDL_SHA256_WINDOWS_AMD64: '4dda3f14efbc8a8e616af1fc7e1e88d795995326b47692453e620117254dec18'
@@ -111,25 +111,6 @@ jobs:
           docker buildx imagetools create $latest \
             --tag ghcr.io/${{ steps.img.outputs.NAME }}:${{ github.ref_name }} \
             $(printf 'ghcr.io/${{ steps.img.outputs.NAME }}@sha256:%s ' *)
-
-      - name: Login to GHCR (legacy namespace)
-        continue-on-error: true
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: leqwin
-          password: ${{ secrets.GHCR_LEGACY_TOKEN }}
-
-      - name: Push to legacy namespace
-        continue-on-error: true
-        run: |
-          latest=""
-          if [ "${{ startsWith(github.ref, 'refs/tags/') }}" = "true" ]; then
-            latest="--tag ghcr.io/leqwin/monloader:latest"
-          fi
-          docker buildx imagetools create $latest \
-            --tag ghcr.io/leqwin/monloader:${{ github.ref_name }} \
-            ghcr.io/${{ steps.img.outputs.NAME }}:${{ github.ref_name }}
 
   release:
     runs-on: ubuntu-latest

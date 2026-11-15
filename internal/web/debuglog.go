@@ -50,7 +50,7 @@ func (s *Server) itemDebug(w http.ResponseWriter, r *http.Request) {
 
 // gallery-dl writes its banner before the log file exists, so the log lacks it.
 func debugHeader(url, gdlVersion string) string {
-	return "monloader " + Version + " - gallery-dl " + gdlVersion + "\n" +
+	return "Meloader " + Version + " - gallery-dl " + gdlVersion + "\n" +
 		"url: " + url + "\n" +
 		"reproduce: gallery-dl -v --range 1-1 " + url + "\n\n"
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"flag"
 	"fmt"
 	"net/http"
@@ -34,7 +35,7 @@ func runHealthcheck(argv []string) {
 
 // Not config.Load, which writes a default config where none exists.
 func resolveHealthAddr(configPath string) string {
-	addr := os.Getenv("MONLOADER_SERVER_BIND_ADDRESS")
+	addr := cmp.Or(os.Getenv("MELOADER_SERVER_BIND_ADDRESS"), os.Getenv("MONLOADER_SERVER_BIND_ADDRESS"))
 	if addr == "" && configPath != "" {
 		var mc struct {
 			Server struct {

@@ -89,13 +89,13 @@ func (s *Server) enqueueForm(w http.ResponseWriter, r *http.Request) {
 // The controls are disabled client-side too; this guards a stale page.
 func (s *Server) monbooruBlocked() string {
 	if !s.monbooruConfigured() {
-		return "No monbooru address set, so downloads are off. Set it in Settings."
+		return "No Mebooru address set, so downloads are off. Set it in Settings."
 	}
 	if s.cfg.Current().Monbooru.Unconfigured() {
-		return "Not paired with monbooru, so downloads are off. Pair it in Settings."
+		return "Not paired with Mebooru, so downloads are off. Pair it in Settings."
 	}
 	if s.monbooruPaused() {
-		return "The monbooru connection is paused, so downloads are off. Click the dot in the footer to resume."
+		return "The Mebooru connection is paused, so downloads are off. Click the dot in the footer to resume."
 	}
 	return ""
 }
@@ -119,7 +119,7 @@ func sha256AddHint(st ptr.Status) string {
 	case !st.Enabled:
 		return "A SHA-256 looks tags up from the PTR, which is off - enable it on the PTR page."
 	case st.Queryable:
-		return "A SHA-256 is for looking tags up from the PTR (via monbooru), not for importing here - paste an MD5 or a URL."
+		return "A SHA-256 is for looking tags up from the PTR (via Mebooru), not for importing here - paste an MD5 or a URL."
 	case st.State == ptr.StateError:
 		return "A SHA-256 looks tags up from the PTR, whose sync stopped on an error - see the PTR page."
 	case st.State == ptr.StatePaused:
@@ -215,7 +215,7 @@ func (s *Server) monbooruStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) setMonbooruPaused(paused bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := s.cfg.Update(func(c *config.Config) error { c.Monbooru.Paused = paused; return nil }); err != nil {
-			logx.Errorf("monbooru: could not persist the link hold: %v", err)
+			logx.Errorf("Mebooru: could not persist the link hold: %v", err)
 		}
 		// What was stored, not what was asked: a failed save leaves the old
 		// state in force. A live link renders checking, whose swap probes a
@@ -239,7 +239,7 @@ func (s *Server) renderConnLight(w http.ResponseWriter, status, version string) 
 
 func (s *Server) monbooruLight(conn, version string) webui.PeerLight {
 	return webui.PeerLight{
-		Peer: contract.AppMonbooru, Href: s.monbooruWebBase(), Conn: conn, Version: version,
+		Peer: "Mebooru", Href: s.monbooruWebBase(), Conn: conn, Version: version,
 		Mismatch: s.monbooruAPIMismatch(), OffReason: monbooruOffReason(conn),
 		StatusURL: "/internal/monbooru-status",
 		PauseURL:  "/internal/monbooru/pause", ResumeURL: "/internal/monbooru/resume",

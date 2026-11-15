@@ -139,7 +139,7 @@ func main() {
 		}
 	} else if ln, err = net.Listen("tcp", cfg.Server.BindAddress); err != nil {
 		if freshConfig && inContainer() {
-			logx.Warnf("monloader wrote %s with default settings meant for the docker image.", *configPath)
+			logx.Warnf("Meloader wrote %s with default settings meant for the docker image.", *configPath)
 			logx.Warnf("edit server.bind_address (and monbooru.api_url once monbooru runs), then run it again. docs: %s", internalweb.DocURL)
 		}
 		fatalf("HTTP server: %v", err)
@@ -260,7 +260,7 @@ func main() {
 
 	srvErr := make(chan error, 1)
 	go func() {
-		logx.Infof("monloader listening on %s (work dir %s)", cfg.Server.BindAddress, workRoot)
+		logx.Infof("Meloader listening on %s (work dir %s)", cfg.Server.BindAddress, workRoot)
 		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			srvErr <- err
 		}

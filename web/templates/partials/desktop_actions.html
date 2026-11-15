@@ -5,11 +5,11 @@ the form whose confirmed submit is pending. */}}<div id="desktop-actions" class=
   <form method="POST" action="/settings/restart"
         hx-confirm="{{.RestartPrompt}}" data-confirm-ok="Restart" data-confirm-danger>
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-    <button type="submit">Restart monloader</button>
+    <button type="submit">Restart Meloader</button>
   </form>
   <form method="POST" action="/settings/quit"
         hx-confirm="{{.QuitPrompt}}" data-confirm-ok="Stop" data-confirm-danger>
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-    <button type="submit" class="btn-danger">Stop monloader</button>
+    <button type="submit" class="btn-danger">Stop Meloader</button>
   </form>
 </div>{{end}}

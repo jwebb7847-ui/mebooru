@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.monbooru.Monloader</id>
-  <name>Monloader</name>
-  <summary>Downloader for monbooru</summary>
+  <name>Meloader</name>
+  <summary>Downloader for Mebooru</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>AGPL-3.0-only</project_license>
   <launchable type="desktop-id">io.github.monbooru.Monloader.desktop</launchable>
 
   <description>
     <p>
-      monloader allows you to download images and tags from the internet into your monbooru gallery: 
+      Meloader allows you to download images and tags from the internet into your Mebooru gallery:
       it takes a booru or gallery URL, fetches the files and their tags through
-      gallery-dl, and pushes them into a monbooru gallery. It also answers
+      gallery-dl, and pushes them into a Mebooru gallery. It also answers
       reverse lookups against boorus, IQDB and SauceNAO, and can sync the
       Hydrus Public Tag Repository to backfill tags by hash.
     </p>
@@ -22,13 +22,13 @@
     <category>FileTransfer</category>
   </categories>
 
-  <url type="homepage">https://github.com/monbooru/monloader</url>
-  <url type="bugtracker">https://github.com/monbooru/monloader/issues</url>
-  <url type="help">https://monbooru.github.io/mondocs/addons/monloader/index.html</url>
+  <url type="homepage">https://github.com/jwebb7847-ui/meloader</url>
+  <url type="bugtracker">https://github.com/jwebb7847-ui/meloader/issues</url>
+  <url type="help">https://github.com/jwebb7847-ui/meloader/blob/main/README.md</url>
 
   <screenshots>
     <screenshot type="default">
-      <caption>Paste a booru URL or an MD5 hash to download into monbooru</caption>
+      <caption>Paste a booru URL or an MD5 hash to download into Mebooru</caption>
       <image>https://raw.githubusercontent.com/monbooru/monloader/main/.github/assets/add.webp</image>
     </screenshot>
     <screenshot>

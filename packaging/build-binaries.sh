@@ -33,7 +33,7 @@ for target in linux/amd64 linux/arm64 windows/amd64; do
         continue
       fi
     fi
-    name="monloader_${VERSION#v}_portable_${shape}_${os}_${arch}"
+    name="meloader_${VERSION#v}_portable_${shape}_${os}_${arch}"
     dir="stage/$name"
     rm -rf "$dir"
     mkdir -p "$dir"

@@ -17,20 +17,20 @@
   <form method="POST" action="/setup">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
 
-    <h2>Connect to monbooru</h2>
+    <h2>Connect to Mebooru</h2>
     {{if .Found}}
-    <p>Found monbooru{{if .FoundVersion}} {{.FoundVersion}}{{end}} at this address.</p>
+    <p>Found Mebooru{{if .FoundVersion}} {{.FoundVersion}}{{end}} at this address.</p>
     {{else}}
-    <p class="field-hint">Start monbooru and reload this page, or type its address if it is on another machine. You can also do this later in Settings.</p>
+    <p class="field-hint">Start Mebooru and reload this page, or type its address if it is on another machine. You can also do this later in Settings.</p>
     {{end}}
     <div class="field">
-      <label for="setup-api-url">monbooru API URL</label>
+      <label for="setup-api-url">Mebooru API URL</label>
       <input id="setup-api-url" type="text" name="api_url" value="{{.APIURL}}" placeholder="http://127.0.0.1:8455">
     </div>
     {{if and .Found (not .Paired)}}
     <div class="field">
-      <label><input type="checkbox" name="pair" {{if .Pair}}checked{{end}}> Pair with monbooru</label>
-      <p class="field-hint">Approve the request in monbooru, under Settings > Plugins.</p>
+      <label><input type="checkbox" name="pair" {{if .Pair}}checked{{end}}> Pair with Mebooru</label>
+      <p class="field-hint">Approve the request in Mebooru, under Settings > Plugins.</p>
     </div>
     {{end}}
 

@@ -22,7 +22,7 @@
       {{if .Galleries}}
       <select name="gallery">
         <option value="">(default gallery)</option>
-        {{if .GalleryMissing}}<option value="{{.Gallery}}" selected>{{.Gallery}} (not in monbooru)</option>{{end}}
+        {{if .GalleryMissing}}<option value="{{.Gallery}}" selected>{{.Gallery}} (not in Mebooru)</option>{{end}}
         {{range .Galleries}}<option value="{{.Name}}"{{if eq .Name $.Gallery}} selected{{end}}>{{.Name}}</option>{{end}}
       </select>
       {{else}}
@@ -31,7 +31,7 @@
     </div>
     <div class="field"><label>Source label</label>
       <input type="text" name="label" value="{{.Label}}" placeholder="(blank = the site name)">
-      <span class="field-hint">The name monbooru shows as the source. Images already sent keep the old name, and sending one again adds the new name beside it.</span>
+      <span class="field-hint">The name Mebooru shows as the source. Images already sent keep the old name, and sending one again adds the new name beside it.</span>
     </div>
     <div class="field"><label>Extra hosts</label>
       <div class="maprows" id="sd-hosts">
@@ -97,7 +97,7 @@
     </div>
     <div class="field">
       <label class="checkbox-inline"><input type="checkbox" name="has_notes"{{if .Profile.HasNotes}} checked{{end}}> Fetch note boxes</label>
-      <span class="field-hint">Sent to monbooru as annotations. One extra request per post with notes.</span>
+      <span class="field-hint">Sent to Mebooru as annotations. One extra request per post with notes.</span>
     </div>
   </div>
 
@@ -107,7 +107,7 @@
     {{template "tag_flow" dict "Site" true "PTR" .PTR "MonbooruURL" .MonbooruURL}}
     <div class="flow-part-1">
       <div class="tag-step">1 Mappings: translate ratings, categories and tags {{if .PTR}}<span class="status-badge status-ok">ptr</span><span class="status-badge status-off">incoming tags only</span>{{else}}<span class="status-badge status-ok">this site</span><span class="status-badge status-off">in profile, exported</span>{{end}}</div>
-      <div class="field"><label>Rating map <span class="field-hint">({{if .PTR}}rating: value{{else}}site value{{end}} -&gt; monbooru level)</span></label>
+      <div class="field"><label>Rating map <span class="field-hint">({{if .PTR}}rating: value{{else}}site value{{end}} -&gt; Mebooru level)</span></label>
         <div class="maprows" id="sd-ratings">
           <template>
             <div class="maprow"><input type="text" name="rating_from" placeholder="site value"><span class="field-hint">-&gt;</span>
@@ -123,7 +123,7 @@
         <button type="button" class="btn-link-accent add-maprow" data-rows="sd-ratings">[+ add rating]</button>
         {{range .RatingTomlOverrides}}<span class="hint-warn">monloader.toml [[rating_overrides]] sends {{.From}} to {{.To}} and wins over this map</span>{{end}}
       </div>
-      <div class="field"><label>Category map <span class="field-hint">({{if .PTR}}hydrus namespace{{else}}site's category{{end}} -&gt; monbooru category)</span></label>
+      <div class="field"><label>Category map <span class="field-hint">({{if .PTR}}hydrus namespace{{else}}site's category{{end}} -&gt; Mebooru category)</span></label>
         <div class="maprows" id="sd-cats">
           <template>
             <div class="maprow"><input type="text" name="cat_from" placeholder="{{if .PTR}}namespace{{else}}site category{{end}}"><span class="field-hint">-&gt;</span>
@@ -134,13 +134,13 @@
           <div class="maprow"><input type="text" name="cat_from" value="{{$from}}"><span class="field-hint">-&gt;</span>
             <select name="cat_to">{{template "category_options" (dict "Categories" $.Categories "Custom" $.CustomCategories "Selected" $to)}}</select>
             <button type="button" class="btn-link-accent maprow-del" title="Remove this row">[x]</button>
-            {{with index $.DroppedCats $from}}<span class="hint-warn">{{.}} is unchecked in Rules, so these tags never reach monbooru</span>{{end}}</div>
+            {{with index $.DroppedCats $from}}<span class="hint-warn">{{.}} is unchecked in Rules, so these tags never reach Mebooru</span>{{end}}</div>
           {{end}}
         </div>
         <button type="button" class="btn-link-accent add-maprow" data-rows="sd-cats">{{if .PTR}}[+ add namespace]{{else}}[+ add category]{{end}}</button>
         {{if .PTR}}<span class="field-hint">A namespace with no row keeps its usual category, and "general" covers tags with no namespace.</span>{{end}}
         {{range .TagOverrides}}<span class="hint-warn">monloader.toml [[tag_overrides]] {{if .To}}sends {{.From}} to {{.To}}{{else}}drops {{.From}}{{end}} and wins over this map</span>{{end}}
-        {{if not .CategoriesKnown}}<span class="field-hint">monbooru is unreachable, so only the built-in categories are listed; a saved rule keeps its target</span>{{end}}
+        {{if not .CategoriesKnown}}<span class="field-hint">Mebooru is unreachable, so only the built-in categories are listed; a saved rule keeps its target</span>{{end}}
       </div>
       <div class="field"><label>Tag rules <span class="field-hint">(rename, move to a category, or leave blank to drop the tag{{if not .PTR}}; the post still downloads{{end}})</span></label>
         <div class="maprows" id="sd-rules">
@@ -153,7 +153,7 @@
           <div class="maprow"><input type="text" name="rule_from" value="{{$from}}"><span class="field-hint">-&gt;</span>
             <input type="text" name="rule_to" value="{{$to}}" placeholder="(blank = drop)">
             <button type="button" class="btn-link-accent maprow-del" title="Remove this row">[x]</button>
-            {{with index $.DroppedRules $from}}<span class="hint-warn">{{.}} is unchecked in Rules, so this tag never reaches monbooru</span>{{end}}</div>
+            {{with index $.DroppedRules $from}}<span class="hint-warn">{{.}} is unchecked in Rules, so this tag never reaches Mebooru</span>{{end}}</div>
           {{end}}
         </div>
         <button type="button" class="btn-link-accent add-maprow" data-rows="sd-rules">[+ add rule]</button>
@@ -227,4 +227,4 @@
 
 {{define "site_options"}}{{.}}{{end}}
 
-{{define "category_options"}}{{$selected := .Selected}}<optgroup label="built-in">{{range .Categories}}<option value="{{.}}"{{if eq . $selected}} selected{{end}}>{{.}}</option>{{end}}</optgroup>{{with .Custom}}<optgroup label="custom">{{range .}}<option value="{{.Name}}"{{if eq .Name $selected}} selected{{end}}>{{.Name}}{{if .Missing}} (not in monbooru){{end}}</option>{{end}}</optgroup>{{end}}<option value=""{{if eq $selected ""}} selected{{end}}>(drop these tags)</option>{{end}}
+{{define "category_options"}}{{$selected := .Selected}}<optgroup label="built-in">{{range .Categories}}<option value="{{.}}"{{if eq . $selected}} selected{{end}}>{{.}}</option>{{end}}</optgroup>{{with .Custom}}<optgroup label="custom">{{range .}}<option value="{{.Name}}"{{if eq .Name $selected}} selected{{end}}>{{.Name}}{{if .Missing}} (not in Mebooru){{end}}</option>{{end}}</optgroup>{{end}}<option value=""{{if eq $selected ""}} selected{{end}}>(drop these tags)</option>{{end}}

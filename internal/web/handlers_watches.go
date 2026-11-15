@@ -96,7 +96,7 @@ func newWatchRow(wt queue.Watch, held bool) watchRow {
 	default:
 		row.Result, row.ResultClass = "nothing new", "field-hint"
 		if last.Duplicate > 0 {
-			row.ResultTitle = strconv.Itoa(last.Duplicate) + " already in monbooru"
+			row.ResultTitle = strconv.Itoa(last.Duplicate) + " already in Mebooru"
 		}
 	}
 	if last.More && !wt.Live && last.Status == queue.JobSucceeded {
@@ -105,7 +105,7 @@ func newWatchRow(wt queue.Watch, held bool) watchRow {
 	}
 	if last.Owed && !wt.Live {
 		row.Result += " - fetched again next check"
-		row.ResultTitle = cmp.Or(row.ResultTitle, "Some posts did not reach monbooru. The next check fetches them again, past gallery-dl's archive.")
+		row.ResultTitle = cmp.Or(row.ResultTitle, "Some posts did not reach Mebooru. The next check fetches them again, past gallery-dl's archive.")
 	}
 	switch {
 	case wt.Live:

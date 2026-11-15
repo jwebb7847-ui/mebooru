@@ -60,5 +60,5 @@ flatpak-builder --user --disable-rofiles-fuse --force-clean --repo=repo \
   build-dir "packaging/flatpak/$app.yml"
 
 flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
-  repo "dist/${APP}_${VERSION#v}_x86_64.flatpak" "$app"
+  repo "dist/meloader_${VERSION#v}_x86_64.flatpak" "$app"
 ls -la dist
