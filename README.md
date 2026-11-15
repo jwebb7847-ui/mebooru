@@ -59,6 +59,21 @@ Build from the `mebooru-foundation` branch with `go build -o mebooru ./cmd/monbo
 
 ### Open Mebooru with Meloader
 
+For the macOS app, build from the Mebooru checkout with
+`sh packaging/build-macos-app.sh /path/to/meloader`, then open
+`dist/Mebooru.app` in Finder. The app starts its bundled Meloader in the
+background. Both use the existing per-user configs in
+`~/Library/Application Support` unless you supply an explicit config.
+On first use, request pairing from [Meloader Settings](http://127.0.0.1:8456/settings#pairing)
+and approve it in **Mebooru → Settings → Plugins**. Use **Quit** in Mebooru's
+web settings to stop the app and the companion it launched.
+
+The local build uses an ad-hoc signature. For downloads, a public macOS
+release needs signing and notarization. The bundle includes both app
+binaries. Meloader uses your configured gallery-dl, or a gallery-dl on PATH
+including standard Homebrew locations. The core bundle uses the browser UI
+and has no bundled ONNX Runtime or FFmpeg.
+
 On macOS and Linux, build [Meloader](https://github.com/jwebb7847-ui/meloader) from its repository and pair it with Mebooru once. To start
 your existing Meloader configuration when Mebooru opens, set these paths
 in Mebooru's config:

@@ -119,9 +119,17 @@ func main() {
 	if err != nil {
 		fatalf("loading config: %v", err)
 	}
+	bundledCompanion := false
 	if *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
 		*meloaderBinary = cfg.Desktop.MeloaderBinary
 		*meloaderConfig = cfg.Desktop.MeloaderConfig
+		if *meloaderBinary == "" && *meloaderConfig == "" {
+			*meloaderBinary, *meloaderConfig, err = bundledMeloader(cfg)
+			bundledCompanion = err == nil && *meloaderBinary != ""
+			if err != nil {
+				logx.Errorf("preparing bundled Meloader: %v", err)
+			}
+		}
 	}
 	if layout.Portable {
 		portableGallery(layout, cfg)
@@ -182,7 +190,7 @@ func main() {
 
 	stopMeloader := func() {}
 	if *meloaderBinary != "" || *meloaderConfig != "" {
-		stop, err := launchMeloader(*meloaderBinary, *meloaderConfig)
+		stop, err := launchMeloader(*meloaderBinary, *meloaderConfig, bundledCompanion)
 		if err != nil {
 			logx.Errorf("starting Meloader: %v", err)
 		} else {
