@@ -53,7 +53,7 @@ Designed for organizing your local media collection: images, videos, animated GI
 
 ## Install
 
-Mebooru is currently developed and verified from source on Apple Silicon macOS. Its upstream Monbooru foundation also supports Linux (x86_64, arm64) and Windows (x86_64). Once started, Mebooru is available at `http://localhost:8455`.
+Mebooru is developed on Apple Silicon macOS. The [native verification workflow](https://github.com/jwebb7847-ui/mebooru/actions/workflows/native.yml) builds and runs Mebooru and Meloader on Linux (x86_64, arm64), Windows (x86_64), and macOS (Intel, Apple Silicon). Once started, Mebooru is available at `http://localhost:8455`.
 
 Build from the `mebooru-foundation` branch with `go build -o mebooru ./cmd/monbooru`. The command directory and default config name retain their historical spelling.
 
