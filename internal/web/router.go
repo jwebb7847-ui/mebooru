@@ -387,6 +387,7 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.read("GET /{$}", s.galleryHandler)
 	rt.read("GET /loader", s.loaderPage)
 	rt.free("GET /loader/jobs", s.loaderJobs)
+	rt.free("GET /loader/jobs/{id}/results", s.loaderJobResults)
 	rt.free("POST /loader/import", s.loaderImport)
 	rt.free("POST /loader/jobs/{id}/{action}", s.loaderJobAction)
 	rt.read("GET /", s.notFoundHandler)

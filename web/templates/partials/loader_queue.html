@@ -22,7 +22,7 @@
   <div id="loader-flash" role="status"></div>
   {{if .MonloaderPaired}}
   <div id="loader-jobs" hx-get="/loader/jobs?page=1"
-       hx-trigger="load, every 5s [!confirmOpen() && !document.querySelector('#loader-jobs :focus')], loader-queue-updated from:body"
+       hx-trigger="load, every 5s [!confirmOpen() && !document.querySelector('#loader-jobs :focus, #loader-jobs details[open]')], loader-queue-updated[!document.querySelector('#loader-jobs details[open]')] from:body"
        hx-target="this" hx-swap="outerHTML">Loading queue…</div>
   {{end}}
 </div>
@@ -30,7 +30,8 @@
 
 {{define "loader_jobs"}}
 <div id="loader-jobs" hx-get="/loader/jobs?page={{if .Page}}{{.Page}}{{else}}1{{end}}"
-     hx-trigger="every 5s [!confirmOpen() && !document.querySelector('#loader-jobs :focus')], loader-queue-updated from:body"
+     hx-trigger="every 5s [!confirmOpen() && !document.querySelector('#loader-jobs :focus, #loader-jobs details[open]')], loader-queue-updated[!document.querySelector('#loader-jobs details[open]')] from:body"
+     hx-on::before-swap="if (event.detail.target === this && this.querySelector('details[open]')) event.detail.shouldSwap = false"
      hx-target="this" hx-swap="outerHTML">
   {{if .Message}}
   <p>{{.Message}} <a href="/settings#plugins">Open Plugins</a></p>
@@ -68,6 +69,18 @@
             {{end}}
           </td>
         </tr>
+        {{if .Summary.Total}}
+        <tr class="loader-results-row">
+          <td colspan="6">
+            <details hx-get="/loader/jobs/{{.ID}}/results"
+                     hx-trigger="toggle[event.target.open] once"
+                     hx-target="find .loader-results" hx-swap="outerHTML">
+              <summary>Post results for job #{{.ID}}</summary>
+              <div id="loader-results-{{.ID}}" class="loader-results" aria-live="polite">Loading post results…</div>
+            </details>
+          </td>
+        </tr>
+        {{end}}
       {{end}}
       </tbody>
     </table>
@@ -83,5 +96,33 @@
   </div>
   {{end}}
   {{end}}
+</div>
+{{end}}
+
+{{define "loader_job_results"}}
+<div id="loader-results-{{.ID}}" class="loader-results" aria-live="polite"
+     hx-target="this" hx-swap="outerHTML" hx-sync="closest .loader-results:replace">
+  {{if .Message}}<p>{{.Message}}</p>{{end}}
+  {{if .Rows}}
+  <table class="data-table">
+    <thead><tr><th>Post</th><th>Outcome</th><th>Details</th><th>Gallery</th></tr></thead>
+    <tbody>
+    {{range .Rows}}
+      <tr>
+        <td>{{if .PostID}}{{.PostID}}{{else}}#{{.Number}}{{end}}</td>
+        <td>{{.Label}}</td>
+        <td>{{.Detail}}</td>
+        <td>{{with .URL}}<a href="{{.}}">Open in gallery</a>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  <div class="loader-pages">
+    {{if .PreviousPage}}<button type="button" hx-get="/loader/jobs/{{.ID}}/results?page={{.PreviousPage}}">Previous</button>{{end}}
+    {{if .Total}}<span>{{.First}}–{{.Last}} of {{.Total}} posts</span>{{end}}
+    {{if .NextPage}}<button type="button" hx-get="/loader/jobs/{{.ID}}/results?page={{.NextPage}}">Next</button>{{end}}
+    <button type="button" hx-get="/loader/jobs/{{.ID}}/results?page={{.Page}}">Refresh results</button>
+  </div>
 </div>
 {{end}}

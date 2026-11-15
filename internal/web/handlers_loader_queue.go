@@ -1,7 +1,11 @@
 package web
 
 import (
+	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -9,11 +13,102 @@ import (
 	"strings"
 	"time"
 
+	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/monloader"
 	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 const loaderQueueLimit = 20
+const loaderResultsLimit = 50
+
+type loaderResult struct {
+	PostID string
+	Number int
+	Label  string
+	Detail string
+	URL    string
+}
+
+func (s *Server) loaderJobResults(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	view := struct {
+		ID                     int64
+		Message                string
+		Rows                   []loaderResult
+		First, Last, Total     int
+		Page                   int
+		PreviousPage, NextPage int
+	}{ID: id}
+	view.Page, _ = contract.PageParams(r.URL.Query().Get("page"), "", loaderResultsLimit, loaderResultsLimit)
+
+	link := s.monloaderLink()
+	switch {
+	case !link.Paired:
+		view.Message = "Pair Meloader to see import results."
+	case link.Paused:
+		view.Message = "Resume Meloader to see import results."
+	default:
+		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+		defer cancel()
+		gallery, items, err := s.ml.ImportResults(ctx, id)
+		switch {
+		case errors.Is(err, monloader.ErrImportJobNotFound):
+			view.Message = "This job is no longer in the queue."
+		case err != nil:
+			view.Message = "Could not load import results."
+		case len(items) == 0:
+			view.Message = "No post results yet."
+		default:
+			view.Total = len(items)
+			lastPage := (view.Total-1)/loaderResultsLimit + 1
+			page := min(view.Page, lastPage)
+			view.Page = page
+			start := (page - 1) * loaderResultsLimit
+			view.First, view.Last = start+1, min(start+loaderResultsLimit, view.Total)
+			for index, item := range items[start:view.Last] {
+				view.Rows = append(view.Rows, buildLoaderResult(gallery, item, start+index+1))
+			}
+			if page > 1 {
+				view.PreviousPage = page - 1
+			}
+			if page < lastPage {
+				view.NextPage = page + 1
+			}
+		}
+	}
+	s.renderTemplate(w, "loader_job_results", view)
+}
+
+func buildLoaderResult(gallery string, item monloader.ImportItem, number int) loaderResult {
+	row := loaderResult{PostID: item.PostID, Number: cmp.Or(item.Num, number), Detail: item.Error}
+	outcome := cmp.Or(item.Outcome, item.Status)
+	switch {
+	case item.ErrorCode == contract.CodeCanceled:
+		row.Label = "Canceled"
+	case outcome == contract.OutcomeSkippedBlacklist:
+		row.Label = "Blacklisted"
+	case outcome == contract.OutcomeSkippedArchive:
+		row.Label = "Skipped by archive"
+	case outcome == contract.OutcomeSkippedUnsupported:
+		row.Label = "Skipped (unsupported file type)"
+	default:
+		row.Label = strings.ReplaceAll(cmp.Or(outcome, "pending"), "_", " ")
+	}
+	switch item.Outcome {
+	case contract.OutcomeCreated, contract.OutcomeDuplicate, contract.OutcomeEnriched, contract.OutcomeReplaced:
+		if config.ValidateGalleryName(gallery) == nil && len(item.SHA256) == 2*sha256.Size {
+			if _, err := hex.DecodeString(item.SHA256); err == nil {
+				row.URL = "/i/" + strings.ToLower(item.SHA256) + "?gallery=" + url.QueryEscape(gallery)
+			}
+		}
+	}
+	return row
+}
 
 func (s *Server) loaderJobs(w http.ResponseWriter, r *http.Request) {
 	page, _ := contract.PageParams(r.URL.Query().Get("page"), "", loaderQueueLimit, loaderQueueLimit)

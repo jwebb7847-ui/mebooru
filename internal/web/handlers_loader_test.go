@@ -2,11 +2,30 @@ package web
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/monbooru/monbooru/internal/config"
+	"github.com/monbooru/monbooru/internal/monloader"
 	"github.com/monbooru/monbooru/internal/peer"
+	"github.com/monbooru/monbooru/internal/shared/contract"
 )
+
+func TestLoaderResultLinksOnlyToRecordedGallery(t *testing.T) {
+	sha := strings.Repeat("ab", 32)
+	item := monloader.ImportItem{PostID: "123", Outcome: contract.OutcomeCreated, SHA256: sha}
+	row := buildLoaderResult("Audit_A", item, 1)
+	if row.URL != "/i/"+sha+"?gallery=Audit_A" || row.PostID != "123" {
+		t.Fatalf("created result = %+v", row)
+	}
+	if row := buildLoaderResult("", item, 1); row.URL != "" {
+		t.Fatalf("linked to an unspecified gallery: %+v", row)
+	}
+	item.Outcome = contract.OutcomeSkippedBlacklist
+	if row := buildLoaderResult("Audit_A", item, 1); row.URL != "" || row.Label != "Blacklisted" {
+		t.Fatalf("blacklisted result = %+v", row)
+	}
+}
 
 func TestLoaderPanelUsesSeparateConfiguredPeerAndGallery(t *testing.T) {
 	s := &Server{cfg: config.Default()}
