@@ -123,9 +123,6 @@ func main() {
 		*meloaderBinary = cfg.Desktop.MeloaderBinary
 		*meloaderConfig = cfg.Desktop.MeloaderConfig
 	}
-	if (*meloaderBinary == "") != (*meloaderConfig == "") {
-		fatalf("Meloader launch requires both an executable and a config path")
-	}
 	if layout.Portable {
 		portableGallery(layout, cfg)
 	}
@@ -184,7 +181,7 @@ func main() {
 	}()
 
 	stopMeloader := func() {}
-	if *meloaderBinary != "" {
+	if *meloaderBinary != "" || *meloaderConfig != "" {
 		stop, err := launchMeloader(*meloaderBinary, *meloaderConfig)
 		if err != nil {
 			logx.Errorf("starting Meloader: %v", err)

@@ -57,7 +57,7 @@ Mebooru is currently developed and verified from source on Apple Silicon macOS. 
 
 ### Open Mebooru with Meloader
 
-Build Meloader from its repository and pair it with Mebooru once. To start
+On macOS and Linux, build Meloader from its repository and pair it with Mebooru once. To start
 your existing Meloader configuration when Mebooru opens, set these paths
 in Mebooru's config:
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -13,6 +14,12 @@ import (
 )
 
 func launchMeloader(binary, configPath string) (func(), error) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		return nil, fmt.Errorf("start Meloader separately on %s", runtime.GOOS)
+	}
+	if binary == "" || configPath == "" {
+		return nil, fmt.Errorf("Meloader launch requires both an executable and a config path")
+	}
 	info, err := os.Stat(configPath)
 	if err != nil {
 		return nil, err
