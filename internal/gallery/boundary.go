@@ -2,6 +2,7 @@ package gallery
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -329,15 +330,25 @@ func (b *Boundary) leadsOut(target string) bool {
 // RemoveOwned keeps what b skips and every folder on the way to it. Links
 // are removed, never followed, and the root stays.
 func RemoveOwned(b *Boundary) (kept []string, err error) {
+	root, err := os.OpenRoot(b.root)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return b.RemoveOwnedFrom(root)
+}
+
+// RemoveOwnedFrom sweeps an already-open gallery root so a restore can
+// use the same directory for removal and extraction.
+func (b *Boundary) RemoveOwnedFrom(root *os.Root) (kept []string, err error) {
 	keep := func(p string) {
-		rel, _ := filepath.Rel(b.root, p)
-		kept = append(kept, filepath.ToSlash(rel))
+		kept = append(kept, filepath.ToSlash(p))
 	}
 	var sweep func(dir string) (bool, error)
 	sweep = func(dir string) (bool, error) {
-		entries, err := os.ReadDir(dir)
+		entries, err := fs.ReadDir(root.FS(), filepath.ToSlash(dir))
 		if err != nil {
-			if dir == b.root {
+			if dir == "." {
 				return false, err
 			}
 			// A folder it cannot read, such as a mount's lost+found, stays whole.
@@ -347,7 +358,8 @@ func RemoveOwned(b *Boundary) (kept []string, err error) {
 		empty := true
 		for _, e := range entries {
 			p := filepath.Join(dir, e.Name())
-			if b.skips(p, p) {
+			abs := filepath.Join(b.root, p)
+			if b.skips(abs, abs) {
 				keep(p)
 				empty = false
 				continue
@@ -362,13 +374,13 @@ func RemoveOwned(b *Boundary) (kept []string, err error) {
 					continue
 				}
 			}
-			if err := os.Remove(p); err != nil {
+			if err := root.Remove(p); err != nil {
 				return false, err
 			}
 		}
 		return empty, nil
 	}
-	_, err = sweep(b.root)
+	_, err = sweep(".")
 	return kept, err
 }
 

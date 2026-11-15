@@ -190,6 +190,9 @@ type translatedFile struct {
 // ApplyLightReplace rebuilds the gallery from mf and files; the count is
 // the files b leaves out.
 func ApplyLightReplace(mf LightManifest, files []translatedFile, dbPath, thumbsPath string, b *gallery.Boundary, source string, maxFileSizeMB int, quiesce func() error) (int, error) {
+	if err := validateLightRestorePaths(b, mf.Images); err != nil {
+		return 0, err
+	}
 	maxBytes := int64(maxFileSizeMB) * 1024 * 1024
 	dsts, err := planExtraction(b, files, maxBytes)
 	if err != nil {
@@ -212,6 +215,14 @@ func planExtraction(b *gallery.Boundary, files []translatedFile, maxBytes int64)
 		return nil, fmt.Errorf("gallery %q indexes the same folder; a replace from an archive would delete its files", other)
 	}
 	root := filepath.Clean(b.Root())
+	if len(files) == 0 {
+		return nil, nil
+	}
+	media, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open gallery root: %w", err)
+	}
+	defer media.Close()
 	dsts := make([]string, len(files))
 	written := make(map[string]string, len(files))
 	lowered := make(map[string]string, len(files))
@@ -228,12 +239,12 @@ func planExtraction(b *gallery.Boundary, files []translatedFile, maxBytes int64)
 		if err != nil {
 			return nil, fmt.Errorf("rejecting archive entry %q: %w", tf.file.Name, err)
 		}
-		if dst == root {
-			return nil, fmt.Errorf("rejecting archive entry %q: it names the gallery root", tf.file.Name)
-		}
 		dsts[i] = dst
 		if b.Excludes(dst) {
 			continue
+		}
+		if err := checkRestoredPath(media, root, dst); err != nil {
+			return nil, fmt.Errorf("rejecting archive entry %q: %w", tf.file.Name, err)
 		}
 		if first, ok := entryAt(dst); ok {
 			return nil, fmt.Errorf("rejecting archive entry %q: it names the same file as %q", tf.file.Name, first)
@@ -279,7 +290,12 @@ func extractPlanned(b *gallery.Boundary, files []translatedFile, dsts []string, 
 	if len(files) == 0 {
 		return 0, nil
 	}
-	if _, err := gallery.RemoveOwned(b); err != nil {
+	root, err := os.OpenRoot(b.Root())
+	if err != nil {
+		return 0, fmt.Errorf("open gallery root: %w", err)
+	}
+	defer root.Close()
+	if _, err := b.RemoveOwnedFrom(root); err != nil {
 		return 0, fmt.Errorf("wipe gallery: %w", err)
 	}
 	for i, tf := range files {
@@ -287,9 +303,22 @@ func extractPlanned(b *gallery.Boundary, files []translatedFile, dsts []string, 
 			leftOut++
 			continue
 		}
-		writeErr := os.MkdirAll(filepath.Dir(dsts[i]), 0o755)
+		rel, writeErr := filepath.Rel(b.Root(), dsts[i])
 		if writeErr == nil {
-			writeErr = copyZipFile(tf.file, dsts[i], maxBytes)
+			writeErr = root.MkdirAll(filepath.Dir(rel), 0o755)
+		}
+		if writeErr == nil {
+			var out *os.File
+			out, writeErr = root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+			if writeErr == nil {
+				writeErr = copyZipEntry(out, tf.file, maxBytes)
+				if closeErr := out.Close(); writeErr == nil {
+					writeErr = closeErr
+				}
+				if writeErr != nil {
+					_ = root.Remove(rel)
+				}
+			}
 		}
 		if err == nil {
 			err = writeErr
@@ -326,10 +355,33 @@ func replaceFromLightManifest(srcPath, dbPath, thumbsPath string, b *gallery.Bou
 	if err != nil {
 		return err
 	}
+	if err := validateLightRestorePaths(b, mf.Images); err != nil {
+		return err
+	}
 	if err := quiesce(); err != nil {
 		return err
 	}
 	return rebuildFromLightManifest(dbPath, b, thumbsPath, mf.Images, ImportSourceNative)
+}
+
+func validateLightRestorePaths(b *gallery.Boundary, images []LightManifestImage) error {
+	media, err := os.OpenRoot(b.Root())
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("open restore destination: %w", err)
+	}
+	if media != nil {
+		defer media.Close()
+	}
+	for _, img := range images {
+		dst, err := SafeArchiveDest(b.Root(), img.Path)
+		if err == nil && !b.Excludes(dst) {
+			err = checkRestoredPath(media, b.Root(), dst)
+		}
+		if err != nil {
+			return fmt.Errorf("invalid light manifest image %q: %w", img.Path, err)
+		}
+	}
+	return nil
 }
 
 // The caller quiesces the gallery first: the build's manga pages land in the
@@ -775,10 +827,36 @@ func (m *merger) apply(r mergeRecord) error {
 		m.res.Skipped++
 		return nil
 	}
+	media, err := os.OpenRoot(cx.GalleryPath)
+	if err != nil {
+		logx.Warnf("merge: open gallery root: %v", err)
+		m.res.Skipped++
+		return nil
+	}
+	defer media.Close()
+	if err := checkRestoredPath(media, cx.GalleryPath, safeBase); err != nil {
+		logx.Warnf("merge: skipping entry %q: %v", r.SourcePath, err)
+		m.res.Skipped++
+		return nil
+	}
 	// Suffix collisions within the entry's folder, not the root.
 	entry := r.zipEntry
 	landed, err := cx.Land(m.ctx, filepath.Dir(safeBase), filepath.Base(safeBase),
-		func(dst string) error { return copyZipFile(entry, dst, m.maxBytes) }, library.LandSpec{Origin: m.source})
+		func(dst string) error {
+			rel, err := filepath.Rel(cx.GalleryPath, dst)
+			if err != nil {
+				return err
+			}
+			out, err := media.OpenFile(rel, os.O_WRONLY|os.O_TRUNC, 0)
+			if err != nil {
+				return err
+			}
+			copyErr := copyZipEntry(out, entry, m.maxBytes)
+			if closeErr := out.Close(); copyErr == nil {
+				copyErr = closeErr
+			}
+			return copyErr
+		}, library.LandSpec{Origin: m.source})
 	if err != nil {
 		if library.LandStageOf(err) == library.LandPlace {
 			m.res.LeftOut++
@@ -926,19 +1004,6 @@ func checkEntrySize(f *zip.File, maxBytes int64) error {
 
 func entryTooLarge(name string, maxBytes int64) error {
 	return fmt.Errorf("archive entry %q exceeds per-file limit of %d bytes", name, maxBytes)
-}
-
-func copyZipFile(f *zip.File, dst string, maxBytes int64) error {
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	err = copyZipEntry(out, f, maxBytes)
-	_ = out.Close()
-	if err != nil {
-		_ = os.Remove(dst)
-	}
-	return err
 }
 
 func extractLightManifest(f *zip.File, dataDir string) (LightManifest, error) {

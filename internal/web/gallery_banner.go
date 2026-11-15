@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/shared/fsx"
 )
 
@@ -51,50 +52,46 @@ func clamp01(v float64) float64 {
 	return v
 }
 
-func (s *Server) galleryBannerPath(name string) (string, bool) {
+const (
+	bannerFilename       = "banner"
+	presentationFilename = "presentation.json"
+)
+
+func (s *Server) openGalleryPresentation(name string) (*os.Root, string, error) {
 	s.cfgMu.RLock()
-	defer s.cfgMu.RUnlock()
-
-	if s.cfg.FindGallery(name) == nil {
-		return "", false
+	g := s.cfg.FindGallery(name)
+	base := s.cfg.Paths.DataPath
+	s.cfgMu.RUnlock()
+	if g == nil {
+		return nil, "", fmt.Errorf("unknown gallery %q", name)
 	}
-
-	return filepath.Join(
-		s.cfg.Paths.DataPath,
-		name,
-		"presentation",
-		"banner",
-	), true
-}
-
-func (s *Server) galleryPresentationPath(name string) (string, bool) {
-	bannerPath, ok := s.galleryBannerPath(name)
-	if !ok {
-		return "", false
+	if err := config.ValidateGalleryName(name); err != nil {
+		return nil, "", err
 	}
-
-	return filepath.Join(filepath.Dir(bannerPath), "presentation.json"), true
+	root, err := os.OpenRoot(base)
+	return root, filepath.Join(name, "presentation"), err
 }
 
 func (s *Server) galleryBannerExists(name string) bool {
-	path, ok := s.galleryBannerPath(name)
-	if !ok {
+	root, dir, err := s.openGalleryPresentation(name)
+	if err != nil {
 		return false
 	}
-
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
+	defer root.Close()
+	info, err := root.Stat(filepath.Join(dir, bannerFilename))
+	return err == nil && info.Mode().IsRegular()
 }
 
 func (s *Server) loadGalleryPresentation(name string) galleryPresentation {
 	presentation := defaultGalleryPresentation()
 
-	path, ok := s.galleryPresentationPath(name)
-	if !ok {
+	root, dir, err := s.openGalleryPresentation(name)
+	if err != nil {
 		return presentation
 	}
+	defer root.Close()
 
-	data, err := os.ReadFile(path)
+	data, err := root.ReadFile(filepath.Join(dir, presentationFilename))
 	if err != nil {
 		return presentation
 	}
@@ -111,10 +108,11 @@ func (s *Server) loadGalleryPresentation(name string) galleryPresentation {
 }
 
 func (s *Server) saveGalleryPresentation(name string, presentation galleryPresentation) error {
-	path, ok := s.galleryPresentationPath(name)
-	if !ok {
-		return fmt.Errorf("unknown gallery %q", name)
+	root, dir, err := s.openGalleryPresentation(name)
+	if err != nil {
+		return err
 	}
+	defer root.Close()
 
 	presentation.FocalX = clamp01(presentation.FocalX)
 	presentation.FocalY = clamp01(presentation.FocalY)
@@ -125,11 +123,7 @@ func (s *Server) saveGalleryPresentation(name string, presentation galleryPresen
 	}
 	data = append(data, '\n')
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-
-	return fsx.WriteDurable(path, func(f *os.File) error {
+	return fsx.WriteDurableIn(root, filepath.Join(dir, presentationFilename), func(f *os.File) error {
 		_, err := f.Write(data)
 		return err
 	})
@@ -150,13 +144,14 @@ func (presentation galleryPresentation) Scale() float64 {
 func (s *Server) galleryBannerGet(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.PathValue("name"))
 
-	path, ok := s.galleryBannerPath(name)
-	if !ok {
+	root, dir, err := s.openGalleryPresentation(name)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
+	defer root.Close()
 
-	f, err := os.Open(path)
+	f, err := root.Open(filepath.Join(dir, bannerFilename))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -164,7 +159,7 @@ func (s *Server) galleryBannerGet(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	info, err := f.Stat()
-	if err != nil || info.IsDir() {
+	if err != nil || !info.Mode().IsRegular() {
 		http.NotFound(w, r)
 		return
 	}
@@ -188,7 +183,8 @@ func (s *Server) galleryBannerGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	setGalleryScopedCache(w, name, "banner", path)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	w.Header().Set("ETag", fmt.Sprintf(`"%s-banner-%d"`, name, info.ModTime().UnixNano()))
 	http.ServeContent(w, r, "banner", info.ModTime(), f)
 }
 
@@ -202,11 +198,12 @@ func (s *Server) settingsGalleryBannerPost(w http.ResponseWriter, r *http.Reques
 
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	path, ok := s.galleryBannerPath(name)
-	if !ok {
-		writeInlineFlash(w, "err", fmt.Sprintf("Unknown gallery %q.", name))
+	root, dir, err := s.openGalleryPresentation(name)
+	if err != nil {
+		writeInlineFlash(w, "err", "Could not open gallery presentation.")
 		return
 	}
+	defer root.Close()
 
 	file, _, err := r.FormFile("banner")
 	if err != nil {
@@ -242,12 +239,8 @@ func (s *Server) settingsGalleryBannerPost(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		writeInlineFlash(w, "err", "Could not create gallery presentation folder.")
-		return
-	}
-
-	if err := fsx.WriteDurable(path, func(f *os.File) error {
+	bannerPath := filepath.Join(dir, bannerFilename)
+	if err := fsx.WriteDurableIn(root, bannerPath, func(f *os.File) error {
 		_, err := f.Write(data)
 		return err
 	}); err != nil {
@@ -257,7 +250,7 @@ func (s *Server) settingsGalleryBannerPost(w http.ResponseWriter, r *http.Reques
 
 	// A new banner starts centered. The user can reposition it afterward.
 	if err := s.saveGalleryPresentation(name, defaultGalleryPresentation()); err != nil {
-		_ = os.Remove(path)
+		_ = root.Remove(bannerPath)
 		writeInlineFlash(w, "err", "Could not initialize gallery banner position.")
 		return
 	}
@@ -318,24 +311,18 @@ func (s *Server) settingsGalleryBannerClearPost(w http.ResponseWriter, r *http.R
 
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	bannerPath, ok := s.galleryBannerPath(name)
-	if !ok {
-		writeInlineFlash(w, "err", fmt.Sprintf("Unknown gallery %q.", name))
+	root, dir, err := s.openGalleryPresentation(name)
+	if err != nil {
+		writeInlineFlash(w, "err", "Could not open gallery presentation.")
 		return
 	}
-
-	presentationPath, _ := s.galleryPresentationPath(name)
-
-	if err := os.Remove(bannerPath); err != nil && !os.IsNotExist(err) {
+	defer root.Close()
+	if err := root.Remove(filepath.Join(dir, bannerFilename)); err != nil && !os.IsNotExist(err) {
 		writeInlineFlash(w, "err", "Could not remove gallery banner.")
 		return
 	}
-
-	if presentationPath != "" {
-		_ = os.Remove(presentationPath)
-	}
-
-	_ = os.Remove(filepath.Dir(bannerPath))
+	_ = root.Remove(filepath.Join(dir, presentationFilename))
+	_ = root.Remove(dir)
 
 	w.Header().Set("HX-Refresh", "true")
 	writeInlineFlash(w, "ok", "Banner cleared for "+name+".")

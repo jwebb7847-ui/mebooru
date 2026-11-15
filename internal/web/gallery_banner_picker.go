@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -173,56 +174,59 @@ func (s *Server) galleryPickerScope(
 	return browseRoot, galleryRoot, startRel, true
 }
 
-func (s *Server) galleryPickerResolve(
-	r *http.Request,
-	name string,
-	rawRel string,
-) (
-	root string,
-	rel string,
-	full string,
-	ok bool,
-) {
-	root, _, _, ok = s.galleryPickerScope(r, name)
+// Keep the displayed relative name for navigation, but open the resolved
+// relative name through the root. This supports in-scope absolute links.
+func galleryPickerResolve(root *os.Root, raw string) (rel, resolved string, err error) {
+	rel, ok := cleanGalleryPickerRel(raw)
 	if !ok {
-		return "", "", "", false
+		return "", "", fs.ErrInvalid
 	}
-
-	rel, ok = cleanGalleryPickerRel(rawRel)
-	if !ok {
-		return "", "", "", false
+	if rel == "" {
+		return "", ".", nil
 	}
-
 	osRel := filepath.FromSlash(rel)
-
-	if filepath.IsAbs(osRel) ||
-		filepath.VolumeName(osRel) != "" {
-		return "", "", "", false
+	if !filepath.IsLocal(osRel) {
+		return "", "", fs.ErrInvalid
 	}
-
-	full = filepath.Clean(
-		filepath.Join(root, osRel),
-	)
-
-	if pathEscapesRoot(root, full) {
-		return "", "", "", false
-	}
-
-	realRoot, err := filepath.EvalSymlinks(root)
+	full, err := filepath.EvalSymlinks(filepath.Join(root.Name(), osRel))
 	if err != nil {
-		return "", "", "", false
+		return "", "", err
 	}
+	resolved, err = filepath.Rel(root.Name(), full)
+	if err != nil || !filepath.IsLocal(resolved) {
+		return "", "", fs.ErrPermission
+	}
+	return rel, resolved, nil
+}
 
-	realFull, err := filepath.EvalSymlinks(full)
+func (s *Server) openGalleryPickerImage(r *http.Request, name, raw string) (*os.File, os.FileInfo, error) {
+	base, _, _, ok := s.galleryPickerScope(r, name)
+	if !ok {
+		return nil, nil, fs.ErrNotExist
+	}
+	root, err := os.OpenRoot(base)
 	if err != nil {
-		return "", "", "", false
+		return nil, nil, err
 	}
-
-	if pathEscapesRoot(realRoot, realFull) {
-		return "", "", "", false
+	defer root.Close()
+	_, resolved, err := galleryPickerResolve(root, raw)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	return realRoot, rel, realFull, true
+	info, err := root.Stat(resolved)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, nil, fs.ErrInvalid
+	}
+	f, err := root.Open(resolved)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err = f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, nil, fs.ErrInvalid
+	}
+	return f, info, nil
 }
 
 func bannerPickerImageExt(name string) bool {
@@ -242,7 +246,7 @@ func (s *Server) galleryBannerPickerGet(
 		r.PathValue("name"),
 	)
 
-	_, _, startRel, ok :=
+	base, _, startRel, ok :=
 		s.galleryPickerScope(r, name)
 
 	if !ok {
@@ -265,41 +269,27 @@ func (s *Server) galleryBannerPickerGet(
 		rawRel = startRel
 	}
 
-	_, rel, dir, ok :=
-		s.galleryPickerResolve(
-			r,
-			name,
-			rawRel,
-		)
-
-	if !ok {
-		http.Error(
-			w,
-			"invalid gallery path",
-			http.StatusBadRequest,
-		)
-		return
-	}
-
-	info, err := os.Stat(dir)
-
-	if err != nil || !info.IsDir() {
-		http.Error(
-			w,
-			"folder not found",
-			http.StatusNotFound,
-		)
-		return
-	}
-
-	raw, err := os.ReadDir(dir)
-
+	root, err := os.OpenRoot(base)
 	if err != nil {
-		http.Error(
-			w,
-			"could not read folder",
-			http.StatusInternalServerError,
-		)
+		http.NotFound(w, r)
+		return
+	}
+	defer root.Close()
+
+	rel, dir, err := galleryPickerResolve(root, rawRel)
+	if err != nil {
+		http.Error(w, "invalid gallery path", http.StatusBadRequest)
+		return
+	}
+	f, err := root.Open(dir)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	raw, err := f.ReadDir(-1)
+	_ = f.Close()
+	if err != nil {
+		http.Error(w, "could not read folder", http.StatusNotFound)
 		return
 	}
 
@@ -313,57 +303,27 @@ func (s *Server) galleryBannerPickerGet(
 			continue
 		}
 
-		childRel :=
-			pathpkg.Join(rel, namePart)
-
+		childRel := pathpkg.Join(rel, namePart)
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
-
 		if info.Mode()&os.ModeSymlink != 0 {
-			info, err = os.Stat(
-				filepath.Join(dir, namePart),
-			)
-
+			_, resolved, err := galleryPickerResolve(root, childRel)
+			if err != nil {
+				continue
+			}
+			info, err = root.Stat(resolved)
 			if err != nil {
 				continue
 			}
 		}
 
 		if info.IsDir() {
-			if _, _, _, ok :=
-				s.galleryPickerResolve(
-					r,
-					name,
-					childRel,
-				); !ok {
-				continue
-			}
-
-			dirs = append(
-				dirs,
-				galleryBannerPickerEntry{
-					Name:  namePart,
-					Rel:   childRel,
-					IsDir: true,
-				},
-			)
-
+			dirs = append(dirs, galleryBannerPickerEntry{Name: namePart, Rel: childRel, IsDir: true})
 			continue
 		}
-
-		if !info.Mode().IsRegular() ||
-			!bannerPickerImageExt(namePart) {
-			continue
-		}
-
-		if _, _, _, ok :=
-			s.galleryPickerResolve(
-				r,
-				name,
-				childRel,
-			); !ok {
+		if !info.Mode().IsRegular() || !bannerPickerImageExt(namePart) {
 			continue
 		}
 
@@ -449,33 +409,11 @@ func (s *Server) galleryBannerPickerPreviewGet(
 		r.PathValue("name"),
 	)
 
-	_, _, full, ok :=
-		s.galleryPickerResolve(
-			r,
-			name,
-			r.URL.Query().Get("path"),
-		)
-
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-
-	info, err := os.Stat(full)
-
-	if err != nil ||
-		!info.Mode().IsRegular() {
-		http.NotFound(w, r)
-		return
-	}
-
-	f, err := os.Open(full)
-
+	f, info, err := s.openGalleryPickerImage(r, name, r.URL.Query().Get("path"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-
 	defer f.Close()
 
 	head := make([]byte, 512)
@@ -541,34 +479,12 @@ func (s *Server) settingsGalleryBannerSelectPost(
 			r.FormValue("path"),
 		)
 
-	_, _, sourcePath, ok :=
-		s.galleryPickerResolve(
-			r,
-			name,
-			rel,
-		)
-
-	if !ok {
-		writeInlineFlash(
-			w,
-			"err",
-			"Invalid gallery image.",
-		)
+	source, info, err := s.openGalleryPickerImage(r, name, rel)
+	if err != nil {
+		writeInlineFlash(w, "err", "Invalid or unavailable gallery image.")
 		return
 	}
-
-	info, err := os.Stat(sourcePath)
-
-	if err != nil ||
-		!info.Mode().IsRegular() {
-
-		writeInlineFlash(
-			w,
-			"err",
-			"Selected image no longer exists.",
-		)
-		return
-	}
+	defer source.Close()
 
 	if info.Size() <= 0 {
 		writeInlineFlash(
@@ -589,20 +505,6 @@ func (s *Server) settingsGalleryBannerSelectPost(
 		)
 		return
 	}
-
-	source, err :=
-		os.Open(sourcePath)
-
-	if err != nil {
-		writeInlineFlash(
-			w,
-			"err",
-			"Could not open selected image.",
-		)
-		return
-	}
-
-	defer source.Close()
 
 	head := make([]byte, 512)
 
@@ -642,47 +544,22 @@ func (s *Server) settingsGalleryBannerSelectPost(
 		return
 	}
 
-	bannerPath, ok :=
-		s.galleryBannerPath(name)
-
-	if !ok {
-		writeInlineFlash(
-			w,
-			"err",
-			"Unknown gallery.",
-		)
+	root, dir, err := s.openGalleryPresentation(name)
+	if err != nil {
+		writeInlineFlash(w, "err", "Could not open gallery presentation.")
 		return
 	}
+	defer root.Close()
 
-	if err :=
-		os.MkdirAll(
-			filepath.Dir(bannerPath),
-			0755,
-		); err != nil {
-
-		writeInlineFlash(
-			w,
-			"err",
-			"Could not create presentation folder.",
-		)
-		return
-	}
-
-	if err := fsx.WriteDurable(
-		bannerPath,
-		func(dst *os.File) error {
-			_, err :=
-				io.Copy(dst, source)
-
-			return err
-		},
-	); err != nil {
-
-		writeInlineFlash(
-			w,
-			"err",
-			"Could not save selected banner.",
-		)
+	bannerPath := filepath.Join(dir, bannerFilename)
+	if err := fsx.WriteDurableIn(root, bannerPath, func(dst *os.File) error {
+		n, err := io.Copy(dst, io.LimitReader(source, maxGalleryBannerBytes+1))
+		if err == nil && n > maxGalleryBannerBytes {
+			return errors.New("banner exceeds size limit")
+		}
+		return err
+	}); err != nil {
+		writeInlineFlash(w, "err", "Could not save selected banner.")
 		return
 	}
 
@@ -692,7 +569,7 @@ func (s *Server) settingsGalleryBannerSelectPost(
 			defaultGalleryPresentation(),
 		); err != nil {
 
-		_ = os.Remove(bannerPath)
+		_ = root.Remove(bannerPath)
 
 		writeInlineFlash(
 			w,
