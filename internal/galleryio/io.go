@@ -26,24 +26,17 @@ import (
 	"github.com/monbooru/monbooru/internal/tags"
 )
 
-// SafeArchiveDest rejects an absolute entry or one that escapes root. It uses
-// PathInside, not a ".." substring test, so "foo..bar.ext" stays legal.
+// SafeArchiveDest resolves a file name relative to the gallery root.
 func SafeArchiveDest(root, rel string) (string, error) {
-	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("absolute archive entry path")
+	rel = filepath.FromSlash(rel)
+	if !filepath.IsLocal(rel) || filepath.Clean(rel) == "." {
+		return "", fmt.Errorf("invalid gallery file path %q", rel)
 	}
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return "", err
 	}
-	dst, err := filepath.Abs(filepath.Join(rootAbs, filepath.FromSlash(rel)))
-	if err != nil {
-		return "", err
-	}
-	if !gallery.PathInside(rootAbs, dst) {
-		return "", fmt.Errorf("archive entry escapes gallery root")
-	}
-	return dst, nil
+	return filepath.Join(rootAbs, rel), nil
 }
 
 // Bump ExportVersion when the document gains a field; loadExportStream
@@ -1104,8 +1097,23 @@ func storedBasename(p string) string {
 	return p
 }
 
+func restoredCanonicalPath(root, folder, canonical string) (string, error) {
+	base := storedBasename(canonical)
+	if !filepath.IsLocal(base) || base == "." || (folder != "" && !filepath.IsLocal(filepath.FromSlash(folder))) {
+		return "", fmt.Errorf("invalid imported image path %q in folder %q", canonical, folder)
+	}
+	return SafeArchiveDest(root, filepath.Join(folder, base))
+}
+
 func rebaseImagePaths(database *db.DB, b *gallery.Boundary) error {
-	root := strings.TrimRight(b.Root(), "/")
+	root := b.Root()
+	media, err := os.OpenRoot(root)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("open restore destination: %w", err)
+	}
+	if media != nil {
+		defer media.Close()
+	}
 	tx, err := database.Write.Begin()
 	if err != nil {
 		return err
@@ -1139,7 +1147,13 @@ func rebaseImagePaths(database *db.DB, b *gallery.Boundary) error {
 			}
 		}
 		for _, r := range imgs {
-			newCanonical := filepath.Join(root, r.folder, storedBasename(r.canonical))
+			newCanonical, err := restoredCanonicalPath(root, r.folder, r.canonical)
+			if err != nil {
+				return fmt.Errorf("rebase image %d: %w", r.id, err)
+			}
+			if err := checkRestoredPath(media, root, newCanonical); err != nil {
+				return fmt.Errorf("rebase image %d: %w", r.id, err)
+			}
 			if newCanonical == r.canonical {
 				continue
 			}
@@ -1182,12 +1196,17 @@ func rebaseImagePaths(database *db.DB, b *gallery.Boundary) error {
 		for _, p := range paths {
 			// Canonical rows rebuild exactly as images.canonical_path did.
 			var newPath string
-			if p.isCanonical || sourceRoot == "" {
-				newPath = filepath.Join(root, p.folder, storedBasename(p.path))
-			} else if rel, ok := strings.CutPrefix(slashed(p.path), sourceRoot+"/"); ok {
-				newPath = filepath.Join(root, filepath.FromSlash(rel))
+			var err error
+			if rel, ok := strings.CutPrefix(slashed(p.path), sourceRoot+"/"); !p.isCanonical && sourceRoot != "" && ok {
+				newPath, err = SafeArchiveDest(root, rel)
 			} else {
-				newPath = filepath.Join(root, p.folder, storedBasename(p.path))
+				newPath, err = restoredCanonicalPath(root, p.folder, p.path)
+			}
+			if err != nil {
+				return fmt.Errorf("rebase image path %d: %w", p.id, err)
+			}
+			if err := checkRestoredPath(media, root, newPath); err != nil {
+				return fmt.Errorf("rebase image path %d: %w", p.id, err)
 			}
 			if newPath == p.path {
 				continue
@@ -1205,6 +1224,20 @@ func rebaseImagePaths(database *db.DB, b *gallery.Boundary) error {
 		return err
 	}
 	return recalcImportedTagCounts(database)
+}
+
+func checkRestoredPath(media *os.Root, root, dst string) error {
+	if media == nil {
+		return nil
+	}
+	rel, err := filepath.Rel(root, dst)
+	if err != nil {
+		return err
+	}
+	if _, err := media.Stat(rel); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot resolve %q inside the destination gallery: %w", rel, err)
+	}
+	return nil
 }
 
 // The export's usage counts include images the reconcile just marked
@@ -1255,8 +1288,11 @@ func reconcileMissingFlags(x db.Execer, b *gallery.Boundary, imgs []imgPathRow) 
 }
 
 func fileMissingFlag(b *gallery.Boundary, folder, canonical string) int {
-	path := filepath.Join(b.Root(), folder, storedBasename(canonical))
-	if _, err := os.Stat(path); err == nil && !b.Excludes(path) {
+	path, err := restoredCanonicalPath(b.Root(), folder, canonical)
+	if err != nil || b.Excludes(path) {
+		return 1
+	}
+	if _, err := os.Stat(path); err == nil {
 		return 0
 	}
 	return 1

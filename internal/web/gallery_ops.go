@@ -151,7 +151,7 @@ func gallerySwitchTarget(raw string) string {
 
 	switch u.Path {
 	case "/", "/categories", "/tags", "/collections", "/relations", "/settings", "/loader":
-		return u.RequestURI()
+		return (&url.URL{Path: u.Path, RawQuery: u.RawQuery, ForceQuery: u.ForceQuery}).RequestURI()
 	default:
 		// IDs are gallery-local. Never carry an image/detail/session URL
 		// into another gallery where the same ID could mean something else.
@@ -194,6 +194,11 @@ func (s *Server) settingsGalleriesPost(w http.ResponseWriter, r *http.Request) {
 	if filePart != nil {
 		defer func() { _ = filePart.Close() }()
 	}
+	galleryPath := strings.TrimSpace(fields["gallery_path"])
+	if !filepath.IsAbs(galleryPath) {
+		writeInlineFlash(w, "err", "The gallery folder must be an absolute path.")
+		return
+	}
 	var file *bufio.Reader
 	var format string
 	if filePart != nil {
@@ -209,7 +214,6 @@ func (s *Server) settingsGalleriesPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if format == "zip" {
-			galleryPath := strings.TrimSpace(fields["gallery_path"])
 			if entries, err := os.ReadDir(galleryPath); err == nil && len(entries) > 0 {
 				writeInlineFlash(w, "err", galleryPath+" is not empty: an imported .zip replaces what a gallery folder holds, so it needs an empty folder. Add the gallery without the file, then use its Import, which asks you to confirm.")
 				return
@@ -217,7 +221,7 @@ func (s *Server) settingsGalleriesPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	name := fields["name"]
-	if err := s.addGallery(name, fields["gallery_path"]); err != nil {
+	if err := s.addGallery(name, galleryPath); err != nil {
 		writeInlineFlash(w, "err", err.Error())
 		return
 	}
