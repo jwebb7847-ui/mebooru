@@ -14,7 +14,8 @@
     </div>
     {{if .Companion}}
     <div class="peer-line field-hint">Downloads from boorus and other sites, and finds tags for your images.</div>
-    <form id="monloader-urls" hx-post="/settings/monloader" hx-target="#flash-plugins" hx-swap="innerHTML">
+    <form id="monloader-urls" hx-post="/settings/monloader" hx-target="#flash-monloader-urls"
+          hx-swap="innerHTML" hx-disabled-elt="find button">
       <div class="field">
         <label for="monloader_api_url">API URL</label>
         <input type="text" name="api_url" id="monloader_api_url" value="{{.APIURL}}" hx-preserve="true" placeholder="auto-detected from pairing"{{if .APIURLPinned}} disabled{{end}}>
@@ -25,6 +26,9 @@
         <input type="text" name="monloader_url" id="monloader_url" value="{{.WebURL}}" hx-preserve="true" placeholder="{{.WebURLHint}}"{{if .WebURLPinned}} disabled{{end}}>
         {{if .WebURLPinned}}<span class="field-hint">Set by {{.WebURLPinned}} in the environment.</span>{{end}}
       </div>
+      <div class="peer-line field-hint">Optional on a paired local HTTP setup.</div>
+      <div class="peer-actions"><button type="submit" class="btn-sm">Save addresses</button></div>
+      <div id="flash-monloader-urls" role="status"></div>
     </form>
     {{end}}
     {{if .Buttons}}
@@ -48,7 +52,6 @@
     <div class="peer-line field-hint">Not paired yet. Its buttons appear once it offers to pair and you approve it above.</div>
     {{end}}
     <div class="peer-actions">
-      {{if .Companion}}<button type="submit" form="monloader-urls" class="btn-sm">Save</button>{{end}}
       {{if .Installed}}
       <form hx-post="/settings/plugins/{{.Name}}/{{if .Enabled}}stop{{else}}start{{end}}" hx-target="#plugin-rows" hx-swap="outerHTML"
             {{if not .Enabled}}hx-confirm="Run {{.Command}}?" data-confirm-ok="Enable"{{end}} style="display:inline">

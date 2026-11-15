@@ -2,11 +2,31 @@ package web
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/monbooru/monbooru/internal/config"
+	"github.com/monbooru/monbooru/internal/monloader"
 	"github.com/monbooru/monbooru/internal/peer"
+	"github.com/monbooru/monbooru/internal/shared/apitoken"
+	"github.com/monbooru/monbooru/internal/shared/contract"
 )
+
+func TestLoaderResultLinksOnlyToRecordedGallery(t *testing.T) {
+	sha := strings.Repeat("ab", 32)
+	item := monloader.ImportItem{PostID: "123", Outcome: contract.OutcomeCreated, SHA256: sha}
+	row := buildLoaderResult("Audit_A", item, 1)
+	if row.URL != "/i/"+sha+"?gallery=Audit_A" || row.PostID != "123" {
+		t.Fatalf("created result = %+v", row)
+	}
+	if row := buildLoaderResult("", item, 1); row.URL != "" {
+		t.Fatalf("linked to an unspecified gallery: %+v", row)
+	}
+	item.Outcome = contract.OutcomeSkippedBlacklist
+	if row := buildLoaderResult("Audit_A", item, 1); row.URL != "" || row.Label != "Blacklisted" {
+		t.Fatalf("blacklisted result = %+v", row)
+	}
+}
 
 func TestLoaderPanelUsesSeparateConfiguredPeerAndGallery(t *testing.T) {
 	s := &Server{cfg: config.Default()}
@@ -56,5 +76,55 @@ func TestLoaderPeerURLRejectsUnsafeFrameOrigins(t *testing.T) {
 	}
 	if got := gallerySwitchTarget("/loader?view=ptr"); got != "/loader?view=ptr" {
 		t.Errorf("Loader switch target = %q", got)
+	}
+}
+
+func TestLoaderPanelFallsBackOnlyForLocalHTTP(t *testing.T) {
+	for _, tc := range []struct {
+		name, parent, client, api, web, forwarded, want string
+	}{
+		{name: "paired address", want: "http://127.0.0.1:8456"},
+		{name: "API override", api: "http://localhost:19456", want: "http://localhost:19456"},
+		{name: "web override", web: "http://127.0.0.1:19456", want: "http://127.0.0.1:19456"},
+		{name: "same origin", api: "http://127.0.0.1:8455"},
+		{name: "remote API", api: "http://meloader.internal:8456"},
+		{name: "remote parent", parent: "http://mebooru.internal:8455"},
+		{name: "remote client", client: "192.0.2.10:1234"},
+		{name: "proxy", forwarded: "127.0.0.1"},
+		{name: "HTTPS", parent: "https://127.0.0.1:8455"},
+		{name: "invalid explicit web URL", web: "http://127.0.0.1:8456/not-an-origin"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{cfg: config.Default()}
+			s.cfg.Auth.Tokens = apitoken.List{{Paired: monloader.App, PeerURL: "http://127.0.0.1:8456"}}
+			s.cfg.Monloader.APIURL = tc.api
+			s.cfg.Server.MonloaderURL = tc.web
+			parent := tc.parent
+			if parent == "" {
+				parent = "http://127.0.0.1:8455"
+			}
+			r := httptest.NewRequest("GET", parent+"/loader?view=advanced", nil)
+			r.RemoteAddr = tc.client
+			if r.RemoteAddr == "" {
+				r.RemoteAddr = "127.0.0.1:1234"
+			}
+			if tc.forwarded != "" {
+				r.Header.Set("X-Forwarded-For", tc.forwarded)
+			}
+			base := baseData{MonloaderPaired: true, ActiveGallery: "Audit_A"}
+			got := s.loaderPanel(r, base, "/queue")
+			if tc.want == "" {
+				if got.FrameURL != "" || got.OpenURL != "" || !got.Setup {
+					t.Fatalf("expected address setup, got %+v", got)
+				}
+				return
+			}
+			if got.FrameURL != tc.want+"/loader/queue?embed=1&gallery=Audit_A" || got.Setup {
+				t.Fatalf("panel = %+v", got)
+			}
+			if got := s.loaderPanel(r, base, "/settings"); got.FrameURL != tc.want+"/settings?embed=1" {
+				t.Fatalf("settings panel = %+v", got)
+			}
+		})
 	}
 }

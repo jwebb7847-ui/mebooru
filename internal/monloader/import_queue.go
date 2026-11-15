@@ -3,6 +3,7 @@ package monloader
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -11,6 +12,8 @@ import (
 )
 
 const importQueuePath = "/api/v1/queue"
+
+var ErrImportJobNotFound = errors.New("import job not found")
 
 type ImportQueuePage struct {
 	Page   int         `json:"page"`
@@ -32,6 +35,39 @@ type ImportJob struct {
 	Capped   bool
 	Summary  struct {
 		Created, Duplicate, Skipped, Blacklisted, Failed, Total int
+	}
+}
+
+type ImportItem struct {
+	PostID    string `json:"post_id"`
+	Num       int    `json:"num"`
+	Status    string `json:"status"`
+	Outcome   string `json:"outcome"`
+	SHA256    string `json:"sha256"`
+	ErrorCode string `json:"error_code"`
+	Error     string `json:"error"`
+}
+
+type ImportJobResults struct {
+	ImportJob
+	Items []ImportItem `json:"items"`
+}
+
+func (l *Link) ImportResults(ctx context.Context, id int64) (ImportJobResults, error) {
+	var out ImportJobResults
+	resp, err := l.client.Do(ctx, http.MethodGet, importQueuePath+"/"+strconv.FormatInt(id, 10), nil)
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		return out, ErrImportJobNotFound
+	case http.StatusOK:
+		err = json.NewDecoder(resp.Body).Decode(&out)
+		return out, err
+	default:
+		return out, refused(resp)
 	}
 }
 

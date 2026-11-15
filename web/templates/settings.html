@@ -1323,7 +1323,7 @@
 
   <section id="meloader" class="settings-section">
     {{template "webui/settings_section_header" dict "Title" "Meloader"}}
-    {{template "partials/loader_panel.html" (dict "Panel" .LoaderSettings "Title" "Meloader settings" "Lazy" true)}}
+    {{template "partials/meloader_settings_panel.html" (dict "Panel" .LoaderSettings)}}
   </section>
 
   <section id="plugins" class="settings-section">

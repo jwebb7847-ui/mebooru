@@ -7,3 +7,9 @@
   {{with .Panel.OpenURL}}<a class="loader-open field-hint" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in Meloader</a>{{end}}
 </div>
 {{end}}
+
+{{define "partials/meloader_settings_panel.html"}}
+<div id="meloader-settings-panel"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+  {{template "partials/loader_panel.html" (dict "Panel" .Panel "Title" "Meloader settings" "Lazy" true)}}
+</div>
+{{end}}

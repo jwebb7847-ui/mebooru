@@ -74,8 +74,16 @@ and archive paths. For a single run, `-meloader` and `-meloader-config`
 specify the same paths on the command line.
 
 Use **Loader → Queue** to submit imports into the active gallery through
-the paired API. Watches, PTR, and Advanced queue use the Meloader Web URL
-configured in **Settings → Plugins**.
+the paired API. On a direct local HTTP connection, Watches, PTR, Advanced
+queue, and Meloader settings use the paired loopback address when **Settings
+→ Plugins → Web URL** is blank. Set the Web URL explicitly for other
+deployments. Set Meloader’s `[monbooru].web_url` to the origin you use in your
+browser to allow these views to open inside Mebooru.
+
+When Mebooru launches the companion, quitting Mebooru stops it as well. Use
+the same companion options when restarting Mebooru, or start Meloader in its
+own terminal with the same configuration. **Settings → Plugins → Save
+addresses** updates the connection settings for the existing companion.
 
 ### Docker
 

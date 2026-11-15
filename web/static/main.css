@@ -98,8 +98,10 @@ button.footer-rating-link { color: var(--fg-dim); }
 .loader-import > span { align-self: center; }
 .loader-jobs { margin-top: 8px; }
 .loader-jobs td { overflow-wrap: anywhere; }
-.loader-jobs td:nth-child(2) { max-width: 48ch; }
+.loader-jobs > tbody > tr > td:nth-child(2) { max-width: 48ch; }
 .loader-pages { align-items: center; margin-top: 10px; }
+.loader-results-row summary { cursor: pointer; color: var(--link); }
+.loader-results { margin: 8px 0; }
 
 #job-status {
   font-size: 12px;
