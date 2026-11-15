@@ -80,6 +80,11 @@ queue, and Meloader settings use the paired loopback address when **Settings
 deployments. Set Meloader’s `[monbooru].web_url` to the origin you use in your
 browser to allow these views to open inside Mebooru.
 
+When Mebooru launches the companion, quitting Mebooru stops it as well. Use
+the same companion options when restarting Mebooru, or start Meloader in its
+own terminal with the same configuration. **Settings → Plugins → Save
+addresses** updates the connection settings for the existing companion.
+
 ### Docker
 
 Edit the volume paths in [`docker/docker-compose.yml`](docker/docker-compose.yml), then run `docker compose up -d`.

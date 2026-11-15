@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/monloader"
+	"github.com/monbooru/monbooru/internal/peer"
 	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
@@ -118,6 +120,7 @@ func (s *Server) loaderJobs(w http.ResponseWriter, r *http.Request) {
 	view := struct {
 		monloader.ImportQueuePage
 		Message    string
+		Setup      bool
 		Prev, Next int
 		Latest     map[int64]int64
 	}{}
@@ -126,14 +129,24 @@ func (s *Server) loaderJobs(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case !link.Paired:
 		view.Message = "Pair Meloader in Settings → Plugins to see import jobs."
+		view.Setup = true
 	case link.Paused:
 		view.Message = "Meloader is paused. Resume it from the footer or Settings → Plugins."
+		view.Setup = true
 	default:
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
 		out, err := s.ml.ImportQueue(ctx, page, loaderQueueLimit)
 		if err != nil {
-			view.Message = "Queue unavailable. Check the Meloader connection in Settings → Plugins."
+			var networkErr *net.OpError
+			if errors.As(err, &networkErr) && networkErr.Op == "dial" {
+				view.Message = "Meloader is unreachable. Start the companion to restore the queue."
+			} else if peer.IsStatusError(err) {
+				view.Message = "Meloader refused the queue request. Check the connection in Settings → Plugins."
+				view.Setup = true
+			} else {
+				view.Message = "Could not load the Meloader queue. This view will retry automatically."
+			}
 		} else {
 			view.ImportQueuePage = out
 			view.Latest = make(map[int64]int64, len(out.Jobs))

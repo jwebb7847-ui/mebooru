@@ -33,7 +33,7 @@
      hx-trigger="every 5s [!confirmOpen()], loader-queue-updated from:body"
      hx-target="this" hx-swap="outerHTML" hx-sync="this:drop">
   {{if .Message}}
-  <p>{{.Message}} <a href="/settings#plugins">Open Plugins</a></p>
+  <p role="status">{{.Message}}{{if .Setup}} <a href="/settings#plugins">Open Plugins</a>{{end}}</p>
   {{else}}
   {{if .Paused}}<p class="field-hint">The import queue is paused.</p>{{end}}
   {{if .Jobs}}

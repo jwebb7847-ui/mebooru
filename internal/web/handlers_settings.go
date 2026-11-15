@@ -14,6 +14,7 @@ import (
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/models"
+	"github.com/monbooru/monbooru/internal/peer"
 	"github.com/monbooru/monbooru/internal/schedule"
 	"github.com/monbooru/monbooru/internal/shared/apitoken"
 	"github.com/monbooru/monbooru/internal/shared/desktop"
@@ -403,7 +404,17 @@ func (s *Server) settingsMonloaderPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logx.Infof("settings: monloader link updated")
-	writeInlineFlash(w, "ok", "Saved.")
+	writeInlineFlash(w, "ok", "Meloader addresses saved.")
+	link := s.monloaderLink()
+	conn := s.ml.Status().Conn
+	if link.Paused {
+		conn = peer.ConnPaused
+	}
+	panel := s.loaderPanel(r, baseData{MonloaderPaired: link.Paired, MonloaderConn: conn}, "/settings")
+	s.renderTemplate(w, "partials/meloader_settings_panel.html", map[string]any{
+		"Panel": panel,
+		"OOB":   true,
+	})
 }
 
 func httpURLOrBlank(s string) bool {
