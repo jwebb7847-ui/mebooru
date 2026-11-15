@@ -258,49 +258,48 @@ function cycleRatingCeiling(delta) {
   return false;
 }
 
-// Collection order forces asc: a descending pick carried over would
-// render the collection backwards.
 function applySortChange(sortEl) {
-  if (sortEl.value === 'order') {
-    var orderEl = document.querySelector('#search-form select[name="order"]');
-    if (orderEl) orderEl.value = 'asc';
-  }
+  var form = sortEl.form;
+  if (form.hasAttribute('hx-get')) return submitSearch();
+  var [sort, order] = sortEl.value.split(':');
+  form.elements.namedItem('sort').value = sort;
+  form.elements.namedItem('order').value = order;
   // A seed belongs to the random sort; left on the form it rides into the
   // pushed URL and into Save search.
-  if (sortEl.value !== 'random') {
-    var seedEl = document.querySelector('#search-form input[name="seed"]');
+  if (sort !== 'random') {
+    var seedEl = form.elements.namedItem('seed');
     if (seedEl) seedEl.remove();
   }
-  return submitSearch();
+  return true;
 }
 
 function cycleSort() {
   var sortEl = document.getElementById('search-sort');
   if (!sortEl) return false;
-  var order = ['newest', 'filesize', 'order', 'random'];
-  var i = order.indexOf(sortEl.value);
-  var next = order[(i + 1) % order.length];
+  var cycle = ['newest', 'filesize', 'order', 'random'];
+  var [sort, direction] = sortEl.value.split(':');
+  var next = cycle[(cycle.indexOf(sort) + 1) % cycle.length];
   if (next === 'random') {
     applyRandomSort();
     return true;
   }
-  sortEl.value = next;
+  sortEl.value = next + ':' + (next === 'order' ? 'asc' : direction);
   return applySortChange(sortEl);
 }
 
 function flipSortDirection() {
-  var orderEl = document.querySelector('#search-form select[name="order"]');
-  if (!orderEl) return false;
-  orderEl.value = orderEl.value === 'asc' ? 'desc' : 'asc';
-  return submitSearch();
+  var sortEl = document.getElementById('search-sort');
+  if (!sortEl) return false;
+  var [sort, order] = sortEl.value.split(':');
+  if (sort === 'random') return false;
+  sortEl.value = sort + ':' + (order === 'asc' ? 'desc' : 'asc');
+  return applySortChange(sortEl);
 }
 
-// Dispatch, not form.submit(): htmx listens for the submit event, which
-// submit() never fires.
 function submitSearch() {
   var form = document.getElementById('search-form');
   if (!form) return false;
-  form.dispatchEvent(new Event('submit', { bubbles: true }));
+  form.requestSubmit();
   return true;
 }
 
@@ -1519,6 +1518,13 @@ function sidebarFilterQ(url) {
 
 document.body.addEventListener('htmx:configRequest', function(e) {
   if (activeGallery()) e.detail.headers['X-Monbooru-Gallery'] = activeGallery();
+  if (e.detail.elt.id !== 'search-form') return;
+  const menu = document.getElementById('search-sort');
+  if (!menu || !menu.value) return;
+  const [sort, order] = menu.value.split(':');
+  e.detail.parameters.sort = sort;
+  e.detail.parameters.order = order;
+  if (sort !== 'random') delete e.detail.parameters.seed;
 });
 
 document.body.addEventListener('htmx:configRequest', function(e) {
@@ -1536,19 +1542,10 @@ document.body.addEventListener('htmx:historyRestore', function() {
   if (form && document.getElementById('gallery-grid')) {
     const input = document.getElementById('search-input');
     if (input) input.value = params.get('q') || '';
-    const orderEl = form.querySelector('select[name="order"]');
-    const order = params.get('order');
-    if (orderEl && (order === 'asc' || order === 'desc')) orderEl.value = order;
-    let seedEl = form.querySelector('input[name="seed"]');
-    const seed = params.get('seed');
-    if (seed && !seedEl) {
-      seedEl = document.createElement('input');
-      seedEl.type = 'hidden';
-      seedEl.name = 'seed';
-      form.appendChild(seedEl);
-    }
-    if (seed) seedEl.value = seed;
-    else if (seedEl) seedEl.remove();
+    const menu = document.getElementById('search-sort');
+    const sort = form.elements.namedItem('sort').value;
+    const order = form.elements.namedItem('order').value;
+    if (menu) menu.value = sort + ':' + (sort === 'random' ? 'desc' : order);
     readSelection();
     syncSelectionBoxes();
     updateBatchBar();
@@ -2721,8 +2718,8 @@ function scopeCount(scope, countEl, nounEl) {
 // From the URL, not the form, which may hold an unsubmitted query.
 function searchScopeParts() {
   var params = new URLSearchParams(location.search);
-  var sortEl = document.getElementById('search-sort');
-  var orderEl = document.querySelector('#search-form select[name="order"]');
+  var sortEl = document.querySelector('#search-form input[name="sort"]');
+  var orderEl = document.querySelector('#search-form input[name="order"]');
   var parts = ['q=' + encodeURIComponent(params.get('q') || ''),
                'sort=' + encodeURIComponent(params.get('sort') || (sortEl ? sortEl.value : 'newest')),
                'order=' + encodeURIComponent(params.get('order') || (orderEl ? orderEl.value : 'desc'))];
@@ -3429,4 +3426,15 @@ document.addEventListener('click', function(e) {
       !gallerySwitcher.contains(e.target)) {
     gallerySwitcher.open = false;
   }
+});
+
+function sizeGalleryBannerImage(img) {
+  if (!img.naturalWidth || !img.naturalHeight) return;
+  img.style.setProperty('--gallery-banner-aspect', img.naturalWidth / img.naturalHeight);
+  img.setAttribute('data-banner-sized', '');
+}
+
+document.querySelectorAll('img.gallery-banner-framing').forEach(function (img) {
+  img.addEventListener('load', function () { sizeGalleryBannerImage(img); });
+  sizeGalleryBannerImage(img);
 });

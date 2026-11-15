@@ -13,6 +13,7 @@ type loaderPanel struct {
 	FrameURL string
 	OpenURL  string
 	Message  string
+	Setup    bool
 }
 
 func (s *Server) loaderPanel(r *http.Request, base baseData, path string) loaderPanel {
@@ -23,10 +24,10 @@ func (s *Server) loaderPanel(r *http.Request, base baseData, path string) loader
 	}
 	peerURL := loaderPeerURL(web, scheme, r.Host)
 	if !base.MonloaderPaired {
-		return loaderPanel{Message: "Pair Meloader in Settings → Plugins to use Loader."}
+		return loaderPanel{Message: "Pair Meloader to use this view.", Setup: true}
 	}
 	if peerURL == "" {
-		return loaderPanel{Message: "Set a separate Meloader Web URL in Settings → Plugins. If Mebooru uses HTTPS, use HTTPS for Meloader too."}
+		return loaderPanel{Message: "This view needs a separate Meloader Web URL. Use HTTPS for both apps if Mebooru uses HTTPS.", Setup: true}
 	}
 	panel := loaderPanel{OpenURL: peerURL + path}
 	switch base.MonloaderConn {
@@ -85,17 +86,23 @@ func loaderSameOrigin(u *url.URL, scheme, host string) bool {
 
 func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 	view := r.URL.Query().Get("view")
-	path := "/queue"
+	var path string
 	switch view {
 	case "watches", "ptr":
 		path = "/" + view
+	case "advanced":
+		path = "/queue"
 	default:
 		view = "queue"
 	}
 	base := s.base(r, "loader", "Loader - "+s.booruName())
+	var panel loaderPanel
+	if path != "" {
+		panel = s.loaderPanel(r, base, path)
+	}
 	s.renderTemplate(w, "loader.html", struct {
 		baseData
 		View  string
 		Panel loaderPanel
-	}{base, view, s.loaderPanel(r, base, path)})
+	}{base, view, panel})
 }

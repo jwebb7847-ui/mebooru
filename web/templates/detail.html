@@ -11,15 +11,7 @@
     <form id="search-form" action="/" method="GET">
       {{template "partials/search_input.html" .BackQuery}}
       <span class="search-controls">
-        <select name="sort" id="search-sort" aria-label="Sort">
-          <option value="newest"   {{if eq .BackSort "newest"}}selected{{end}}>Date added</option>
-          <option value="filesize" {{if eq .BackSort "filesize"}}selected{{end}}>File size</option>
-          <option value="order"    {{if eq .BackSort "order"}}selected{{end}}>Collection order</option>
-        </select>
-        <select name="order" aria-label="Sort direction">
-          <option value="desc" {{if ne .BackOrder "asc"}}selected{{end}}>↓</option>
-          <option value="asc"  {{if eq .BackOrder "asc"}}selected{{end}}>↑</option>
-        </select>
+        {{template "partials/sort_select.html" (dict "Query" .BackQuery "Sort" .BackSort "Order" .BackOrder "Seed" .BackSeed)}}
         <button type="submit">Search</button>
       </span>
     </form>

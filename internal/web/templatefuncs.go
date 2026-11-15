@@ -32,8 +32,33 @@ type originImplicationGroup struct {
 	Implications []models.Implication
 }
 
+type sortChoice struct {
+	Sort, Order, Label string
+}
+
+func sortChoices(query, current string) []sortChoice {
+	choices := []sortChoice{
+		{"newest", "desc", "Newest"},
+		{"newest", "asc", "Oldest"},
+		{"filesize", "desc", "Largest File Size"},
+		{"filesize", "asc", "Smallest File Size"},
+		{"order", "asc", "Collection Order"},
+		{"order", "desc", "Reverse Collection Order"},
+		{"random", "desc", "Random"},
+	}
+	if current == "similarity" || search.HasSimilarTerm(search.Parse(query)) {
+		choices = append(choices,
+			sortChoice{"similarity", "desc", "Most Similar"},
+			sortChoice{"similarity", "asc", "Least Similar"},
+		)
+	}
+	return choices
+}
+
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
+		"sortChoices":      sortChoices,
+		"defaultSortOrder": search.DefaultOrder,
 		"seq": func(start, end int) []int {
 			r := make([]int, 0, end-start+1)
 			for i := start; i <= end; i++ {

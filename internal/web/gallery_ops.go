@@ -98,6 +98,7 @@ type galleryRow struct {
 	HasBanner    bool
 	BannerFocalX float64
 	BannerFocalY float64
+	BannerZoom   int
 }
 
 // The active row takes the caller's counts, which the footer shows: a
@@ -112,6 +113,7 @@ func (s *Server) galleryRowsWithSnapshot(activeName string, activeImages, active
 		presentation := s.loadGalleryPresentation(g.Name)
 		out[i].BannerFocalX = presentation.FocalX
 		out[i].BannerFocalY = presentation.FocalY
+		out[i].BannerZoom = presentation.Zoom
 
 		cx := s.get(g.Name)
 		if cx != nil {

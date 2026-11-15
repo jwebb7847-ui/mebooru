@@ -14,7 +14,12 @@ import (
 	"github.com/monbooru/monbooru/internal/shared/fsx"
 )
 
-const maxGalleryBannerBytes int64 = 12 << 20 // 12 MiB
+const (
+	maxGalleryBannerBytes    int64 = 12 << 20 // 12 MiB
+	minGalleryBannerZoom           = 10
+	defaultGalleryBannerZoom       = 100
+	maxGalleryBannerZoom           = 300
+)
 
 var galleryBannerTypes = map[string]bool{
 	"image/jpeg": true,
@@ -25,12 +30,14 @@ var galleryBannerTypes = map[string]bool{
 type galleryPresentation struct {
 	FocalX float64 `json:"focal_x"`
 	FocalY float64 `json:"focal_y"`
+	Zoom   int     `json:"zoom_percent"`
 }
 
 func defaultGalleryPresentation() galleryPresentation {
 	return galleryPresentation{
 		FocalX: 0.5,
 		FocalY: 0.5,
+		Zoom:   defaultGalleryBannerZoom,
 	}
 }
 
@@ -98,6 +105,7 @@ func (s *Server) loadGalleryPresentation(name string) galleryPresentation {
 
 	presentation.FocalX = clamp01(presentation.FocalX)
 	presentation.FocalY = clamp01(presentation.FocalY)
+	presentation.Zoom = max(minGalleryBannerZoom, min(maxGalleryBannerZoom, presentation.Zoom))
 
 	return presentation
 }
@@ -135,14 +143,8 @@ func (s *Server) galleryBannerURL(name string) string {
 	return "/internal/gallery/banner/" + name
 }
 
-func (s *Server) galleryBannerPosition(name string) string {
-	presentation := s.loadGalleryPresentation(name)
-
-	return fmt.Sprintf(
-		"%.2f%% %.2f%%",
-		presentation.FocalX*100,
-		presentation.FocalY*100,
-	)
+func (presentation galleryPresentation) Scale() float64 {
+	return float64(presentation.Zoom) / 100
 }
 
 func (s *Server) galleryBannerGet(w http.ResponseWriter, r *http.Request) {
@@ -288,16 +290,25 @@ func (s *Server) settingsGalleryBannerFocalPost(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if err := s.saveGalleryPresentation(name, galleryPresentation{
-		FocalX: clamp01(x),
-		FocalY: clamp01(y),
-	}); err != nil {
-		writeInlineFlash(w, "err", "Could not save banner position.")
+	presentation := s.loadGalleryPresentation(name)
+	presentation.FocalX = x
+	presentation.FocalY = y
+	if value := strings.TrimSpace(r.FormValue("zoom_percent")); value != "" {
+		zoom, err := strconv.Atoi(value)
+		if err != nil || zoom < minGalleryBannerZoom || zoom > maxGalleryBannerZoom {
+			writeInlineFlash(w, "err", "Invalid banner zoom.")
+			return
+		}
+		presentation.Zoom = zoom
+	}
+
+	if err := s.saveGalleryPresentation(name, presentation); err != nil {
+		writeInlineFlash(w, "err", "Could not save banner framing.")
 		return
 	}
 
 	w.Header().Set("HX-Refresh", "true")
-	writeInlineFlash(w, "ok", "Banner position saved for "+name+".")
+	writeInlineFlash(w, "ok", "Banner framing saved for "+name+".")
 }
 
 func (s *Server) settingsGalleryBannerClearPost(w http.ResponseWriter, r *http.Request) {

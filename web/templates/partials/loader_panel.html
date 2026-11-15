@@ -1,6 +1,6 @@
 {{define "partials/loader_panel.html"}}
 <div class="loader-panel">
-  {{with .Panel.Message}}<p class="field-hint loader-message">{{.}}</p>{{end}}
+  {{with .Panel.Message}}<p class="field-hint loader-message">{{.}}{{if $.Panel.Setup}} <a href="/settings#plugins">Open Plugins</a>{{end}}</p>{{end}}
   {{with .Panel.FrameURL}}
   <iframe class="loader-frame" title="{{$.Title}}" src="{{.}}"{{if $.Lazy}} loading="lazy"{{end}} referrerpolicy="no-referrer"></iframe>
   {{end}}
