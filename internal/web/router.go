@@ -40,8 +40,8 @@ import (
 // Set at build time with -ldflags -X; DocURL is read from DOC.md.
 var (
 	Version = "dev"
-	RepoURL = "https://github.com/monbooru/monloader"
-	DocURL  = "https://monbooru.github.io/mondocs/addons/monloader/index.html"
+	RepoURL = "https://github.com/jwebb7847-ui/meloader"
+	DocURL  = "https://github.com/jwebb7847-ui/meloader/blob/main/README.md"
 )
 
 // Package names the artifact kind (docker, flatpak, ...), also set with
@@ -306,7 +306,7 @@ func (s *Server) hostMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg := s.cfg.Current()
 		if desktop.ForeignHost(r, cfg.Server.BindAddress, cfg.Server.BaseURL) {
-			http.Error(w, "monloader does not answer to this host name: set server.base_url to it (MONLOADER_SERVER_BASE_URL)", http.StatusMisdirectedRequest)
+			http.Error(w, "Meloader does not answer to this host name: set server.base_url to it (MELOADER_SERVER_BASE_URL)", http.StatusMisdirectedRequest)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -362,15 +362,15 @@ func monbooruOffReason(conn string) string {
 	case webui.ConnOK, connChecking:
 		return ""
 	case webui.ConnRejected:
-		return "monbooru refused monloader's token, so downloads are off."
+		return "Mebooru refused Meloader's token, so downloads are off."
 	case connUnpaired:
-		return "Not paired with monbooru, so downloads are off."
+		return "Not paired with Mebooru, so downloads are off."
 	case webui.ConnUnconfigured:
-		return "No monbooru address set, so downloads are off."
+		return "No Mebooru address set, so downloads are off."
 	case webui.ConnPaused:
-		return "The monbooru connection is paused, so downloads are off. Click the dot in the footer to resume."
+		return "The Mebooru connection is paused, so downloads are off. Click the dot in the footer to resume."
 	}
-	return "Can't reach monbooru, so downloads are off."
+	return "Can't reach Mebooru, so downloads are off."
 }
 
 // Derived from DocURL so a build-time override moves the deep links too.
@@ -497,13 +497,12 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 }
 
 func (s *Server) booruName() string {
-	return cmp.Or(s.cfg.Current().Server.BooruName, "monloader")
+	return s.titleName()
 }
 
-// The stock name is capitalized only in the browser tab; a configured
-// name is verbatim.
+// A configured name is shown verbatim.
 func (s *Server) titleName() string {
-	return cmp.Or(s.cfg.Current().Server.BooruName, "Monloader")
+	return cmp.Or(s.cfg.Current().Server.BooruName, "Meloader")
 }
 
 // One line here per setting something holds its own copy of, so a save reaches
@@ -623,7 +622,7 @@ func (s *Server) monbooruStatusCached(ctx context.Context) (status, version stri
 		return s.monbooruStatusCached(ctx)
 	}
 	if mismatch != "" && mismatch != s.monbooruMismatch {
-		logx.Warnf("monbooru: %s", mismatch)
+		logx.Warnf("Mebooru: %s", mismatch)
 	}
 	s.monbooruConn, s.monbooruVersion, s.monbooruMismatch, s.monbooruCheckedAt = status, version, mismatch, time.Now()
 	s.statusMu.Unlock()

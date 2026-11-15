@@ -99,7 +99,7 @@ var dialogOnFatal bool
 func reportFatal(msg string) {
 	logx.Errorf("FATAL %s", msg)
 	if dialogOnFatal {
-		desktop.ShowError(appName, msg)
+		desktop.ShowError("Meloader", msg)
 	}
 }
 
@@ -119,7 +119,7 @@ func explicitFlag(name, value string) string {
 }
 
 func versionLine() string {
-	line := appName + " " + internalweb.Version
+	line := "Meloader " + internalweb.Version
 	if label := internalweb.BuildLabel(); label != "" {
 		line += " (" + label + ")"
 	}

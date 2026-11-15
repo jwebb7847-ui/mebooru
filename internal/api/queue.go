@@ -36,17 +36,17 @@ func (h *Handler) monbooruReady(w http.ResponseWriter) bool {
 	m := h.cfg.Current().Monbooru
 	if m.APIURL == "" {
 		contract.WriteError(w, http.StatusConflict, errMonbooruUnconfigured,
-			"monbooru is not configured - set its connection in monloader's settings")
+			"Mebooru is not configured - set its connection in Meloader's settings")
 		return false
 	}
 	if m.Unconfigured() {
 		contract.WriteError(w, http.StatusConflict, errMonbooruUnconfigured,
-			"monbooru is not paired - connect it in monloader's settings")
+			"Mebooru is not paired - connect it in Meloader's settings")
 		return false
 	}
 	if m.Paused {
 		contract.WriteError(w, http.StatusConflict, errMonbooruPaused,
-			"the monbooru link is paused - resume it from the light in monloader's footer")
+			"the Mebooru link is paused - resume it from the light in Meloader's footer")
 		return false
 	}
 	return true
@@ -288,7 +288,7 @@ func (h *Handler) getJob(w http.ResponseWriter, r *http.Request) {
 	contract.WriteJSON(w, http.StatusOK, job)
 }
 
-// Every action queues work, so each is held while monbooru is not ready;
+// Every action queues work, so each is held while Mebooru is not ready;
 // the gate goes ahead of the id parse.
 func (h *Handler) jobAction(action func(id int64) (int64, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

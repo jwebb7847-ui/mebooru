@@ -114,14 +114,14 @@ func (h *Handler) endpoints() []endpoint {
 				Props: []prop{
 					{Name: "url", Type: "string", Description: "A booru post, pool, tag-search, or artist URL gallery-dl supports; or \"md5:<32 hex>\" to find and import the post carrying that file hash via the lookup walk. Surrounding whitespace is trimmed, the scheme and host are lower-cased, and the md5: prefix is matched case-insensitively; a bare hash is not accepted here"},
 					{Name: "options", Type: "object", Props: []prop{
-						{Name: "gallery", Type: "string", Description: "Target monbooru gallery; overrides the per-source default"},
+						{Name: "gallery", Type: "string", Description: "Target Mebooru gallery; overrides the per-source default"},
 						{Name: "folder", Type: "string", Description: "Destination subfolder under the gallery; relative, no .. segment"},
 						{Name: "max_items", Type: "integer", Description: "Cap on posts fetched this run (--range 1-N); only lowers the cap, never above the server's max_items_per_job, and 0 keeps it. A pool is exempt and always fetched whole"},
 						{Name: "page_url", Type: "string", Description: "The page a direct-file send came from; a directlink job records it as the item's source link instead of the bare file URL"},
 						{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "Tags to add to every item this job pushes, on top of the ones mapped from the post. Normalized like any other tag (a category prefix is kept); duplicates are dropped. Max 64"},
 						{Name: "commentary", Type: "string", Description: "Commentary for every item this job pushes, used only where the post itself carries none - a direct file link, typically. Max 10000 characters"},
-						{Name: "source", Type: "string", Description: "Source label for every item this job pushes. Applied only where monloader would otherwise stamp a bare host nothing claims (a direct link to a CDN); a site with a profile, a [[sites]] label, or a host_labels row keeps its own name. Max 200 characters"},
-						{Name: "via", Type: "string", Description: "Names the client that sent the URL; lands on monbooru's image origin, and on the tagger of each tag only for a push carrying no source label - every booru push carries one, and monbooru prefers it so each source owns a prunable slice. Blank keeps \"monloader\". Max 200 characters, no whitespace or any of: \" ' < > [ ] \\"},
+						{Name: "source", Type: "string", Description: "Source label for every item this job pushes. Applied only where Meloader would otherwise stamp a bare host nothing claims (a direct link to a CDN); a site with a profile, a [[sites]] label, or a host_labels row keeps its own name. Max 200 characters"},
+						{Name: "via", Type: "string", Description: "Names the client that sent the URL; lands on Mebooru's image origin, and on the tagger of each tag only for a push carrying no source label - every booru push carries one, and Mebooru prefers it so each source owns a prunable slice. Blank keeps \"Meloader\". Max 200 characters, no whitespace or any of: \" ' < > [ ] \\"},
 					}},
 				},
 			},
@@ -129,7 +129,7 @@ func (h *Handler) endpoints() []endpoint {
 				{Status: "200", Description: "Resolved job (only when wait elapsed in time)", Ref: "Job"},
 				{Status: "202", Description: "Job accepted; poll GET /api/v1/queue/{id}", Ref: "EnqueueResponse"},
 				{Status: "400", Description: "Missing or non-http(s) url, a bad md5: hash, a folder that is absolute or climbs with .., negative max_items, non-http(s) page_url, or client metadata past its cap", Ref: "Error"},
-				{Status: "409", Description: "No monbooru is configured (monbooru_unconfigured), or its link is paused from the footer light (monbooru_paused)", Ref: "Error"},
+				{Status: "409", Description: "No Mebooru is configured (monbooru_unconfigured), or its link is paused from the footer light (monbooru_paused)", Ref: "Error"},
 			},
 			Handler: h.enqueue,
 		},
@@ -202,7 +202,7 @@ func (h *Handler) endpoints() []endpoint {
 				{Status: "202", Description: "Re-queued", Ref: "EnqueueResponse"},
 				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
 				{Status: "404", Description: "Job not found", Ref: "Error"},
-				{Status: "409", Description: "Job is not in a retryable state, no monbooru is configured (monbooru_unconfigured), or its link is paused (monbooru_paused)", Ref: "Error"},
+				{Status: "409", Description: "Job is not in a retryable state, no Mebooru is configured (monbooru_unconfigured), or its link is paused (monbooru_paused)", Ref: "Error"},
 			},
 			Handler: h.retryJob,
 		},
@@ -214,7 +214,7 @@ func (h *Handler) endpoints() []endpoint {
 				{Status: "202", Description: "Follow-up job queued for the next window", Ref: "EnqueueResponse"},
 				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
 				{Status: "404", Description: "Job not found", Ref: "Error"},
-				{Status: "409", Description: "Job was not capped so there is no next window, no monbooru is configured (monbooru_unconfigured), or its link is paused (monbooru_paused)", Ref: "Error"},
+				{Status: "409", Description: "Job was not capped so there is no next window, no Mebooru is configured (monbooru_unconfigured), or its link is paused (monbooru_paused)", Ref: "Error"},
 			},
 			Handler: h.jobAction(h.queue.Continue),
 		},
@@ -226,21 +226,21 @@ func (h *Handler) endpoints() []endpoint {
 				{Status: "202", Description: "First follow-up queued; the queue continues until the search runs short", Ref: "EnqueueResponse"},
 				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
 				{Status: "404", Description: "Job not found", Ref: "Error"},
-				{Status: "409", Description: "Job was not capped so there is no next window, no monbooru is configured (monbooru_unconfigured), or its link is paused (monbooru_paused)", Ref: "Error"},
+				{Status: "409", Description: "Job was not capped so there is no next window, no Mebooru is configured (monbooru_unconfigured), or its link is paused (monbooru_paused)", Ref: "Error"},
 			},
 			Handler: h.jobAction(h.queue.ContinueAll),
 		},
 		{
 			Method: "POST", Path: "/api/v1/metadata",
-			Summary: "Refetch a post's metadata and enrich a monbooru image", OperationID: "refetchMetadata",
+			Summary: "Refetch a post's metadata and enrich a Mebooru image", OperationID: "refetchMetadata",
 			Description: "Re-read a post URL for its tags, commentary, and notes (no file download) " +
-				"and fold them into the monbooru image it names. The queued job reports the enriched " +
+				"and fold them into the Mebooru image it names. The queued job reports the enriched " +
 				"outcome, or failed with hash_mismatch when the source no longer serves the stored file.",
 			Request: &reqBody{
 				Required: []string{"image_id", "url"},
 				Props: []prop{
-					{Name: "image_id", Type: "integer", Description: "monbooru image to enrich"},
-					{Name: "gallery", Type: "string", Description: "Gallery holding the image; empty uses monbooru's active gallery"},
+					{Name: "image_id", Type: "integer", Description: "Mebooru image to enrich"},
+					{Name: "gallery", Type: "string", Description: "Gallery holding the image; empty uses Mebooru's active gallery"},
 					{Name: "url", Type: "string", Description: "Source post URL to re-read"},
 				},
 			},
@@ -252,17 +252,17 @@ func (h *Handler) endpoints() []endpoint {
 		},
 		{
 			Method: "POST", Path: "/api/v1/replace",
-			Summary: "Download a post's file and replace a monbooru image's bytes", OperationID: "replaceFile",
-			Description: "Download the file the post URL serves and push it into the monbooru image " +
+			Summary: "Download a post's file and replace a Mebooru image's bytes", OperationID: "replaceFile",
+			Description: "Download the file the post URL serves and push it into the Mebooru image " +
 				"it names, replacing its bytes in place while the image's tags, sources, and relations " +
 				"survive. The queued job reports the replaced outcome, or failed with hash_mismatch " +
-				"(the download did not match the md5 the source claims), already_exists (monbooru holds " +
+				"(the download did not match the md5 the source claims), already_exists (Mebooru holds " +
 				"the original as another image), or wrong_type (the target is an archive or video row).",
 			Request: &reqBody{
 				Required: []string{"image_id", "url"},
 				Props: []prop{
-					{Name: "image_id", Type: "integer", Description: "monbooru image whose file is replaced"},
-					{Name: "gallery", Type: "string", Description: "Gallery holding the image; empty uses monbooru's active gallery"},
+					{Name: "image_id", Type: "integer", Description: "Mebooru image whose file is replaced"},
+					{Name: "gallery", Type: "string", Description: "Gallery holding the image; empty uses Mebooru's active gallery"},
 					{Name: "url", Type: "string", Description: "Source post URL to download"},
 				},
 			},
@@ -274,20 +274,20 @@ func (h *Handler) endpoints() []endpoint {
 		},
 		{
 			Method: "POST", Path: "/api/v1/lookup",
-			Summary: "Find tags for a file hash and enrich a monbooru image", OperationID: "lookupHash",
+			Summary: "Find tags for a file hash and enrich a Mebooru image", OperationID: "lookupHash",
 			Description: "Look a file hash up - the booru backend walks the sites given a lookup order " +
 				"in settings using their md5 search, the ptr backend queries the local PTR index by " +
 				"sha256, the all backend runs both (skipping the PTR when it is disabled) - and fold " +
-				"the tags found into the monbooru image it names. The queued job reports the enriched " +
+				"the tags found into the Mebooru image it names. The queued job reports the enriched " +
 				"outcome, or failed with hash_not_found when no source knows the hash.",
 			Request: &reqBody{
 				Required: []string{"image_id", "backend"},
 				Props: []prop{
-					{Name: "image_id", Type: "integer", Description: "monbooru image to enrich"},
+					{Name: "image_id", Type: "integer", Description: "Mebooru image to enrich"},
 					{Name: "backend", Type: "string", Description: "\"booru\", \"ptr\", or \"all\""},
 					{Name: "md5", Type: "string", Description: "32-hex file md5, required by the booru and all backends"},
 					{Name: "sha256", Type: "string", Description: "64-hex file sha256, required by the ptr backend, and by the all backend while the ptr sync is enabled"},
-					{Name: "gallery", Type: "string", Description: "Gallery holding the image; empty uses monbooru's active gallery"},
+					{Name: "gallery", Type: "string", Description: "Gallery holding the image; empty uses Mebooru's active gallery"},
 					{Name: "background", Type: "boolean", Description: "Queue behind anything a person is waiting on, for bulk or unattended work (default false)"},
 					{Name: "budgeted", Type: "boolean", Description: "Count the job against the daily scheduled-lookup budget and refuse it when that is spent (default false)"},
 				},
@@ -326,13 +326,13 @@ func (h *Handler) endpoints() []endpoint {
 		{
 			Method: "POST", Path: "/api/v1/ptr/tags",
 			Summary: "Query the PTR alias / implication graph", OperationID: "ptrTags",
-			Description: "For each monbooru-form tag, return the PTR's ideal spelling, the tags that alias " +
+			Description: "For each Mebooru-format tag, return the PTR's ideal spelling, the tags that alias " +
 				"to it, its implications, and the tags that imply it (direct children, at most 200), " +
-				"mapped back to monbooru form. Batched so a caller can sweep its tag list page by page.",
+				"mapped back to Mebooru format. Batched so a caller can sweep its tag list page by page.",
 			Request: &reqBody{
 				Required: []string{"tags"},
 				Props: []prop{
-					{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "monbooru-form tag names, at most 500"},
+					{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "Mebooru-format tag names, at most 500"},
 				},
 			},
 			Responses: []response{
@@ -346,12 +346,12 @@ func (h *Handler) endpoints() []endpoint {
 		{
 			Method: "GET", Path: "/api/v1/ptr/tags/search",
 			Summary: "Search the PTR's spellings", OperationID: "ptrTagSearch",
-			Description: "Find the spellings the index holds under a monbooru-form prefix, folded to one " +
+			Description: "Find the spellings the index holds under a Mebooru-format prefix, folded to one " +
 				"row per sibling cluster with the size of each cluster's graph. The graph query answers " +
 				"about a name the caller already knows; this is how it finds out which name to ask " +
 				"about when the operator's own spelling is not the repository's.",
 			Params: []param{
-				{Name: "q", In: "query", Required: true, Description: "monbooru-form prefix, `category:name` or bare for general"},
+				{Name: "q", In: "query", Required: true, Description: "Mebooru-format prefix, `category:name` or bare for general"},
 				{Name: "limit", In: "query", Type: "integer", Description: "Clusters to return, 1..50 (default 20)"},
 				{Name: "mode", In: "query", Description: "`prefix` (default) seeks the range; `contains` walks the namespace instead and needs a category-qualified q, since a bare one has nothing to bound the scan. Anything else is refused"},
 			},
@@ -366,7 +366,7 @@ func (h *Handler) endpoints() []endpoint {
 		{
 			Method: "POST", Path: "/api/v1/ptr/lookup",
 			Summary: "Look a batch of file hashes up in the PTR index", OperationID: "ptrLookup",
-			Description: "Return the tags the local index holds for each file sha256, in monbooru form. " +
+			Description: "Return the tags the local index holds for each file sha256, in Mebooru form. " +
 				"Answers in process, so a whole-library sweep costs one call per batch instead of a " +
 				"queued job per image; a hash the index does not hold, or holds nothing usable for, is absent from the results.",
 			Request: &reqBody{
@@ -374,7 +374,7 @@ func (h *Handler) endpoints() []endpoint {
 				Props: []prop{
 					{Name: "images", Type: "array", Items: &prop{Type: "object"}, Description: "At most 100 `{ image_id, sha256 }` pairs; the id names the image on the queue row the answer files, and is required on each entry like it is on the per-image lookup"},
 					{Name: "gallery", Type: "string", Description: "Gallery the images come from; recorded on that row"},
-					{Name: "scheduled", Type: "boolean", Description: "Set by monbooru's nightly run, so the row reads as scheduled rather than bulk"},
+					{Name: "scheduled", Type: "boolean", Description: "Set by Mebooru's nightly run, so the row reads as scheduled rather than bulk"},
 				},
 			},
 			Responses: []response{
@@ -406,7 +406,7 @@ func (h *Handler) endpoints() []endpoint {
 		{
 			Method: "POST", Path: "/api/v1/ptr/contrib/preview", ReadScope: true,
 			Summary: "Preview a file's contribution diff", OperationID: "ptrContribPreview",
-			Description: "For one file's sha256 and its monbooru-form tags, answer the two-way diff " +
+			Description: "For one file's sha256 and its Mebooru-format tags, answer the two-way diff " +
 				"against the synced PTR copy: which tags a send would add (with the exact PTR spelling " +
 				"and a per-tag status of new, known, ineligible, filtered, or unsent) and which " +
 				"PTR-current tags the submitted list lacks (the removal-petition candidates; both " +
@@ -417,7 +417,7 @@ func (h *Handler) endpoints() []endpoint {
 				Required: []string{"sha256", "tags"},
 				Props: []prop{
 					{Name: "sha256", Type: "string", Description: "the file's sha256, 64 lowercase hex characters"},
-					{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "the file's storage tags in monbooru form (non-implied, non-alias, rating excluded)"},
+					{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "the file's storage tags in Mebooru form (non-implied, non-alias, rating excluded)"},
 					{Name: "implied", Type: "array", Items: &prop{Type: "string"}, Description: "the file's implied tags, context only: never offered as adds, but they suppress removal petitions like submitted tags do"},
 				},
 			},
@@ -431,7 +431,7 @@ func (h *Handler) endpoints() []endpoint {
 		{
 			Method: "POST", Path: "/api/v1/ptr/contrib/pair-preview", ReadScope: true,
 			Summary: "Resolve a relation pair's contribution direction", OperationID: "ptrContribPairPreview",
-			Description: "For a sibling (a=bad, b=good) or parent (a=child, b=parent) pair in monbooru " +
+			Description: "For a sibling (a=bad, b=good) or parent (a=child, b=parent) pair in Mebooru " +
 				"form, report the exact PTR spellings and which direction a contribution takes: suggest " +
 				"(absent from the PTR), petition (current on the PTR), pending (already in the ledger " +
 				"awaiting janitors), conflict (the PTR holds the reverse), covered (a sibling's spellings " +
@@ -440,8 +440,8 @@ func (h *Handler) endpoints() []endpoint {
 				Required: []string{"kind", "a", "b"},
 				Props: []prop{
 					{Name: "kind", Type: "string", Description: "sibling or parent"},
-					{Name: "a", Type: "string", Description: "the alias (sibling) or carrying tag (parent), monbooru form"},
-					{Name: "b", Type: "string", Description: "the canonical (sibling) or implied tag (parent), monbooru form"},
+					{Name: "a", Type: "string", Description: "the alias (sibling) or carrying tag (parent), Mebooru form"},
+					{Name: "b", Type: "string", Description: "the canonical (sibling) or implied tag (parent), Mebooru form"},
 				},
 			},
 			Responses: []response{
@@ -454,7 +454,7 @@ func (h *Handler) endpoints() []endpoint {
 		{
 			Method: "POST", Path: "/api/v1/ptr/contrib",
 			Summary: "Stage contributions and send them", OperationID: "ptrContribStage",
-			Description: "Stage items (tags in monbooru form; monloader maps and validates) and, by " +
+			Description: "Stage items (tags in Mebooru form; Meloader maps and validates) and, by " +
 				"default, commit them in the same call as one queue send job. Per-item results report " +
 				"staged, duplicate, already_known, already_suggested, not_on_ptr, conflict, ineligible, " +
 				"or invalid_reason; one refused item never sinks the rest. A reason is required on every " +
@@ -467,7 +467,7 @@ func (h *Handler) endpoints() []endpoint {
 					{Name: "items", Type: "array", Items: &prop{Type: "object", Props: []prop{
 						{Name: "kind", Type: "string", Description: "mapping_add, mapping_petition, sibling, parent, sibling_petition, or parent_petition"},
 						{Name: "sha256", Type: "string", Description: "the file hash, for the mapping kinds"},
-						{Name: "tag", Type: "string", Description: "the tag in monbooru form, for the mapping kinds"},
+						{Name: "tag", Type: "string", Description: "the tag in Mebooru form, for the mapping kinds"},
 						{Name: "bad", Type: "string", Description: "the alias name, for the sibling kinds"},
 						{Name: "good", Type: "string", Description: "the canonical name, for the sibling kinds"},
 						{Name: "child", Type: "string", Description: "the carrying tag, for the parent kinds"},
@@ -580,8 +580,8 @@ func (h *Handler) endpoints() []endpoint {
 		},
 		{
 			Method: "POST", Path: "/api/v1/galleries/rename",
-			Summary: "Follow a monbooru gallery rename", OperationID: "galleryRename",
-			Description: "Called by monbooru when one of its galleries is renamed: the default gallery " +
+			Summary: "Follow a Mebooru gallery rename", OperationID: "galleryRename",
+			Description: "Called by Mebooru when one of its galleries is renamed: the default gallery " +
 				"and every site target naming the old name move to the new one. Downloads resolve " +
 				"their target when they start, so the ones still waiting follow too.",
 			Request: &reqBody{
@@ -615,11 +615,11 @@ func (h *Handler) endpoints() []endpoint {
 		{
 			Method: "GET", Path: "/api/v1/rules",
 			Summary: "What each site does with a tag", OperationID: "tagRules",
-			Description: "For a monbooru tag, the tag rule, blacklist hit and category map of every configured or used site and the PTR, " +
-				"plus whether the global Rules keep its category: what monbooru's tag page draws.",
+			Description: "For a Mebooru tag, the tag rule, blacklist hit and category map of every configured or used site and the PTR, " +
+				"plus whether the global Rules keep its category: what Mebooru's tag page draws.",
 			Params: []param{
-				{Name: "tag", In: "query", Required: true, Description: "The tag's name, as monbooru spells it"},
-				{Name: "category", In: "query", Description: "The tag's monbooru category; general when absent"},
+				{Name: "tag", In: "query", Required: true, Description: "The tag's name, as Mebooru spells it"},
+				{Name: "category", In: "query", Description: "The tag's Mebooru category; general when absent"},
 			},
 			Responses: []response{
 				{Status: "200", Description: "One row per configured or used site, the PTR last", Ref: "TagRules"},
@@ -633,8 +633,8 @@ func (h *Handler) endpoints() []endpoint {
 			Description: "The GET answer for each name given, in order, read against one list of sites.",
 			Request: &reqBody{Props: []prop{
 				{Name: "names", Type: "array", Description: "1 to 50 tags", Items: &prop{Type: "object", Props: []prop{
-					{Name: "tag", Type: "string", Description: "The tag's name, as monbooru spells it"},
-					{Name: "category", Type: "string", Description: "The tag's monbooru category; general when absent"},
+					{Name: "tag", Type: "string", Description: "The tag's name, as Mebooru spells it"},
+					{Name: "category", Type: "string", Description: "The tag's Mebooru category; general when absent"},
 				}}},
 			}},
 			Responses: []response{
@@ -666,7 +666,7 @@ func (h *Handler) endpoints() []endpoint {
 			Method: "POST", Path: "/api/v1/pair/request",
 			Summary: "Offer a pairing", OperationID: "pairRequest", NoAuth: true,
 			Description: "Step one of the handshake a client runs before it can call anything else. " +
-				"Nothing is issued here: the operator approves the request in monloader's settings, " +
+				"Nothing is issued here: the operator approves the request in Meloader's settings, " +
 				"after which the client claims its token from GET /api/v1/pair/status. Unauthenticated " +
 				"by design - it is how a client obtains a token.",
 			Request: &reqBody{
@@ -681,7 +681,7 @@ func (h *Handler) endpoints() []endpoint {
 					{Name: "request_id", Type: "string", Description: "Poll GET /api/v1/pair/status with this id"},
 					{Name: "status", Type: "string", Description: "Always \"pending\""},
 				}},
-				{Status: "400", Description: "Missing app name, or the reserved name \"monbooru\"", Ref: "Error"},
+				{Status: "400", Description: "Missing app name, or the reserved name \"Mebooru\"", Ref: "Error"},
 				{Status: "409", Description: "Already paired with that app; remove the existing pairing first", Ref: "Error"},
 				{Status: "429", Description: "Too many pending pairing requests", Ref: "Error"},
 			},
@@ -710,7 +710,7 @@ func (h *Handler) endpoints() []endpoint {
 			Method: "POST", Path: "/api/v1/pair/remove",
 			Summary: "Drop a pairing from the client side", OperationID: "pairRemove", NoAuth: true,
 			Description: "Authenticates with the paired token itself rather than the bearer gate, so one " +
-				"\"remove pairing\" tears down both ends. monloader removes only locally and never calls back.",
+				"\"remove pairing\" tears down both ends. Meloader removes only locally and never calls back.",
 			Responses: []response{
 				{Status: "200", Description: "Pairing removed", Props: []prop{
 					{Name: "status", Type: "string", Description: "Always \"removed\""},
@@ -761,9 +761,9 @@ var apiSchemas = []apiSchema{
 	{Name: "Summary", Props: []prop{
 		{Name: "created", Type: "integer"},
 		{Name: "duplicate", Type: "integer"},
-		{Name: "enriched", Type: "integer", Description: "Source refetches and hash lookups that merged tags into an image monbooru already holds"},
-		{Name: "replaced", Type: "integer", Description: "In-place file replacements of an image monbooru already holds"},
-		{Name: "skipped", Type: "integer", Description: "Posts the gallery-dl archive already had, files monbooru cannot ingest, or posts a blacklist rule kept out"},
+		{Name: "enriched", Type: "integer", Description: "Source refetches and hash lookups that merged tags into an image Mebooru already holds"},
+		{Name: "replaced", Type: "integer", Description: "In-place file replacements of an image Mebooru already holds"},
+		{Name: "skipped", Type: "integer", Description: "Posts the gallery-dl archive already had, files Mebooru cannot ingest, or posts a blacklist rule kept out"},
 		{Name: "archived", Type: "integer", Description: "The archive half of skipped: the posts a forced retry can fetch again"},
 		{Name: "blacklisted", Type: "integer", Description: "The rule half of skipped: posts a blacklist rule kept out, which a forced retry skips again"},
 		{Name: "failed", Type: "integer"},
@@ -779,7 +779,7 @@ var apiSchemas = []apiSchema{
 		{Name: "outcome", Type: "string", Description: "created, duplicate, enriched, matched, replaced, skipped_archive, skipped_unsupported, skipped_blacklist, failed"},
 		{Name: "monbooru_id", Type: "integer"},
 		{Name: "sha256", Type: "string"},
-		{Name: "tag_warnings", Type: "array", Items: &prop{Type: "string"}, Description: "Tags monbooru rejected on the push, and rule targets that name a category it does not have; recorded, not fatal"},
+		{Name: "tag_warnings", Type: "array", Items: &prop{Type: "string"}, Description: "Tags Mebooru rejected on the push, and rule targets that name a category it does not have; recorded, not fatal"},
 		{Name: "merge_note", Type: "string", Description: "What a duplicate or enrich merge folded into the existing image (e.g. \"+7 tags\"), or the rule behind skipped_blacklist and its list (\"global rule: guro\", \"danbooru rule: guro\")"},
 		{Name: "tags_sent", Type: "integer", Description: "How many tags the push or enrich sent, the rating counted"},
 		{Name: "held_tags", Type: "array", Items: &prop{Type: "string"}, Description: "What never reached the image, each with its reason: \"lowres (held by your rules)\", \"watermark (rejected by the gallery)\""},
@@ -791,7 +791,7 @@ var apiSchemas = []apiSchema{
 		{Name: "url", Type: "string"},
 		{Name: "status", Type: "string", Description: "queued, running, succeeded, partial, failed, canceled, interrupted (was running when the process died; requeue to re-run)"},
 		{Name: "kind", Type: "string", Description: "download (the default, omitted), metadata (a source refetch that enriches an existing image), lookup (a hash lookup that enriches an existing image), hash_import (an md5 resolved to a post and imported), replace (a post's file downloaded and pushed over an existing image's bytes), contrib (a PTR contribution send), or ptr_lookup (a batch PTR hash lookup answered in process)"},
-		{Name: "image_id", Type: "integer", Description: "monbooru image a metadata, lookup, or replace job targets"},
+		{Name: "image_id", Type: "integer", Description: "Mebooru image a metadata, lookup, or replace job targets"},
 		{Name: "backend", Type: "string", Description: "Lookup source (booru, ptr, or all) for a lookup job"},
 		{Name: "md5", Type: "string", Description: "File md5 a lookup or hash import is keyed on"},
 		{Name: "sha256", Type: "string", Description: "File sha256 a ptr lookup is keyed on"},
@@ -799,9 +799,9 @@ var apiSchemas = []apiSchema{
 		{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "Tags the submitting client attached, added to every item this job pushes"},
 		{Name: "commentary", Type: "string", Description: "Commentary the submitting client attached, used where the post carries none"},
 		{Name: "source", Type: "string", Description: "Source label the submitting client attached, applied where nothing claims the host"},
-		{Name: "via", Type: "string", Description: "Client that sent the URL; blank means monloader stamped its own name"},
+		{Name: "via", Type: "string", Description: "Client that sent the URL; blank means Meloader stamped its own name"},
 		{Name: "site", Type: "string", Description: "gallery-dl category, set after resolve"},
-		{Name: "gallery", Type: "string", Description: "target monbooru gallery"},
+		{Name: "gallery", Type: "string", Description: "target Mebooru gallery"},
 		{Name: "folder", Type: "string", Description: "destination subfolder under the gallery; relative, no .. segment"},
 		{Name: "max_items", Type: "integer", Description: "per-job item cap supplied at enqueue"},
 		{Name: "force", Type: "boolean", Description: "Last/next run bypasses the gallery-dl archive (set by a forced retry)"},
@@ -868,7 +868,7 @@ var apiSchemas = []apiSchema{
 		{Name: "version", Type: "string"},
 		{Name: "gallerydl_version", Type: "string"},
 		{Name: "api", Type: "integer", Description: "The /api/v1 contract's number; it moves when a path, field, status code or vocabulary word a peer reads changes"},
-		{Name: "min_peer_api", Type: "integer", Description: "The oldest monbooru api this monloader still drives"},
+		{Name: "min_peer_api", Type: "integer", Description: "The oldest Mebooru api this Meloader still drives"},
 	}},
 	{Name: "EnqueueResponse", Props: []prop{
 		{Name: "job_id", Type: "integer"},
@@ -906,12 +906,12 @@ var apiSchemas = []apiSchema{
 		}},
 	}},
 	{Name: "PTRTagResults", Props: []prop{
-		{Name: "results", Type: "object", Description: "map of the queried tag to its PTR ideal, aliases, implications, and implied_by (monbooru form); known=false when the PTR does not have the tag"},
+		{Name: "results", Type: "object", Description: "map of the queried tag to its PTR ideal, aliases, implications, and implied_by (Mebooru form); known=false when the PTR does not have the tag"},
 	}},
 	{Name: "PTRTagSearch", Props: []prop{
 		{Name: "clusters", Type: "array", Items: &prop{Type: "object", Props: []prop{
-			{Name: "ideal", Type: "string", Description: "the cluster's preferred spelling in monbooru form; the name to look up or pull under"},
-			{Name: "matched", Type: "array", Items: &prop{Type: "string"}, Description: "the spellings of this cluster the query matched, in monbooru form"},
+			{Name: "ideal", Type: "string", Description: "the cluster's preferred spelling in Mebooru form; the name to look up or pull under"},
+			{Name: "matched", Type: "array", Items: &prop{Type: "string"}, Description: "the spellings of this cluster the query matched, in Mebooru form"},
 			{Name: "aliases", Type: "integer", Description: "other spellings resolving to the ideal"},
 			{Name: "implications", Type: "integer", Description: "distinct tags the cluster implies"},
 			{Name: "implied_by", Type: "integer", Description: "distinct tags implying the cluster, capped at 200 like the graph answer"},
@@ -926,21 +926,21 @@ var apiSchemas = []apiSchema{
 	}},
 	{Name: "PTRLookupResults", Props: []prop{
 		{Name: "index", Type: "integer", Description: "the index's applied-update cursor at answer time"},
-		{Name: "results", Type: "object", Description: "map of a matched sha256 to its monbooru-form tags; a hash the index does not hold, or holds nothing usable for, is absent"},
+		{Name: "results", Type: "object", Description: "map of a matched sha256 to its Mebooru-format tags; a hash the index does not hold, or holds nothing usable for, is absent"},
 		{Name: "withheld_tags", Type: "object", Description: "map of a matched sha256 to the tags the PTR's row held back; they say nothing about whether the hash still lists them"},
 		{Name: "withheld_categories", Type: "array", Items: &prop{Type: "string"}, Description: "the categories Keep categories leaves out of every answer"},
 	}},
 	{Name: "PTRContribPreview", Props: []prop{
 		{Name: "provisional", Type: "boolean", Description: "the index is still syncing; the diff may overstate what is new"},
 		{Name: "to_add", Type: "array", Items: &prop{Type: "object", Props: []prop{
-			{Name: "tag", Type: "string", Description: "the submitted monbooru-form tag"},
+			{Name: "tag", Type: "string", Description: "the submitted Mebooru-format tag"},
 			{Name: "ptr", Type: "string", Description: "the exact PTR spelling a send would use; empty when ineligible"},
 			{Name: "status", Type: "string", Description: "new, known, ineligible, filtered, or unsent"},
 			{Name: "note", Type: "string", Description: "why the tag is ineligible or filtered"},
 			{Name: "unknown_tag", Type: "boolean", Description: "on a new row, the PTR spelling is not a tag the index holds at all; absent otherwise"},
 		}}},
 		{Name: "ptr_only", Type: "array", Items: &prop{Type: "object", Props: []prop{
-			{Name: "tag", Type: "string", Description: "monbooru form of a PTR-current tag the submitted list lacks"},
+			{Name: "tag", Type: "string", Description: "Mebooru form of a PTR-current tag the submitted list lacks"},
 			{Name: "ptr", Type: "string", Description: "the raw PTR spelling a removal petition would target"},
 			{Name: "petitionable", Type: "boolean", Description: "false when a removal for this tag and hash is already staged or awaiting janitor review"},
 		}}},
@@ -980,8 +980,8 @@ func buildSpec(baseURL, version string, eps []endpoint) map[string]any {
 	return map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
-			"title": "monloader API",
-			"description": "Queue booru URLs for download into monbooru. Errors answer {error, code}; clients branch on code. " +
+			"title": "Meloader API",
+			"description": "Queue booru URLs for download into Mebooru. Errors answer {error, code}; clients branch on code. " +
 				"Every authenticated operation can answer 401 unauthorized, 403 insufficient_scope, or 503 api_disabled; " +
 				"on a desktop install whose first-run setup is not finished, every /api/v1 path but this reference answers 409 setup_required.",
 			"version": version,
@@ -1113,7 +1113,7 @@ type docsView struct {
 func (h *Handler) openAPIDocs(w http.ResponseWriter, r *http.Request) {
 	SetCORS(w, r)
 	view := docsView{
-		Title:        "monloader API",
+		Title:        "Meloader API",
 		Version:      h.version,
 		BaseURL:      h.cfg.Current().Server.BaseURL,
 		APIProtected: len(h.cfg.Current().Auth.Tokens) > 0,

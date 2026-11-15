@@ -121,7 +121,7 @@ func defaultGalleryWarning(name string, galleries []monbooru.Gallery) string {
 		return ""
 	}
 	if galleryMissing(name, galleries) {
-		return "Gallery \"" + name + "\" is not in monbooru - images will be refused until it exists."
+		return "Gallery \"" + name + "\" is not in Mebooru - images will be refused until it exists."
 	}
 	return ""
 }
@@ -314,7 +314,7 @@ func (s *Server) testMonbooru(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A swap, not a redirect, so the form's unsaved values survive.
-	flashFragment(w, "ok", "monbooru reachable - save to keep these settings.")
+	flashFragment(w, "ok", "Mebooru reachable - save to keep these settings.")
 }
 
 func (s *Server) saveDownloader(w http.ResponseWriter, r *http.Request) {

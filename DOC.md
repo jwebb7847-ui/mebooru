@@ -1,1 +1,1 @@
-https://monbooru.github.io/mondocs/addons/monloader/index.html
+https://github.com/jwebb7847-ui/meloader/blob/main/README.md

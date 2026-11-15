@@ -4,7 +4,7 @@
   <aside id="sidebar">
     <nav class="settings-nav">
       {{if .DesktopProfile}}<a href="#desktop">Desktop</a>{{end}}
-      <a href="#monbooru">Monbooru</a>
+      <a href="#monbooru">Mebooru</a>
       <a href="#pairing">Pairing<span id="settings-pair-count" class="nav-count">{{with len .PairNotice.Items}} ({{.}}){{end}}</span></a>
       <a href="#auth">Auth</a>
       <a href="#downloads">Downloads</a>
@@ -55,7 +55,7 @@
           {{end}}
           {{if $dk.AutostartSupported}}
           <label><input type="checkbox" name="start_at_login" form="desktop-switches" {{if $dk.AutostartEnabled}}checked{{end}}> Start at login</label>
-          <p class="field-hint">Retries and nightly lookups only run while monloader is open.</p>
+          <p class="field-hint">Retries and nightly lookups only run while Meloader is open.</p>
           {{end}}
         </div>
       </div>
@@ -78,7 +78,7 @@
   {{end}}
 
   <section class="settings-section" id="monbooru">
-    {{template "webui/settings_section_header" dict "Title" "Monbooru"}}
+    {{template "webui/settings_section_header" dict "Title" "Mebooru"}}
     {{if eq .FlashSection "monbooru"}}<div class="flash flash-{{.FlashKind}}">{{.Flash}}</div>{{end}}
     <form method="POST" action="/settings/monbooru">
       <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
@@ -86,12 +86,12 @@
         <div class="field">
           <label for="mb-api-url">API URL</label>
           <input id="mb-api-url" type="text" name="api_url" value="{{draft .Draft "api_url" .Cfg.Monbooru.APIURL}}" placeholder="{{.MonbooruAPIHint}}">
-          <p class="field-hint">The address monloader uses to reach monbooru (default {{.MonbooruAPIHint}}).</p>
+          <p class="field-hint">The address Meloader uses to reach Mebooru (default {{.MonbooruAPIHint}}).</p>
         </div>
         <div class="field">
           <label for="mb-web-url">Web URL</label>
           <input id="mb-web-url" type="text" name="web_url" value="{{draft .Draft "web_url" .Cfg.Monbooru.WebURL}}" placeholder="http://localhost:8455">
-          <p class="field-hint">The address your browser uses to open monbooru. Blank = no links to it.</p>
+          <p class="field-hint">The address your browser uses to open Mebooru. Blank = no links to it.</p>
         </div>
       </div>
       {{template "monbooru_gallery" (dict "Paired" .MonbooruPaired "Galleries" .Galleries "DefaultGallery" (draft .Draft "default_gallery" .Cfg.Monbooru.DefaultGallery) "GalleryWarn" .GalleryWarn "GalleryMissing" .GalleryMissing)}}
@@ -108,13 +108,13 @@
     {{if eq .FlashSection "pairing"}}<div class="flash flash-{{.FlashKind}}">{{.Flash}}</div>{{end}}
     <div class="settings-cols">
       <div class="settings-sub">
-        <h4>Monbooru</h4>
-        <p class="field-hint">Lets monloader send images to monbooru.</p>
+        <h4>Mebooru</h4>
+        <p class="field-hint">Lets Meloader send images to Mebooru.</p>
         {{template "monbooru_pair" (dict "Paired" .MonbooruPaired "Waiting" .MonbooruPairWaiting "Message" "")}}
       </div>
       <div class="settings-sub">
         <h4>Monsender extension</h4>
-        <p class="field-hint">Lets the browser extension send URLs to monloader.</p>
+        <p class="field-hint">Lets the browser extension send URLs to Meloader.</p>
         {{template "monsender_pairing" (dict "Pending" .MonsenderPending "Awaiting" .MonsenderAwaiting "Paired" .MonsenderPaired "PairKey" .PairNotice.Key)}}
       </div>
     </div>
@@ -127,7 +127,7 @@
       {{template "webui/auth_password_section" (dict "AuthEnabled" .Cfg.Auth.EnablePassword "HasPassword" (ne .Cfg.Auth.PasswordHash ""))}}
       <div class="settings-sub">
         <h4>API Tokens</h4>
-        <p class="field-hint">For scripts and apps that talk to monloader. A token is shown once, when you create it.</p>
+        <p class="field-hint">For scripts and apps that talk to Meloader. A token is shown once, when you create it.</p>
         {{template "webui/auth_tokens" (dict "Tokens" .TokenRows)}}
         <form hx-post="/settings/auth/tokens" hx-target="#flash-auth" hx-swap="innerHTML" style="margin-top:8px"
               hx-on:token-created="this.reset()">
@@ -155,8 +155,8 @@
           "Hint" (printf "A pool or a manga gallery always comes whole (default %v)" .Defaults.Downloader.MaxItemsPerJob))}}
         {{template "field" (dict "ID" "dl-folder" "Label" "Default folder" "Name" "default_folder"
           "Value" (draft .Draft "default_folder" .Cfg.Downloader.DefaultFolder)
-          "Placeholder" "(monbooru's default)"
-          "Hint" "Subfolder in monbooru. Blank = monbooru's \"Where received files go\"")}}
+          "Placeholder" "(Mebooru's default)"
+          "Hint" "Subfolder in Mebooru. Blank = Mebooru's \"Where received files go\"")}}
         {{template "field" (dict "ID" "dl-success-retention" "Label" "Clear succeeded jobs after (days)" "Name" "success_retention_days"
           "Value" (draft .Draft "success_retention_days" .Cfg.Downloader.SuccessRetentionDays)
           "Hint" (printf "Searches with more to fetch stay. 0 = never (default %v)" .Defaults.Downloader.SuccessRetentionDays))}}
@@ -171,7 +171,7 @@
   </section>
 
   <section class="settings-section" id="trace">
-    {{template "webui/settings_section_header" dict "Title" "Trace a post" "Hint" "See which tags a post would send to monbooru, without downloading it."}}
+    {{template "webui/settings_section_header" dict "Title" "Trace a post" "Hint" "See which tags a post would send to Mebooru, without downloading it."}}
     <form class="trace-bar" hx-post="/settings/rules/trace" hx-target="#rules-trace" hx-swap="innerHTML"
           hx-on::before-request="document.getElementById('rules-trace').innerHTML='<span class=&quot;field-hint&quot;>tracing...</span>'">
       <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
@@ -236,7 +236,7 @@
     {{end}}
 
     <h3 class="sites-group">Host labels</h3>
-    <p class="field-hint">When a direct file link comes from this host, monbooru shows this name as its source. Subdomains count too.</p>
+    <p class="field-hint">When a direct file link comes from this host, Mebooru shows this name as its source. Subdomains count too.</p>
     <form method="POST" action="/settings/host-labels">
       <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
       <div class="field">
@@ -267,7 +267,7 @@
   <section class="settings-section" id="lookup">
     <div class="settings-section-header">
       <h3>Lookup</h3>
-      <p class="field-hint">Where monloader looks for an image's post, by exact file hash or by visual similarity. Sites are asked top to bottom until one matches.</p>
+      <p class="field-hint">Where Meloader looks for an image's post, by exact file hash or by visual similarity. Sites are asked top to bottom until one matches.</p>
       <button type="button" class="btn-link-accent sites-title-link" onclick="document.getElementById('chain-dialog').showModal()">[edit chain]</button>
     </div>
     {{if eq .FlashSection "lookup"}}<div class="flash flash-{{.FlashKind}}">{{.Flash}}</div>{{end}}
@@ -310,7 +310,7 @@
           <label for="lk-scheduled-budget">Nightly lookups per day
             <span class="lookup-budget-left{{if not .LookupPanel.ScheduledLeft}} spent{{end}}">({{.LookupPanel.ScheduledLeft}} left today)</span></label>
           <input id="lk-scheduled-budget" type="number" name="scheduled_daily_budget" min="0" step="1" value="{{draft .Draft "scheduled_daily_budget" .LookupPanel.ScheduledBudget}}">
-          <span class="field-hint">Images monbooru's nightly run may look up. 0 = none (default {{.Defaults.Lookup.ScheduledDailyBudget}}). Resets {{humanDue .LookupPanel.ScheduledResets}}.</span>
+          <span class="field-hint">Images Mebooru's nightly run may look up. 0 = none (default {{.Defaults.Lookup.ScheduledDailyBudget}}). Resets {{humanDue .LookupPanel.ScheduledResets}}.</span>
         </div>
       </div>
       {{if .LookupPanel.SaucenaoLimited}}<span class="field-hint">saucenao is rate limited, resets {{humanDue .LookupPanel.SaucenaoLimited}}</span>{{end}}

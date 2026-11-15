@@ -706,17 +706,21 @@ func applyEnvOverrides(cfg *Config) {
 	envOverride("MONLOADER_PTR_ENABLED", &cfg.PTR.Enabled, strconv.ParseBool)
 }
 
-func envOverride[T any](env string, dst *T, parse func(string) (T, error)) {
-	raw := os.Getenv(env)
-	if raw == "" {
+func envOverride[T any](legacy string, dst *T, parse func(string) (T, error)) {
+	current := "MELOADER_" + strings.ReplaceAll(strings.TrimPrefix(legacy, "MONLOADER_"), "MONBOORU", "MEBOORU")
+	for _, variable := range []string{current, legacy} {
+		raw := os.Getenv(variable)
+		if raw == "" {
+			continue
+		}
+		v, err := parse(raw)
+		if err != nil {
+			logx.Warnf("config: ignoring %s: %v", variable, err)
+			continue
+		}
+		*dst = v
 		return
 	}
-	v, err := parse(raw)
-	if err != nil {
-		logx.Warnf("config: ignoring %s=%q: %v", env, raw, err)
-		return
-	}
-	*dst = v
 }
 
 func parseString(v string) (string, error) { return v, nil }

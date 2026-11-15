@@ -57,7 +57,7 @@ func (s *Server) SetupMiddleware(next http.Handler) http.Handler {
 				return
 			}
 			api.SetCORS(w, r)
-			contract.WriteError(w, http.StatusConflict, api.ErrSetupRequired, "monloader has not been set up yet - finish the first-run setup in its window")
+			contract.WriteError(w, http.StatusConflict, api.ErrSetupRequired, "Meloader has not been set up yet - finish the first-run setup in its window")
 			return
 		}
 		if r.Header.Get("HX-Request") == "true" {
@@ -191,7 +191,7 @@ func (s *Server) setupPost(w http.ResponseWriter, r *http.Request) {
 	done := "/"
 	if form.Pair && form.APIURL != "" && !s.hasPairedToken(contract.AppMonbooru) {
 		if err := s.startMonbooruPairing(r.Context()); err != nil {
-			logx.Warnf("setup: could not ask monbooru to pair: %v", err)
+			logx.Warnf("setup: could not ask Mebooru to pair: %v", err)
 			done = "/settings?kind=err&section=pairing&msg=" +
 				url.QueryEscape("Setup finished, but the pairing request failed: "+err.Error()) + "#pairing"
 		}

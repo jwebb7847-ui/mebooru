@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Monloader
-Comment=Downloader for monbooru
+Name=Meloader
+Comment=Downloader for Mebooru
 Exec=monloader -desktop
 Icon=monloader
 Terminal=false
