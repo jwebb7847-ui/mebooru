@@ -520,9 +520,6 @@ func (s *Server) applySaved(prev, next *config.Config) {
 	// Compared with the engine, not prev: a value saved under an open index
 	// is still owed once it closes. Lands before a save's enable, which
 	// would otherwise sync from where the engine booted.
-	if s.ptr.DataPath() != next.PTR.DataPath {
-		s.ptr.SetDataPath(next.PTR.DataPath)
-	}
 	if s.ptr.Address() != next.PTR.Address {
 		s.ptr.SetAddress(next.PTR.Address)
 	}

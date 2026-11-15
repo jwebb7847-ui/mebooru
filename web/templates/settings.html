@@ -370,15 +370,8 @@
       <div class="downloads-grid">
         <div class="field">
           <label for="ptr-data-path">Data path</label>
-          <div class="path-row">
-            <input id="ptr-data-path" type="text" name="data_path" value="{{draft .Draft "data_path" .Cfg.PTR.DataPath}}">
-            {{if .DesktopProfile}}
-            <button type="button" class="btn-sm dir-picker-open" data-into="ptr-data-path"
-                    hx-get="/internal/browse?into=ptr-data-path" hx-target="#dir-picker-body"
-                    hx-swap="innerHTML">Browse</button>
-            {{end}}
-          </div>
-          <span class="field-hint">Folder for the index. A running sync picks up a change after a restart (default {{.Defaults.PTR.DataPath}})</span>
+          <input id="ptr-data-path" type="text" value="{{.Cfg.PTR.DataPath}}" readonly>
+          <span class="field-hint">Set <code>ptr.data_path</code> in the config file or <code>MONLOADER_PTR_DATA_PATH</code> in the environment, then restart.</span>
         </div>
         {{template "field" (dict "ID" "ptr-address" "Label" "Address" "Name" "address"
           "Value" (draft .Draft "address" .Cfg.PTR.Address)

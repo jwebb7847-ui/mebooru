@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -124,16 +123,6 @@ func OpenContribStore(dataPath string) (*ContribStore, error) {
 }
 
 func (s *ContribStore) Close() error { return s.db.Close() }
-
-func removeContribStore(dataPath string) error {
-	base := filepath.Join(dataPath, contribFile)
-	for _, p := range []string{base, base + "-wal", base + "-shm"} {
-		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-	return nil
-}
 
 // Stage stores a pair's absent hash as an empty blob, not NULL: SQLite
 // treats NULLs as distinct in a UNIQUE index.

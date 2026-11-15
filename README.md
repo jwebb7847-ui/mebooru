@@ -104,6 +104,19 @@ Beside the portable archives, Windows builds also ship as an installer, Linux bu
 
 Then paste a URL into the add bar on the home page.
 
+### Public Tag Repository
+
+Set the index directory with `[ptr].data_path` or
+`MONLOADER_PTR_DATA_PATH`, then restart Meloader. The web settings display the
+configured directory.
+
+PTR connections verify the TLS certificate and hostname using the system
+trust store. For a repository with a private CA or self-signed certificate,
+obtain the appropriate PEM certificate from the operator over a trusted
+channel. Set `[ptr].tls_ca_file` or `MONLOADER_PTR_TLS_CA_FILE` and restart.
+The certificate must be valid for the hostname in `[ptr].address`. HTTP is
+allowed for literal loopback addresses.
+
 ## Warning
 
 > **Intended for local network use.** monloader's UI is not designed to be exposed to the public internet.
