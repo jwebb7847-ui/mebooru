@@ -1,11 +1,13 @@
 package web
 
 import (
+	"cmp"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/monbooru/monbooru/internal/peer"
+	"github.com/monbooru/monbooru/internal/shared/desktop"
 	"github.com/monbooru/monbooru/internal/shared/session"
 )
 
@@ -17,17 +19,28 @@ type loaderPanel struct {
 }
 
 func (s *Server) loaderPanel(r *http.Request, base baseData, path string) loaderPanel {
+	if !base.MonloaderPaired {
+		return loaderPanel{Message: "Pair Meloader to use this view.", Setup: true}
+	}
 	web := s.monloaderWebBase()
 	scheme := "http"
 	if session.RequestIsHTTPS(r) {
 		scheme = "https"
 	}
-	peerURL := loaderPeerURL(web, scheme, r.Host)
-	if !base.MonloaderPaired {
-		return loaderPanel{Message: "Pair Meloader to use this view.", Setup: true}
+	// A paired address on the same machine can serve both the API and the
+	// browser. Keep remote and proxied installs on their explicit web URL.
+	if web == "" && scheme == "http" && desktop.LocalRequest(r) {
+		link := s.monloaderLink()
+		if link.Paired {
+			candidate := cmp.Or(strings.TrimSpace(link.APIURL), link.PeerURL)
+			if u, err := url.Parse(candidate); err == nil && desktop.IsLoopbackAddr(u.Hostname()) {
+				web = candidate
+			}
+		}
 	}
+	peerURL := loaderPeerURL(web, scheme, r.Host)
 	if peerURL == "" {
-		return loaderPanel{Message: "This view needs a separate Meloader Web URL. Use HTTPS for both apps if Mebooru uses HTTPS.", Setup: true}
+		return loaderPanel{Message: "Set Meloader’s Web URL in Settings → Plugins. Use HTTPS for both apps if Mebooru uses HTTPS.", Setup: true}
 	}
 	panel := loaderPanel{OpenURL: peerURL + path}
 	switch base.MonloaderConn {

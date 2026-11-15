@@ -39,6 +39,7 @@ func (s *Server) loaderJobResults(w http.ResponseWriter, r *http.Request) {
 	view := struct {
 		ID                     int64
 		Message                string
+		Live                   bool
 		Rows                   []loaderResult
 		First, Last, Total     int
 		Page                   int
@@ -55,23 +56,25 @@ func (s *Server) loaderJobResults(w http.ResponseWriter, r *http.Request) {
 	default:
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
-		gallery, items, err := s.ml.ImportResults(ctx, id)
+		result, err := s.ml.ImportResults(ctx, id)
+		view.Live = err == nil && result.Live()
 		switch {
 		case errors.Is(err, monloader.ErrImportJobNotFound):
 			view.Message = "This job is no longer in the queue."
 		case err != nil:
 			view.Message = "Could not load import results."
-		case len(items) == 0:
+			view.Live = true
+		case len(result.Items) == 0:
 			view.Message = "No post results yet."
 		default:
-			view.Total = len(items)
+			view.Total = len(result.Items)
 			lastPage := (view.Total-1)/loaderResultsLimit + 1
 			page := min(view.Page, lastPage)
 			view.Page = page
 			start := (page - 1) * loaderResultsLimit
 			view.First, view.Last = start+1, min(start+loaderResultsLimit, view.Total)
-			for index, item := range items[start:view.Last] {
-				view.Rows = append(view.Rows, buildLoaderResult(gallery, item, start+index+1))
+			for index, item := range result.Items[start:view.Last] {
+				view.Rows = append(view.Rows, buildLoaderResult(result.Gallery, item, start+index+1))
 			}
 			if page > 1 {
 				view.PreviousPage = page - 1

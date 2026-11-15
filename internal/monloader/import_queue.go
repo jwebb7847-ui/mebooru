@@ -48,24 +48,26 @@ type ImportItem struct {
 	Error     string `json:"error"`
 }
 
-func (l *Link) ImportResults(ctx context.Context, id int64) (string, []ImportItem, error) {
-	var out struct {
-		Gallery string       `json:"gallery"`
-		Items   []ImportItem `json:"items"`
-	}
+type ImportJobResults struct {
+	ImportJob
+	Items []ImportItem `json:"items"`
+}
+
+func (l *Link) ImportResults(ctx context.Context, id int64) (ImportJobResults, error) {
+	var out ImportJobResults
 	resp, err := l.client.Do(ctx, http.MethodGet, importQueuePath+"/"+strconv.FormatInt(id, 10), nil)
 	if err != nil {
-		return "", nil, err
+		return out, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusNotFound:
-		return "", nil, ErrImportJobNotFound
+		return out, ErrImportJobNotFound
 	case http.StatusOK:
 		err = json.NewDecoder(resp.Body).Decode(&out)
-		return out.Gallery, out.Items, err
+		return out, err
 	default:
-		return "", nil, refused(resp)
+		return out, refused(resp)
 	}
 }
 

@@ -22,7 +22,7 @@
   <div id="loader-flash" role="status"></div>
   {{if .MonloaderPaired}}
   <div id="loader-jobs" hx-get="/loader/jobs?page=1"
-       hx-trigger="load, every 5s [!confirmOpen() && !document.querySelector('#loader-jobs :focus, #loader-jobs details[open]')], loader-queue-updated[!document.querySelector('#loader-jobs details[open]')] from:body"
+       hx-trigger="load, every 5s [!confirmOpen()], loader-queue-updated from:body"
        hx-target="this" hx-swap="outerHTML">Loading queue…</div>
   {{end}}
 </div>
@@ -30,9 +30,8 @@
 
 {{define "loader_jobs"}}
 <div id="loader-jobs" hx-get="/loader/jobs?page={{if .Page}}{{.Page}}{{else}}1{{end}}"
-     hx-trigger="every 5s [!confirmOpen() && !document.querySelector('#loader-jobs :focus, #loader-jobs details[open]')], loader-queue-updated[!document.querySelector('#loader-jobs details[open]')] from:body"
-     hx-on::before-swap="if (event.detail.target === this && this.querySelector('details[open]')) event.detail.shouldSwap = false"
-     hx-target="this" hx-swap="outerHTML">
+     hx-trigger="every 5s [!confirmOpen()], loader-queue-updated from:body"
+     hx-target="this" hx-swap="outerHTML" hx-sync="this:drop">
   {{if .Message}}
   <p>{{.Message}} <a href="/settings#plugins">Open Plugins</a></p>
   {{else}}
@@ -43,8 +42,8 @@
       <thead><tr><th>Job</th><th>Source</th><th>Gallery</th><th>Status</th><th>Results</th><th>Actions</th></tr></thead>
       <tbody>
       {{range .Jobs}}
-        <tr>
-          <td>#{{.ID}}{{if .Root}}<br><span class="field-hint">From #{{.Root}}</span>{{end}}</td>
+        <tr id="loader-job-{{.ID}}" data-live="{{.Live}}">
+          <td>#{{.ID}}{{if and .Root (ne .Root .ID)}}<br><span class="field-hint">From #{{.Root}}</span>{{end}}</td>
           <td>{{if .URL}}{{.URL}}{{else if .MD5}}md5:{{.MD5}}{{else}}{{.Kind}}{{end}}{{with .Site}}<br><span class="field-hint">{{.}}</span>{{end}}</td>
           <td>{{.Gallery}}</td>
           <td>{{.Status}}{{with .Error}}<br><span class="field-hint">{{.}}</span>{{end}}</td>
@@ -61,10 +60,10 @@
           <td>
             {{if not .Live}}
               {{if and (ne .Kind "ptr_lookup") (or (eq .Status "failed") (eq .Status "partial") (eq .Status "interrupted") (eq .Status "canceled"))}}
-              <button type="button" hx-post="/loader/jobs/{{.ID}}/retry" hx-target="#loader-flash" hx-swap="innerHTML" hx-disabled-elt="this">Retry</button>
+              <button type="button" id="loader-retry-{{.ID}}" hx-post="/loader/jobs/{{.ID}}/retry" hx-target="#loader-flash" hx-swap="innerHTML" hx-sync="unset" hx-disabled-elt="this">Retry</button>
               {{end}}
               {{if and .Capped (eq .Status "succeeded") (eq .ID (index $.Latest .Series))}}
-              <button type="button" hx-post="/loader/jobs/{{.ID}}/continue" hx-target="#loader-flash" hx-swap="innerHTML" hx-disabled-elt="this">Get next batch</button>
+              <button type="button" id="loader-continue-{{.ID}}" hx-post="/loader/jobs/{{.ID}}/continue" hx-target="#loader-flash" hx-swap="innerHTML" hx-sync="unset" hx-disabled-elt="this">Get next batch</button>
               {{end}}
             {{end}}
           </td>
@@ -72,10 +71,11 @@
         {{if .Summary.Total}}
         <tr class="loader-results-row">
           <td colspan="6">
-            <details hx-get="/loader/jobs/{{.ID}}/results"
+            <details id="loader-job-details-{{.ID}}" hx-preserve
+                     hx-get="/loader/jobs/{{.ID}}/results"
                      hx-trigger="toggle[event.target.open] once"
-                     hx-target="find .loader-results" hx-swap="outerHTML">
-              <summary>Post results for job #{{.ID}}</summary>
+                     hx-target="find .loader-results" hx-swap="outerHTML" hx-sync="unset">
+              <summary id="loader-job-summary-{{.ID}}">Post results for job #{{.ID}}</summary>
               <div id="loader-results-{{.ID}}" class="loader-results" aria-live="polite">Loading post results…</div>
             </details>
           </td>
@@ -90,9 +90,9 @@
   {{end}}
   {{if or .Prev .Next}}
   <div class="loader-pages">
-    {{if .Prev}}<button type="button" hx-get="/loader/jobs?page={{.Prev}}">Previous</button>{{end}}
+    {{if .Prev}}<button type="button" id="loader-queue-previous" hx-get="/loader/jobs?page={{.Prev}}" hx-sync="closest #loader-jobs:replace">Previous</button>{{end}}
     <span>Page {{.Page}}</span>
-    {{if .Next}}<button type="button" hx-get="/loader/jobs?page={{.Next}}">Next</button>{{end}}
+    {{if .Next}}<button type="button" id="loader-queue-next" hx-get="/loader/jobs?page={{.Next}}" hx-sync="closest #loader-jobs:replace">Next</button>{{end}}
   </div>
   {{end}}
   {{end}}
@@ -100,9 +100,11 @@
 {{end}}
 
 {{define "loader_job_results"}}
-<div id="loader-results-{{.ID}}" class="loader-results" aria-live="polite"
-     hx-target="this" hx-swap="outerHTML" hx-sync="closest .loader-results:replace">
-  {{if .Message}}<p>{{.Message}}</p>{{end}}
+<div id="loader-results-{{.ID}}" class="loader-results" data-live="{{.Live}}"
+     hx-get="/loader/jobs/{{.ID}}/results?page={{.Page}}"
+     hx-trigger="every 5s [this.closest('details[open]') && (this.dataset.live === 'true' || document.querySelector('#loader-job-{{.ID}}[data-live=true]')) && !confirmOpen()]"
+     hx-target="this" hx-swap="outerHTML" hx-sync="this:drop">
+  {{if .Message}}<p role="status">{{.Message}}</p>{{end}}
   {{if .Rows}}
   <table class="data-table">
     <thead><tr><th>Post</th><th>Outcome</th><th>Details</th><th>Gallery</th></tr></thead>
@@ -112,17 +114,17 @@
         <td>{{if .PostID}}{{.PostID}}{{else}}#{{.Number}}{{end}}</td>
         <td>{{.Label}}</td>
         <td>{{.Detail}}</td>
-        <td>{{with .URL}}<a href="{{.}}">Open in gallery</a>{{end}}</td>
+        <td>{{if .URL}}<a id="loader-result-link-{{$.ID}}-{{.Number}}" href="{{.URL}}">Open in gallery</a>{{end}}</td>
       </tr>
     {{end}}
     </tbody>
   </table>
   {{end}}
   <div class="loader-pages">
-    {{if .PreviousPage}}<button type="button" hx-get="/loader/jobs/{{.ID}}/results?page={{.PreviousPage}}">Previous</button>{{end}}
+    {{if .PreviousPage}}<button type="button" id="loader-results-previous-{{.ID}}" hx-get="/loader/jobs/{{.ID}}/results?page={{.PreviousPage}}" hx-sync="closest .loader-results:replace">Previous</button>{{end}}
     {{if .Total}}<span>{{.First}}–{{.Last}} of {{.Total}} posts</span>{{end}}
-    {{if .NextPage}}<button type="button" hx-get="/loader/jobs/{{.ID}}/results?page={{.NextPage}}">Next</button>{{end}}
-    <button type="button" hx-get="/loader/jobs/{{.ID}}/results?page={{.Page}}">Refresh results</button>
+    {{if .NextPage}}<button type="button" id="loader-results-next-{{.ID}}" hx-get="/loader/jobs/{{.ID}}/results?page={{.NextPage}}" hx-sync="closest .loader-results:replace">Next</button>{{end}}
+    <button type="button" id="loader-results-refresh-{{.ID}}" hx-get="/loader/jobs/{{.ID}}/results?page={{.Page}}" hx-sync="closest .loader-results:replace">Refresh results</button>
   </div>
 </div>
 {{end}}
