@@ -14,7 +14,7 @@
   {{template "partials/detail_sidebar.html" .}}
 </div>
 {{end}}
-{{with .TagCount}}<span id="footer-count-tags" hx-swap-oob="true">{{.}} tags</span>{{end}}
+{{with .TagCount}}{{template "footer_tag_count" (dict "Count" . "OOB" true)}}{{end}}
 {{if .DangerZone}}
 {{template "partials/detail_danger_zone.html" (dict "ImageID" .ImageID "ImageTags" .ImageTags "HasUserTags" .HasUserTags "HasStaleTags" .HasStaleTags "ImageTaggers" .ImageTaggers "ImageSources" .ImageSources "CanTransfer" .CanTransfer "BackKVQS" .BackKVQS "Ref" .Ref "CurrentFolder" .CurrentFolder "Filename" .Filename "ExtraPaths" .ExtraPaths "RewrittenBy" .RewrittenBy "OOB" true)}}
 {{end}}

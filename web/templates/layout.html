@@ -112,8 +112,10 @@
 
 {{define "footer_hidden"}}<span id="footer-hidden" class="footer-hidden"{{if .OOB}} hx-swap-oob="true"{{end}}>{{with .N}}<span class="footer-sep-strong">::</span><span class="footer-hidden-n">{{.}} hidden<span class="footer-wide"> {{plural . "image" "images"}} in the current search</span></span>{{end}}</span>{{end}}
 
+{{define "footer_tag_count"}}<span id="footer-count-tags"{{if .OOB}} hx-swap-oob="true"{{end}}>{{.Count}} catalog {{plural .Count "tag" "tags"}}</span>{{end}}
+
 {{define "footer_counts"}}<span id="footer-count-images" hx-swap-oob="true">{{.VisibleCount}} img</span>
-<span id="footer-count-tags" hx-swap-oob="true">{{.TagCount}} tags</span>
+{{template "footer_tag_count" (dict "Count" .TagCount "OOB" true)}}
 <span id="footer-count-collections" hx-swap-oob="true">{{.CollectionsCount}} collections</span>{{end}}
 
 {{define "layout_end"}}
@@ -128,7 +130,7 @@
       <span class="footer-sep">·</span>
       <span id="footer-count-images">{{.VisibleCount}} img</span>
       <span class="footer-sep">·</span>
-      <span id="footer-count-tags">{{.TagCount}} tags</span>
+      {{template "footer_tag_count" (dict "Count" .TagCount "OOB" false)}}
       <span class="footer-sep">·</span>
       <span id="footer-count-collections">{{.CollectionsCount}} collections</span>
       </span>

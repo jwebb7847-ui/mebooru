@@ -103,16 +103,20 @@ func TestSettingsActiveGalleryStats(t *testing.T) {
 	}
 	cx.InvalidateCaches()
 
-	page := func() string {
+	page := func(path string, headers map[string]string) string {
 		t.Helper()
 		w := httptest.NewRecorder()
-		s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, cfg.Server.BaseURL+"/settings", nil))
+		r := httptest.NewRequest(http.MethodGet, cfg.Server.BaseURL+path, nil)
+		for name, value := range headers {
+			r.Header.Set(name, value)
+		}
+		s.Handler().ServeHTTP(w, r)
 		if w.Code != http.StatusOK {
-			t.Fatalf("GET /settings: status %d: %s", w.Code, w.Body)
+			t.Fatalf("GET %s: status %d: %s", path, w.Code, w.Body)
 		}
 		return w.Body.String()
 	}
-	body := page()
+	body := page("/settings", nil)
 	for _, want := range []string{
 		"Active gallery · audit",
 		`<th scope="row">Images</th><td>2</td>`,
@@ -121,11 +125,21 @@ func TestSettingsActiveGalleryStats(t *testing.T) {
 		`<th scope="row">Indexed media size</th><td title="31744 bytes">31.0 KiB</td>`,
 		`<th scope="row">Catalog tags</th><td>12</td>`,
 		`<th scope="row">Tags in use</th><td>6</td>`,
-		`id="footer-count-tags">12 tags`,
+		`id="footer-count-tags">12 catalog tags`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings page missing %q", want)
 		}
+	}
+	wantRefresh := `id="footer-count-tags" hx-swap-oob="true">12 catalog tags`
+	if body := page("/internal/footer-counts", nil); !strings.Contains(body, wantRefresh) {
+		t.Errorf("footer refresh missing %q: %s", wantRefresh, body)
+	}
+	if body := page("/", map[string]string{"HX-Request": "true", "HX-Target": "gallery-grid"}); !strings.Contains(body, wantRefresh) {
+		t.Errorf("gallery refresh missing %q", wantRefresh)
+	}
+	if body := page("/images/1/tags", nil); !strings.Contains(body, wantRefresh) {
+		t.Errorf("image tag refresh missing %q", wantRefresh)
 	}
 
 	var applied, derived, imported int
@@ -145,7 +159,7 @@ func TestSettingsActiveGalleryStats(t *testing.T) {
 	if err := s.set.Switch("empty"); err != nil {
 		t.Fatal(err)
 	}
-	body = page()
+	body = page("/settings", nil)
 	for _, want := range []string{
 		"Active gallery · empty",
 		`<th scope="row">Images</th><td>0</td>`,
