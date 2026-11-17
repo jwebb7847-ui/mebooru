@@ -101,7 +101,7 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		TaggerRows:         taggerRows,
 		ScheduleStatus:     s.sched.Status(),
 		ScheduleScope:      scheduleScopeView(cfg, taggers, base.MonloaderPaired),
-		Stats:              s.gatherStats(),
+		Stats:              s.gatherStats(r.Context()),
 		ExecutionProviders: config.ExecutionProviders,
 		ScheduleModes:      scheduleModeRows(),
 		PluginPending:      s.pendingOffers(),

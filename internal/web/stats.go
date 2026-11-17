@@ -1,11 +1,14 @@
 package web
 
 import (
+	"context"
 	"runtime"
 	"slices"
 	"strconv"
 	"time"
 
+	"github.com/monbooru/monbooru/internal/counts"
+	"github.com/monbooru/monbooru/internal/shared/logx"
 	"github.com/monbooru/monbooru/internal/tagger"
 )
 
@@ -38,6 +41,11 @@ type galleryDBStats struct {
 	DBSize int64
 }
 
+type activeGalleryStats struct {
+	Name string
+	counts.GalleryStats
+}
+
 type mountStats struct {
 	Labels    []string
 	TotalSize int64
@@ -60,16 +68,25 @@ type taggerCacheStats struct {
 }
 
 type statsData struct {
-	Mem        memStats
-	Galleries  []galleryDBStats
-	Mounts     []mountStats
-	FSWarnings []string
-	Tagger     taggerCacheStats
+	Mem           memStats
+	ActiveGallery *activeGalleryStats
+	Galleries     []galleryDBStats
+	Mounts        []mountStats
+	FSWarnings    []string
+	Tagger        taggerCacheStats
 }
 
 // Cheap by design: no directory walks.
-func (s *Server) gatherStats() statsData {
+func (s *Server) gatherStats(ctx context.Context) statsData {
 	out := statsData{Mem: gatherMemStats(), Tagger: gatherTaggerStats(s)}
+	if cx := s.active(); cx != nil && cx.DB != nil {
+		stats, err := counts.ReadGalleryStats(ctx, cx.DB)
+		if err == nil {
+			out.ActiveGallery = &activeGalleryStats{Name: cx.Name, GalleryStats: stats}
+		} else if ctx.Err() == nil {
+			logx.Warnf("stats for gallery %q: %v", cx.Name, err)
+		}
+	}
 
 	galleries := s.galleryList()
 	out.Galleries = make([]galleryDBStats, 0, len(galleries))
