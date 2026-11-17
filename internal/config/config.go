@@ -337,8 +337,9 @@ const (
 var AllScopes = []string{ScopeRead, ScopeWrite, ScopeDelete}
 
 type UIConfig struct {
-	PageSize     int    `toml:"page_size"`
-	ThumbnailFit string `toml:"thumbnail_fit"`
+	PageSize           int    `toml:"page_size"`
+	ThumbnailFit       string `toml:"thumbnail_fit"`
+	VideoHoverPreviews bool   `toml:"video_hover_previews"`
 }
 
 // Start-at-login and the menu entry live where the platform reads them.
@@ -480,8 +481,9 @@ func Default() *Config {
 			SessionLifetimeDays: defaultSessionLifetimeDays,
 		},
 		UI: UIConfig{
-			PageSize:     defaultPageSize,
-			ThumbnailFit: defaultThumbnailFit,
+			PageSize:           defaultPageSize,
+			ThumbnailFit:       defaultThumbnailFit,
+			VideoHoverPreviews: true,
 		},
 		Log: LogConfig{
 			Level: "warn",

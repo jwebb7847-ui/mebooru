@@ -74,6 +74,13 @@ binaries. Meloader uses your configured gallery-dl, or a gallery-dl on PATH
 including standard Homebrew locations. The core bundle uses the browser UI
 and has no bundled ONNX Runtime or FFmpeg.
 
+Video thumbnails use FFmpeg. On macOS, Mebooru also checks the standard
+Homebrew locations when launched from Finder. With Homebrew, install it
+using `brew install ffmpeg`, then restart Mebooru. Use **Settings → Maintenance
+→ Rebuild thumbnails** to recover previews for existing videos. Choose
+**Static thumbnails** or **Animated WebP on hover** under **Settings →
+General → Video thumbnails**.
+
 On macOS and Linux, build [Meloader](https://github.com/jwebb7847-ui/meloader) from its repository and pair it with Mebooru once. To start
 your existing Meloader configuration when Mebooru opens, set these paths
 in Mebooru's config:

@@ -44,12 +44,12 @@
   </div>
   {{end}}{{end}}
   <div class="thumb-card" data-id="{{.ID}}"
-       {{if or (eq .FileType "mp4") (eq .FileType "webm") (eq .FileType "gif")}}data-hover="/thumbnails/{{$.ActiveGallery}}/{{.ID}}_hover.webp"{{end}}>
+       {{if or (eq .FileType "gif") (and $.VideoHover (or (eq .FileType "mp4") (eq .FileType "webm")))}}data-hover="/thumbnails/{{$.ActiveGallery}}/{{.ID}}_hover.webp"{{end}}>
     <input type="checkbox" class="thumb-checkbox" name="ids" value="{{.ID}}" aria-label="Select image {{.ID}}">
     <a href="/images/{{.ID}}?back_q={{urlQ $.Query}}&back_sort={{$.Sort}}&back_order={{$.Order}}&back_page={{$.Page}}&back_idx={{$i}}{{if $.RandomSeed}}&back_seed={{$.RandomSeed}}{{end}}" class="thumb-link">
       <img src="/thumbnails/{{$.ActiveGallery}}/{{.ID}}.jpg" alt="image {{.ID}}" loading="lazy"
            class="thumb-img"
-           onerror="this.parentElement.innerHTML='<div class=thumb-placeholder title=&quot;preview unavailable&quot;>?</div>'">
+           onerror="this.outerHTML='<div class=thumb-placeholder title=&quot;preview unavailable&quot;>?</div>'">
       {{if and .IsInbox (not $.InboxUploadActive)}}
         <span class="inbox-mark" title="In inbox" aria-label="In inbox"></span>
       {{end}}

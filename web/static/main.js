@@ -1471,32 +1471,30 @@ function restoreGalleryFocusFromHash() {
 }
 document.addEventListener('DOMContentLoaded', restoreGalleryFocusFromHash);
 
+const hoverPreviews = new WeakMap();
+
 document.addEventListener('mouseover', function(e) {
-  const card = e.target.closest('.thumb-card');
-  if (!card) return;
-  const img = card.querySelector('.thumb-img');
-  const hoverSrc = card.dataset.hover;
-  if (!img || !hoverSrc || img.dataset.hovering) return;
-  img.dataset.orig = img.src;
-  img.dataset.hovering = '1';
-  img.onerror = function() {
-    img.src = img.dataset.orig || '';
-    delete img.dataset.orig;
-    delete img.dataset.hovering;
-    img.onerror = null;
+  const card = e.target.closest('.thumb-card[data-hover]');
+  if (!card || hoverPreviews.has(card)) return;
+  const link = card.querySelector('.thumb-link');
+  if (!link) return;
+
+  // Keep the thumbnail in place until the animated preview has loaded.
+  const preview = new Image();
+  hoverPreviews.set(card, preview);
+  preview.alt = '';
+  preview.className = 'thumb-img thumb-hover-preview';
+  preview.onload = function() {
+    if (hoverPreviews.get(card) === preview && card.isConnected) link.prepend(preview);
   };
-  img.src = hoverSrc;
+  preview.src = card.dataset.hover;
 });
 
 document.addEventListener('mouseout', function(e) {
-  const card = e.target.closest('.thumb-card');
+  const card = e.target.closest('.thumb-card[data-hover]');
   if (!card || (e.relatedTarget && card.contains(e.relatedTarget))) return;
-  const img = card.querySelector('.thumb-img');
-  if (!img || !img.dataset.orig) return;
-  img.src = img.dataset.orig;
-  delete img.dataset.orig;
-  delete img.dataset.hovering;
-  img.onerror = null;
+  hoverPreviews.get(card)?.remove();
+  hoverPreviews.delete(card);
 });
 
 document.addEventListener('input', function(e) {
