@@ -114,6 +114,16 @@
           </div>
         </div>
         <div class="field">
+          <span id="video-thumbnails-label" class="field-title">Video thumbnails</span>
+          <div class="radio-row" role="radiogroup" aria-labelledby="video-thumbnails-label">
+            <label><input type="radio" name="video_hover_previews" value="false"{{if not $cfg.UI.VideoHoverPreviews}} checked{{end}}> Static thumbnails</label>
+            <label><input type="radio" name="video_hover_previews" value="true"{{if $cfg.UI.VideoHoverPreviews}} checked{{end}}> Animated WebP on hover</label>
+          </div>
+          {{if not .FFmpegAvailable}}
+          <span class="field-hint">Install FFmpeg on the Mebooru host to generate video thumbnails. Restart Mebooru, then use <a href="#maintenance">Maintenance</a> → Rebuild thumbnails for existing videos.</span>
+          {{end}}
+        </div>
+        <div class="field">
           <label>
             {{$pin := $cfg.EnvPinned "gallery.watch_enabled"}}
             <input type="checkbox" name="watch_enabled" {{if $cfg.Gallery.WatchEnabled}}checked{{end}}{{if $pin}} disabled{{end}}>

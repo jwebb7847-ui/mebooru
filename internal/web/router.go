@@ -1007,12 +1007,6 @@ func (s *Server) pageSize(r *http.Request) int {
 	return s.cfg.UI.PageSize
 }
 
-func (s *Server) thumbnailFit() string {
-	s.cfgMu.RLock()
-	defer s.cfgMu.RUnlock()
-	return s.cfg.UI.ThumbnailFit
-}
-
 func (s *Server) maxFileSizeMB() int {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()

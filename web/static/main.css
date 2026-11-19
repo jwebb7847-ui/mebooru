@@ -518,6 +518,12 @@ body.marquee-active { user-select: none; }
 
 .thumb-grid.fit-natural .thumb-img { object-fit: contain; }
 
+.thumb-hover-preview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .thumb-placeholder {
   width: 100%;
   aspect-ratio: 1;
