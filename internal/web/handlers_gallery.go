@@ -36,6 +36,7 @@ type galleryData struct {
 	Sort              string
 	Order             string
 	ThumbnailFit      string
+	VideoHover        bool
 	ThumbSize         string
 	RandomSeed        int64
 	Page              int
@@ -256,14 +257,16 @@ func (s *Server) galleryHandler(w http.ResponseWriter, r *http.Request) {
 		sb = s.sidebarLoad(r, queryStr, ids, ceiling)
 	}
 
-	enabledTaggers, taggersPresent, taggerReason := tagger.GalleryTaggers(s.cfgSnapshot(), s.activeGallery())
+	cfg := s.cfgSnapshot()
+	enabledTaggers, taggersPresent, taggerReason := tagger.GalleryTaggers(cfg, s.activeGallery())
 	data := galleryData{
 		baseData:          s.base(r, "gallery", "Images - "+s.booruName()),
 		Query:             queryStr,
 		SearchWarning:     searchWarning(queryStr, expr),
 		Sort:              sortStr,
 		Order:             orderStr,
-		ThumbnailFit:      s.thumbnailFit(),
+		ThumbnailFit:      cfg.UI.ThumbnailFit,
+		VideoHover:        cfg.UI.VideoHoverPreviews,
 		ThumbSize:         thumbSize(r),
 		RandomSeed:        randomSeed,
 		Page:              page,

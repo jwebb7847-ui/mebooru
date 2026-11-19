@@ -51,6 +51,7 @@ type settingsData struct {
 	DesktopJobWarning  string
 	PluginsRepoURL     string
 	LoaderSettings     loaderPanel
+	FFmpegAvailable    bool
 }
 
 func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
@@ -116,6 +117,7 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		Desktop:            s.desktopIntegration(),
 		DesktopJobWarning:  s.desktopJobWarning(),
 		PluginsRepoURL:     pluginsRepoURL(RepoURL),
+		FFmpegAvailable:    gallery.FFmpegAvailable(),
 	})
 }
 
@@ -330,6 +332,9 @@ func (s *Server) settingsGeneralPost(w http.ResponseWriter, r *http.Request) {
 		}
 		if fit := r.FormValue("thumbnail_fit"); fit == "square" || fit == "natural" {
 			c.UI.ThumbnailFit = fit
+		}
+		if enabled, err := strconv.ParseBool(r.FormValue("video_hover_previews")); err == nil {
+			c.UI.VideoHoverPreviews = enabled
 		}
 		autoMeta = c.Gallery.AutoMetaTags
 		return nil

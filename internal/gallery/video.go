@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,8 +38,21 @@ func resolveTool(name string) string {
 	if p := desktop.BundledTool(name); p != "" {
 		return p
 	}
+	if runtime.GOOS == "darwin" {
+		// Finder launches may lack Homebrew's bin directory in PATH.
+		return lookPath(name, "/opt/homebrew/bin", "/usr/local/bin")
+	}
+	return lookPath(name)
+}
+
+func lookPath(name string, fallbackDirs ...string) string {
 	if p, err := exec.LookPath(name); err == nil {
 		return p
+	}
+	for _, dir := range fallbackDirs {
+		if p, err := exec.LookPath(filepath.Join(dir, name)); err == nil {
+			return p
+		}
 	}
 	return ""
 }
