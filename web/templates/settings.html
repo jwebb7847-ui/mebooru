@@ -2002,6 +2002,26 @@
   <section id="stats" class="settings-section">
     {{template "webui/settings_section_header" dict "Title" "Stats"}}
     <div class="stats-cols">
+    <div class="settings-sub" id="active-gallery-stats">
+      <h4>Active gallery{{with $stats.ActiveGallery}} · {{.Name}}{{end}}</h4>
+      {{with $stats.ActiveGallery}}
+      <div class="table-scroll">
+      <table class="stats-table">
+        <tbody>
+          <tr><th scope="row">Images</th><td>{{.Images}}</td></tr>
+          <tr><th scope="row">Videos</th><td>{{.Videos}}</td></tr>
+          {{if .Archives}}<tr><th scope="row">Manga archives</th><td>{{.Archives}}</td></tr>{{end}}
+          <tr><th scope="row">Indexed media size</th><td title="{{.MediaBytes}} bytes">{{humanBytes .MediaBytes}}</td></tr>
+          <tr><th scope="row">Catalog tags</th><td>{{.Tags}}</td></tr>
+          <tr><th scope="row">Tags in use</th><td>{{.TagsInUse}}</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="field-hint">Media totals use the index and exclude files marked missing. Catalog tags include unused tags and exclude aliases and rejected tags.</p>
+      {{else}}
+      <p class="field-hint">Gallery statistics are unavailable.</p>
+      {{end}}
+    </div>
     <div class="settings-sub">
       <h4>Process memory</h4>
       <div class="table-scroll">
