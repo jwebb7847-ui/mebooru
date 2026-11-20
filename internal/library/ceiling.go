@@ -136,7 +136,7 @@ func (c *Ceiling) WhereGroupClean(membersTable, groupCol string) (string, []any)
 	return strings.Join(parts, " AND "), args
 }
 
-// Rows pass with rank_col <= rank, so the unrated -1 passes every level.
+// The rank ceiling excludes higher ratings. HideUnrated separately sets a lower bound.
 func (c *Ceiling) RankCeiling() (int, bool) {
 	if c == nil || !c.IsActive() {
 		return 0, false
@@ -158,10 +158,14 @@ func (c *Ceiling) TaintedAmong(table, colA, colB string) map[int64]bool {
 		return nil
 	}
 	tainted := map[int64]bool{}
+	predicate := "rating_rank > ?"
+	if c.HideUnrated() {
+		predicate = "(rating_rank > ? OR rating_rank < 0)"
+	}
 	err := db.QueryIDsFunc(c.cx.DB.Read, func(id int64) bool {
 		tainted[id] = true
 		return true
-	}, `SELECT id FROM images WHERE (rating_rank > ?`+func() string { if c.HideUnrated() { return " OR rating_rank < 0" }; return "" }()+`) AND id IN (
+	}, `SELECT id FROM images WHERE `+predicate+` AND id IN (
 		SELECT `+colA+` FROM `+table+` UNION SELECT `+colB+` FROM `+table+`)`, rank)
 	if err != nil {
 		logx.Debugf("ceiling tainted read: %v", err)
