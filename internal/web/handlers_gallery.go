@@ -415,7 +415,7 @@ func (s *Server) galleryCount(w http.ResponseWriter, r *http.Request) {
 	}
 	if ceiling.IsActive() && search.Parse(queryStr) != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), galleryHiddenIndicatorBudget)
-		if n, err := search.HiddenByCeiling(ctx, s.source(), queryStr, ceiling.Level()); err == nil {
+		if n, err := search.HiddenByCeiling(ctx, s.source(), queryStr, ceiling.Level(), ceiling.HideUnrated()); err == nil {
 			data.HiddenByCeiling = n
 		}
 		cancel()

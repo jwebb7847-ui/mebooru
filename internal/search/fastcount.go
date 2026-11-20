@@ -36,7 +36,7 @@ func fastTagTotal(src Source, expr Expr) (int, bool) {
 
 // Whether an answer fastTagTotal gave is exact rather than a bound.
 func fastTotalExact(expr Expr) bool {
-	if user, _, ok := extractCeilingShape(expr); ok && user == nil {
+	if user, _, ok := extractCeilingShape(expr); ok && (user == nil || isInternalRatedFilter(user)) {
 		return true
 	}
 	switch e := expr.(type) {
@@ -82,16 +82,25 @@ func adjacencyTotalEstimate(src Source, expr Expr) (int, bool) {
 // counts exactly in Execute: fastCountAnd's min would advertise phantom pages.
 func fastCountCeiling(src Source, expr Expr) (int, bool) {
 	user, rank, ok := extractCeilingShape(expr)
-	if !ok || user != nil {
+	if !ok || (user != nil && !isInternalRatedFilter(user)) {
 		return 0, false
 	}
 	// Pinned: rating_rank has five values, which the sampled sqlite_stat1
 	// underestimates, and unpinned the planner counts through
 	// idx_images_missing, reading every visible row.
+	where := "rating_rank <= ?"
+	if isInternalRatedFilter(user) {
+		where = "rating_rank BETWEEN 0 AND ?"
+	}
 	return countRow(src,
 		`SELECT COUNT(*) FROM images INDEXED BY idx_images_rating_rank_visible
-		 WHERE is_missing = 0 AND rating_rank <= ?`, rank,
+		 WHERE is_missing = 0 AND `+where, rank,
 	)
+}
+
+func isInternalRatedFilter(expr Expr) bool {
+	f, ok := expr.(FilterExpr)
+	return ok && f.Key == "rated" && f.Val == "true"
 }
 
 // extractCeilingShape turns this chain back into one rating_rank comparison,
@@ -118,12 +127,19 @@ func ApplyCeiling(expr Expr, level string) Expr {
 
 // HiddenByCeiling counts exactly the images the query text matches that
 // level hides.
-func HiddenByCeiling(ctx context.Context, src Source, text, level string) (int, error) {
+func HiddenByCeiling(ctx context.Context, src Source, text, level string, hideUnrated ...bool) (int, error) {
 	rank := contract.RatingRank(level)
 	if rank < 0 || rank >= len(contract.RatingLevels)-1 {
 		return 0, nil
 	}
-	key := adjacencyKey(text, "", "", 0, level, src.LookupBackends)
+	exclude := len(hideUnrated) > 0 && hideUnrated[0]
+	cacheLevel := level
+	predicate := "i.rating_rank > ?"
+	if exclude {
+		cacheLevel += "|hide-unrated"
+		predicate = "(i.rating_rank > ? OR i.rating_rank < 0)"
+	}
+	key := adjacencyKey(text, "", "", 0, cacheLevel, src.LookupBackends)
 	if entry, ok := src.Cache.hiddenCount(key); ok {
 		if entry.overran {
 			return 0, context.DeadlineExceeded
@@ -134,7 +150,7 @@ func HiddenByCeiling(ctx context.Context, src Source, text, level string) (int, 
 	where, args := exactCountWhere(src, Parse(text))
 	var n int
 	if err := src.DB.Read.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM images i WHERE "+where+" AND i.rating_rank > ?",
+		"SELECT COUNT(*) FROM images i WHERE "+where+" AND "+predicate,
 		append(args, rank)...,
 	).Scan(&n); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {

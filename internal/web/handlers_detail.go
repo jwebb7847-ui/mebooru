@@ -601,7 +601,7 @@ func viewQuery(expr search.Expr, text, sortStr, orderStr string, ceiling *Ceilin
 		Order:        orderStr,
 		Cached:       true,
 		Text:         text,
-		CeilingLevel: ceiling.Level(),
+		CeilingLevel: ceiling.CacheKey(),
 	}
 	if sortStr == "order" {
 		sq.OrderCollection = search.PinnedCollectionName(expr)

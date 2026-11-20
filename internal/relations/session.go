@@ -93,15 +93,20 @@ func orderClauseForMode(mode string) string {
 
 // The stored pair rank spares the counts and the pick a per-row
 // image_tags probe.
-func ceilingClause(rank *int) (string, []any) {
+func ceilingClause(rank *int, hideUnrated ...bool) (string, []any) {
 	if rank == nil {
 		return "", nil
 	}
-	return " AND p.max_rating_rank <= ?", []any{*rank}
+	where := " AND p.max_rating_rank <= ?"
+	if len(hideUnrated) > 0 && hideUnrated[0] {
+		where += ` AND EXISTS (SELECT 1 FROM images a JOIN images b ON b.id = p.b_image_id
+			WHERE a.id = p.a_image_id AND a.rating_rank >= 0 AND b.rating_rank >= 0)`
+	}
+	return where, []any{*rank}
 }
 
-func (s *Service) QueueCountsFor(detector string, rank *int) (QueueCounts, error) {
-	where, args := ceilingClause(rank)
+func (s *Service) QueueCountsFor(detector string, rank *int, hideUnrated ...bool) (QueueCounts, error) {
+	where, args := ceilingClause(rank, hideUnrated...)
 	openExpr := "p.skipped_at IS NULL" + where
 	var counts QueueCounts
 	var unskipped int
@@ -126,8 +131,8 @@ const queuedPairSelect = `
 
 // NextPair serves a pinned pair whatever its scope or skip, since the
 // operator clicked it, and falls back to the ordered pick once it is gone.
-func (s *Service) NextPair(order, detector string, rank *int, pinA, pinB int64) (*QueuedPair, error) {
-	where, args := ceilingClause(rank)
+func (s *Service) NextPair(order, detector string, rank *int, pinA, pinB int64, hideUnrated ...bool) (*QueuedPair, error) {
+	where, args := ceilingClause(rank, hideUnrated...)
 	scope := detectorFilter(detector)
 
 	ordered := queuedPairSelect + "\n\tWHERE " + collectionPairExcl + scope + " AND p.skipped_at IS NULL" + where +
@@ -163,10 +168,10 @@ func (s *Service) scanQueuedPair(query string, args ...any) (*QueuedPair, error)
 	return &p, nil
 }
 
-func (s *Service) QueueBySource(rank *int) (open, skipped int, bySource map[string]int, err error) {
+func (s *Service) QueueBySource(rank *int, hideUnrated ...bool) (open, skipped int, bySource map[string]int, err error) {
 	query := `SELECT p.source, p.skipped_at IS NOT NULL, COUNT(*)
 		FROM potential_relation_pairs p WHERE ` + collectionPairExcl
-	where, args := ceilingClause(rank)
+	where, args := ceilingClause(rank, hideUnrated...)
 	query += where + ` GROUP BY p.source, p.skipped_at IS NOT NULL`
 
 	rows, err := s.db.Read.Query(query, args...)

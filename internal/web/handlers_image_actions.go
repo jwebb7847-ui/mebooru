@@ -26,6 +26,15 @@ import (
 )
 
 func (s *Server) ratingCeilingPost(w http.ResponseWriter, r *http.Request) {
+	if unrated := cmp.Or(r.URL.Query().Get("unrated"), r.FormValue("unrated")); unrated != "" {
+		if unrated != "show" && unrated != "hide" {
+			http.Error(w, "unknown unrated visibility setting", http.StatusBadRequest)
+			return
+		}
+		writeUnratedVisibilityCookie(w, r, unrated == "show")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	level := cmp.Or(r.URL.Query().Get("level"), r.FormValue("level"))
 	writeRatingCookie(w, r, level)
 	w.WriteHeader(http.StatusNoContent)
