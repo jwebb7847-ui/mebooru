@@ -142,7 +142,7 @@ func queueCounts(cx *library.Gallery, ceiling *Ceiling) (open, skipped int, bySo
 	if r, active := ceiling.RankCeiling(); active {
 		rank = &r
 	}
-	open, skipped, counts, err := cx.RelationsSvc.QueueBySource(rank)
+	open, skipped, counts, err := cx.RelationsSvc.QueueBySource(rank, ceiling.HideUnrated())
 	if err != nil {
 		logx.Debugf("relations queue counts: %v", err)
 		return 0, 0, nil

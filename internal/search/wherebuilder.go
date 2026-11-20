@@ -816,6 +816,13 @@ var filterBuilders = map[string]func(*whereBuilder, FilterExpr) string{
 	"folderonly": nocaseEq("i.folder_path", "i.folder_path = ''"),
 	"generated":  (*whereBuilder).buildGeneratedFilter,
 	"rating":     (*whereBuilder).buildRatingFilter,
+	// Internal visibility predicate, introduced by the browser's rating ceiling.
+	"rated": func(_ *whereBuilder, e FilterExpr) string {
+		if e.Val == "true" {
+			return "i.rating_rank >= 0"
+		}
+		return "1=0"
+	},
 	"lookup":     (*whereBuilder).buildLookupFilter,
 	"upgrade":    (*whereBuilder).buildUpgradeFilter,
 }
