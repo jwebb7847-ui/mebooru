@@ -301,6 +301,7 @@ func (s *Server) galleryHandler(w http.ResponseWriter, r *http.Request) {
 		data.InboxUploadActive = true
 		data.AcceptFileTypes = gallery.SupportedMIMETypes
 	}
+	data.GallerySearchPage = true
 	data.HiddenByCeiling = hiddenByCeiling
 	var first, last int64
 	if n := len(result.Results); n > 0 && search.CursorPaging(sq) {

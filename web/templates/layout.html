@@ -130,7 +130,7 @@
       <span class="footer-wide">
       <span class="footer-sep">·</span>
       <span id="footer-count-images">{{.VisibleCount}} total</span>
-      {{if eq .ActiveNav "gallery"}}<span class="footer-sep">·</span>{{template "footer_shown" (dict "D" . "OOB" false)}}<span class="footer-sep">·</span>{{template "footer_hidden" (dict "N" .HiddenByCeiling "OOB" false)}}{{end}}
+      {{if .GallerySearchPage}}<span class="footer-sep">·</span>{{template "footer_shown" (dict "D" . "OOB" false)}}<span class="footer-sep">·</span>{{template "footer_hidden" (dict "N" .HiddenByCeiling "OOB" false)}}{{end}}
       <span class="footer-sep">·</span>
       {{template "footer_tag_count" (dict "Count" .TagCount "OOB" false)}}
       <span class="footer-sep">·</span>

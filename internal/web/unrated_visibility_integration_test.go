@@ -5,11 +5,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/monbooru/monbooru/internal/config"
+	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/jobs"
 )
 
@@ -54,6 +55,10 @@ func TestUnratedSidebarAndFooterIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := g.TagSvc.AddTagsToOneImage(1, []int64{general.ID}, "user"); err != nil {
+		t.Fatal(err)
+	}
+	const sourceURL = "https://derpibooru.org/images/123"
+	if err := gallery.AddSourceMembership(g.DB, 1, "derpibooru", "123", sourceURL); err != nil {
 		t.Fatal(err)
 	}
 	g.InvalidateCaches()
@@ -101,6 +106,35 @@ func TestUnratedSidebarAndFooterIntegration(t *testing.T) {
 	testFooter("general", "", 1, 2)
 	testFooter("general", "show", 3, 0)
 	testFooter("", "hide", 1, 2)
+
+	// Detail uses the Images navigation highlight, but unlike galleryData
+	// it has no Result. A shared layout must not try to render search
+	// counts against detailData. Cover both the gallery click URL and
+	// direct detail URL, including a source-backed image.
+	for _, tc := range []struct {
+		name, path, rating, visibility, source string
+	}{
+		{"gallery click", "/images/1?back_q=&back_sort=newest&back_order=desc&back_page=1&back_idx=0", "general", "show", sourceURL},
+		{"direct unrated detail", "/images/2", "", "show", ""},
+		{"rated detail with unrated hidden", "/images/1", "general", "hide", sourceURL},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := page(tc.path, tc.rating, tc.visibility)
+			for _, want := range []string{`class="detail-media"`, `id="footer-count-images">3 total`, `unrated:`} {
+				if !strings.Contains(body, want) {
+					t.Errorf("detail missing %q", want)
+				}
+			}
+			for _, forbidden := range []string{`id="footer-shown"`, `id="footer-hidden"`, "template error"} {
+				if strings.Contains(body, forbidden) {
+					t.Errorf("detail unexpectedly contains %q", forbidden)
+				}
+			}
+			if tc.source != "" && !strings.Contains(body, tc.source) {
+				t.Error("detail missing source URL")
+			}
+		})
+	}
 
 	for _, tc := range []struct {
 		rating, visibility, tag string
