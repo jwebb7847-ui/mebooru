@@ -1,7 +1,7 @@
 # Meloader / Mebooru project roadmap
 
 > Working architecture and development plan, maintained for this fork.
-> Last reviewed 2026-11-15. [Project handoff](docs/project/handoff.md) · [Local audit runbook](docs/validation/local-audit.md)
+> Last reviewed 2026-11-24. [Project handoff](docs/project/handoff.md) · [Mebooru handoff](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/project/handoff.md) · [Mac audit runbook](docs/validation/local-audit.md)
 
 ## North star
 
@@ -25,9 +25,9 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 ## Current work and branches
 
-- **Meloader `main`** contains the Loader integration, queue restart recovery, the branding update and setup/PTR hardening. The source revision used for pre-packaging checks is `8ac2d70`.
-- **Mebooru `mebooru-foundation`** contains the integrated Loader and packaged Mac launcher. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
-- **Next acceptance check.** Open the paired Mac app in Finder and run a bounded import in a disposable gallery. Follow the [Mac app acceptance steps](docs/validation/local-audit.md#verify-the-paired-mac-app-in-finder).
+- **Meloader `main`** contains Loader integration, queue restart recovery, branding and setup/PTR hardening; observed at `1a0cef7` on 2026-11-24. The earlier tested Mac companion checkout `8ac2d70` remains a historical pinned baseline, not the current head.
+- **Mebooru `mebooru-foundation`** contains the integrated Loader, Mac launcher, video hover/static preview preference, Stats and unrated visibility; observed at [PR #11 merge `2958fed`](https://github.com/jwebb7847-ui/mebooru/pull/11). Its `main` still holds the upstream-derived v1.24.0 baseline. See [Mebooru handoff](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/project/handoff.md).
+- **Latest acceptance.** Finder Mac launch, paired live imports, video WebP previews, per-gallery Stats and PR #11 unrated visibility passed operator checks. Five native Mebooru CI jobs passed on [PR #11](https://github.com/jwebb7847-ui/mebooru/actions/runs/45323146804). Auto-pairing of the first-party bundled companion is **not** yet implemented. Next: design it securely, then tackle cosmetic branding and installer QA. See [dated evidence](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/validation/mac-acceptance-2026-11-24.md).
 
 ## Milestones
 
@@ -72,9 +72,26 @@ Improve acquisition diagnostics, retry visibility, structured timing, failure di
 
 The integrated queue shows import results and opens the destination gallery. The Mac audit reported Job #38 succeeded with 155 created and 45 blacklisted from a 200-post window after service connectivity was restored. Gallery restore and banner handling were hardened before packaging. Cross-source vocabulary consistency remains separate feature work. [Mebooru hardening PR](https://github.com/jwebb7847-ui/mebooru/pull/6)
 
-### 8. Naming and packaging — personal Mac app candidate
+### 8. Naming and packaging — personal Mac Finder candidate accepted
 
-Current names appear in the UI. Retain legacy command, configuration and protocol identifiers for existing installs. The paired app candidate built and ran on Intel and Apple Silicon macOS runners. Core binaries also passed native Linux x86-64, Linux ARM64 and Windows x86-64 checks. Finder launch and live import on the operator's Mac are pending. A signed, notarized public release is a separate distribution step. [Meloader branding PR](https://github.com/jwebb7847-ui/meloader/pull/19) · [Mac app PR](https://github.com/jwebb7847-ui/mebooru/pull/7) · [Native verification](https://github.com/jwebb7847-ui/meloader/actions/runs/43672218586) · [Mac app verification](https://github.com/jwebb7847-ui/meloader/actions/runs/43672674910)
+The paired app candidate passed native automated Linux x86-64/ARM64, Windows x86-64 and both macOS architectures, followed by **operator-confirmed Finder launch and Derpibooru imports on Apple Silicon macOS**. The built-in companion launches but **first-run pairing still requires manual Connect/Approve**. Retain legacy package/config/protocol identifiers for existing installs. Further branding, secure bundled auto-pairing, actual Windows/Linux installer acceptance, and public macOS signing/notarization remain. [Meloader branding PR](https://github.com/jwebb7847-ui/meloader/pull/19) · [Mac app PR](https://github.com/jwebb7847-ui/mebooru/pull/7) · [Current Mac acceptance](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/validation/mac-acceptance-2026-11-24.md).
+
+### 9. Mebooru interface hardening — PRs #9–#11 merged
+
+- [Mebooru PR #9](https://github.com/jwebb7847-ui/mebooru/pull/9) added a persistent Static/Animated WebP video preview preference, FFmpeg discovery and rebuild guidance; operator confirmed hover animations on Mac.
+- [Mebooru PR #10](https://github.com/jwebb7847-ui/mebooru/pull/10) added per-gallery Stats and passed a disposable populated/empty gallery Mac comparison.
+- [Mebooru PR #11](https://github.com/jwebb7847-ui/mebooru/pull/11) added independent rating ceiling and unrated visibility, a virtual Unrated sidebar filter, and total/shown/hidden counts. The 101-item operator fixture contained 50 Explicit, 49 General, 2 Unrated (verified via `tagcount:rating=0`); 95 images + six videos. [Five native CI jobs passed](https://github.com/jwebb7847-ui/mebooru/actions/runs/45323146804). The operator accepted behavior, and the PR merged at `2958fed`.
+- A historical Meta audit found **44 source-backed** and **ten file-derived** Meta names. Source Meta should stay searchable. Manual category ordering can put Meta last. Local disk scans do not assign a sexual-content rating automatically.
+- Mac strict download failure arose from `urllib3`/Python-LibreSSL startup stderr during a filter self-test, not source-rating mapping; it was resolved by rebuilding managed gallery-dl with Homebrew Python 3.13/OpenSSL. Keep verification on; validate newer gallery-dl versions before upgrading.
+
+### 10. Next iteration — secure first-run integration and polish (not yet implemented)
+
+1. Auto-initialize and **securely auto-pair only the trusted bundled, locally launched Meloader**, preserving manual approval for untrusted external/remote plugins and existing revoke/pause controls.
+2. Remove old setup/sync mascot art and empty-result kaomoji; align the virtual Unrated count when hidden.
+3. Consider optional source-backed rating recovery, higher-level Meta display controls and validated gallery-dl upgrade only after product discussion.
+4. Perform release packaging acceptance separately (Mac signing/notarization; real Windows/Linux installers). Native CI does not establish those UX claims.
+
+[Prioritized backlog](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/project/backlog.md) · [Handoff](docs/project/handoff.md)
 
 ## Local VS Code testing protocol
 
