@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/monbooru/monbooru/internal/config"
+	"github.com/monbooru/monbooru/internal/shared/bundlepair"
 	"github.com/monbooru/monbooru/internal/shared/contract"
 	"github.com/monbooru/monbooru/internal/shared/desktop"
 	"github.com/monbooru/monbooru/internal/shared/logx"
@@ -21,40 +22,47 @@ import (
 // Enabled only in the paired macOS bundle.
 var useBundledMeloader string
 
-func bundledMeloader(cfg *config.Config) (string, string, error) {
+func bundledMeloader(cfg *config.Config) (string, string, bool, error) {
 	if runtime.GOOS != "darwin" || useBundledMeloader != "true" {
-		return "", "", nil
+		return "", "", false, nil
 	}
 	binary := desktop.BundledTool("monloader")
 	if binary == "" {
-		return "", "", fmt.Errorf("Meloader executable missing from the app bundle")
+		return "", "", false, fmt.Errorf("Meloader executable missing from the app bundle")
 	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	loaderDir := filepath.Join(configDir, "monloader")
 	if err := os.MkdirAll(loaderDir, 0o700); err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	loaderConfig := filepath.Join(loaderDir, "monloader.toml")
-	if err := seedBundledMeloader(loaderConfig, cfg.Server.BindAddress, cfg.DefaultGallery); err != nil {
-		return "", "", err
+	created, err := seedBundledMeloaderNew(loaderConfig, cfg.Server.BindAddress, cfg.DefaultGallery)
+	if err != nil {
+		return "", "", false, err
 	}
-	return binary, loaderConfig, nil
+	return binary, loaderConfig, created, nil
 }
 
 func seedBundledMeloader(path, libraryBind, gallery string) error {
+	_, err := seedBundledMeloaderNew(path, libraryBind, gallery)
+	return err
+}
+
+// O_EXCL is the actual freshness proof, not a prior stat result.
+func seedBundledMeloaderNew(path, libraryBind, gallery string) (bool, error) {
 	if info, err := os.Stat(path); err == nil {
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("Meloader config is not a regular file")
+			return false, fmt.Errorf("Meloader config is not a regular file")
 		}
-		return nil
+		return false, nil
 	} else if !os.IsNotExist(err) {
-		return err
+		return false, err
 	}
 	if !desktop.IsLoopbackAddr(libraryBind) {
-		return fmt.Errorf("configure the companion explicitly when Mebooru uses a network address")
+		return false, fmt.Errorf("configure the companion explicitly when Mebooru uses a network address")
 	}
 	libraryURL := "http://" + desktop.LoopbackAddr(libraryBind)
 	loaderBind := net.JoinHostPort("127.0.0.1", contract.PortMonloader)
@@ -65,10 +73,10 @@ func seedBundledMeloader(path, libraryBind, gallery string) error {
 		filepath.Join(data, "cookies"), filepath.Join(data, "ptr"))
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if os.IsExist(err) {
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	_, err = f.WriteString(contents)
 	if closeErr := f.Close(); err == nil {
@@ -77,10 +85,10 @@ func seedBundledMeloader(path, libraryBind, gallery string) error {
 	if err != nil {
 		_ = os.Remove(path)
 	}
-	return err
+	return err == nil, err
 }
 
-func launchMeloader(binary, configPath string, bundled bool) (func(), error) {
+func launchMeloader(binary, configPath string, bundled bool, bootstrap *bundleBootstrap) (func(), error) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("start Meloader separately on %s", runtime.GOOS)
 	}
@@ -106,10 +114,28 @@ func launchMeloader(binary, configPath string, bundled bool) (func(), error) {
 		}
 		cmd.Env = append(os.Environ(), "PATH="+strings.Join(paths, string(os.PathListSeparator)))
 	}
+	var pipes *bootstrapPipes
+	if bootstrap != nil {
+		if !bundled || !trustedBundleSibling(binary) {
+			return nil, fmt.Errorf("bundle bootstrap requires the bundled companion")
+		}
+		pipes, err = newBootstrapPipes()
+		if err != nil {
+			return nil, err
+		}
+		defer pipes.close()
+		cmd.ExtraFiles = []*os.File{pipes.childRead, pipes.childWrite}
+		cmd.Args = append(cmd.Args, "-bundled-bootstrap")
+	}
 	desktop.HideConsole(cmd)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
 		return nil, err
+	}
+	if pipes != nil {
+		// Only the spawned child retains these two ends after Start.
+		_ = pipes.childRead.Close()
+		_ = pipes.childWrite.Close()
 	}
 	done := make(chan struct{})
 	go func() {
@@ -118,6 +144,15 @@ func launchMeloader(binary, configPath string, bundled bool) (func(), error) {
 			logx.Warnf("Meloader exited: %v", err)
 		}
 	}()
+	if pipes != nil {
+		if err := pipes.exchange(bootstrap); err != nil {
+			// Avoid propagating raw persistence or transport errors, which
+			// can include configuration values. Manual recovery is safe.
+			logx.Warnf("bundled pairing did not complete; restart and use manual pairing if needed")
+		} else {
+			logx.Infof("bundled pairing credentials provisioned")
+		}
+	}
 	return sync.OnceFunc(func() {
 		select {
 		case <-done:
