@@ -53,7 +53,17 @@ The screenshots directly confirm the first combination and correct sidebar numbe
 - Virtual Unrated count shifts left when unrated files are hidden; visually aligns when shown. Counts/function were accepted; styling remains open.
 - Empty-results page contains legacy kaomoji `(≖_≖ )` and `(￣～￣;)` in `web/templates/partials/thumbnail_grid.html`.
 - Legacy white-haired mascot remains on the initial setup page and another mascot remains in the working/sync indicator.
-- Bundled Meloader process startup passed, but manual first-use pairing is still necessary; secure automatic first-party pairing is requested.
+- This earlier startup limitation was resolved by PR #13/#24; see closeout below. Reconnection discoverability remains a UX issue.
 - Public signing/notarization and native Windows/Linux installer acceptance have **not** been performed by the operator.
 
 Track follow-ups in the [backlog](../project/backlog.md), not in the merged PR's feature scope.
+
+## Mebooru PR #13 / Meloader PR #24 — pairing closeout
+
+**Merged November 24, 2026:** [Mebooru #13](https://github.com/jwebb7847-ui/mebooru/pull/13) `c5319ee504e32eef0f52e20969c705accbfc4e3c`; [Meloader #24](https://github.com/jwebb7847-ui/meloader/pull/24) `b5b9ddb103a50b396fd81af9b3d94e0c6f29bc46`. Exact final tested heads: `1254471b5a7e149813af0a66a2a8ba212a018a6e` / `3913424a9ae66a5dc539bfd96c48fdc8fdf5e1e9`.
+
+**Operator reported:** build/sign succeeded; isolated fresh profile logged credential provisioning and showed connected Loader with read/write scope, no pending approvals and empty gallery. Restart retained pairing without reprovisioning; pause/restart/resume and revoke/restart passed; explicit manual recovery passed. Existing real profile upgraded successfully. Controlled safe-rated single-post import created one item and sent 12 tags, with correct gallery/rating count change. Clicking image detail initially failed; static inspection identified a shared footer using search-only data on detail pages, present before PR #13. Correction `1254471` adds detail-route regression tests; operator confirms image detail displays correctly on corrected build. The operator did not supply a separate final screenshot of every metadata/provenance field. Do not claim all fields were manually inspected.
+
+**Automated verification at merge:** [Native verification run 45358463076](https://github.com/jwebb7847-ui/mebooru/actions/runs/45358463076) on exact corrected head: Linux x64/arm64, Windows x64 and Intel macOS passed. Hosted macos-15 ARM64 runner could not be allocated in preceding attempts (GitHub internal server/capacity error); latest attempt queued at merge. Earlier pairing-only head `2d953f4` passed all five native jobs after retry. [Meloader Go CI](https://github.com/jwebb7847-ui/meloader/actions/runs/45348468693) and CodeQL passed. No code test failure was observed in the unallocated hosted runner. Owner explicitly authorized normal merge using successful local Apple Silicon acceptance instead of awaiting the hosted job; [PR exception record](https://github.com/jwebb7847-ui/mebooru/pull/13#issuecomment-7127561204). No changes to tests or repository protections for this exception. Recheck hosted result later; do not record green until observed. Windows/Linux installer acceptance remains untested manually.
+
+**Deferred:** Quit control, nested settings/reconnection UX, bundled managed gallery-dl, unified UI/worker/repository direction and archival watches. See [approved architecture](../project/unified-product-direction.md).

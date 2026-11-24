@@ -5,8 +5,10 @@
 | Start here | Purpose |
 | --- | --- |
 | [Project handoff](project/handoff.md) | Accurate current state, references, Mac operator workflow, known constraints, and next action |
+| [Approved unified-product direction](project/unified-product-direction.md) | Next architecture decisions, migration guardrails, archival watches |
+| [Bundled pairing closeout](project/bundled-pairing.md) | Current first-run behavior and trust boundary |
 | [Prioritized backlog](project/backlog.md) | Remaining product and UI work with acceptance criteria |
-| [November 24 Mac acceptance](validation/mac-acceptance-2026-11-24.md) | PRs #9–#11, rating and Meta audits, environment issue, evidence boundaries |
+| [November 24 Mac acceptance](validation/mac-acceptance-2026-11-24.md) | PRs #9–#13, pairing, CI exception, rating and Meta audits, environment issue, evidence boundaries |
 | [Mebooru direction](../MEBOORU.md) | Fork architecture, provenance, independent galleries, WAN isolation, compatibility |
 | [Meloader roadmap](https://github.com/jwebb7847-ui/meloader/blob/main/ROADMAP.md) | End-to-end acquisition milestones and future work |
 | [Meloader handoff](https://github.com/jwebb7847-ui/meloader/blob/main/docs/project/handoff.md) | Paired service, validation and troubleshooting |

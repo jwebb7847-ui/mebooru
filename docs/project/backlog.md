@@ -2,15 +2,18 @@
 
 **Reviewed:** 2026-11-24. This is a *prioritized next-step proposal*, not a declaration that these features are implemented. Link new PRs and update statuses after acceptance. The working Mebooru branch is `mebooru-foundation`; Meloader develops from `main`.
 
-## Priority 1 — first-party bundled Meloader ready on launch (candidate under review)
+## Completed — first-party bundled Meloader ready on launch
 
-**Candidate design and acceptance gates:** [bundled pairing](bundled-pairing.md). Do not call this complete until both repository checks and Mac operator acceptance pass.
+[Mebooru #13](https://github.com/jwebb7847-ui/mebooru/pull/13) and [Meloader #24](https://github.com/jwebb7847-ui/meloader/pull/24) merged; see [pairing design and closeout](bundled-pairing.md) and [Mac acceptance](../validation/mac-acceptance-2026-11-24.md). Final hosted Apple Silicon runner was outstanding at merge, accepted explicitly by the operator based on successful local Mac testing and the runner-allocation failures. This is not a green hosted CI result.
 
-**Observed problem:** Finder `Mebooru.app` launches bundled Meloader, but a new/cleared profile still shows `Connect Meloader in Settings → Plugins` until an operator visits Meloader Settings, initiates pairing and manually approves it in Mebooru. The desired finished product needs no convoluted initialization.
+## Priority 1 — unified product architecture
 
-**Design:** Auto-bootstrap trusted, **bundled, locally launched, first-party** companion pairing on first launch, including the correct local URLs and durable connection. Retain the separate WAN-capable process and Mebooru's WAN-isolated core. **Do not** silently approve unknown external plugins or arbitrary hosts, expose tokens to frames, or weaken ability to revoke/pause access. Discuss trust boundaries and recovery before implementation.
+[Approved direction](unified-product-direction.md): consolidate repositories with history/licensing preserved; keep a separate acquisition worker, one UI and one application lifecycle, hybrid on-demand/scheduled operation while app is open, explicit offline switch. Plan migration and compatibility gates before implementation.
 
-**Acceptance:** Fresh macOS install; existing profile; full/partial profile reset; restart; external existing Meloader; occupied port; crashed companion; upgrade and revocation; paired API and embedded Loader tab; no unexpected outbound Mebooru access. CI on Linux/Windows/macOS plus Finder Mac owner test. Implementation pointers: `cmd/monbooru/meloader.go`, pairing code in both repos, embedded Loader panel, companion lifecycle tests.
+- Replace the nested Meloader Settings page with ordinary Mebooru settings. First-party acquisition should not appear as an external plugin users can accidentally remove; provide clear enable/disable and recovery controls. Preserve explicit external plugin approval.
+- Bundle a self-contained gallery-dl runtime with managed updates, validated dependencies, strict pre-download verification and rollback; no manual Python/Homebrew requirement for ordinary use.
+- Expose deterministic archival watches for selected booru sources and character queries: discover new posts, filter before download, retain source tags and provenance, route to chosen gallery. No agentic behavior or requirement to operate while app is closed. Investigate reuse of existing Watches.
+- Add prominent Quit Mebooru control that drains work and stops owned services, without shutting down external services indiscriminately.
 
 ## Priority 2 — finish visual rebranding and cleanup
 
