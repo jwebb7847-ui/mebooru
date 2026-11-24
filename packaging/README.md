@@ -19,6 +19,6 @@
 
 ## Current Mebooru Finder candidate
 
-The fork's macOS bundle build script is `packaging/build-macos-app.sh`. From a Mebooru checkout on `mebooru-foundation`, pass a local Meloader checkout as its argument, then open `dist/Mebooru.app` in Finder. The app packages the two executable services and launches the companion; it **does not yet automatically establish the trusted pairing** in a new profile. See [Mac runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md) and [dated acceptance](docs/validation/mac-acceptance-2026-11-24.md).
+The fork's macOS bundle build script is `packaging/build-macos-app.sh`. From a Mebooru checkout on `mebooru-foundation`, pass a local Meloader checkout as its argument, then open `dist/Mebooru.app` in Finder. The app packages the two executable services and launches the companion; it **does not yet automatically establish the trusted pairing** in a new profile. See [Mac runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md) and [dated acceptance](../docs/validation/mac-acceptance-2026-11-24.md).
 
 The November 24 accepted commit is `2958fed`, Mebooru PR #11. The previously tested installed app used the PR head `8edf75d`. The local bundle is ad-hoc signed, **not** a signed/notarized public release. Windows/Linux artifacts in the table above are inherited packaging infrastructure; source builds and cross-platform CI do not prove their installation UX. Retain legacy identifiers where renaming would break persisted installs.
