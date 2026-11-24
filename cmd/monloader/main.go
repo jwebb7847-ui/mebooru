@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -156,6 +157,12 @@ func main() {
 			logx.Errorf("bundled pairing did not complete; restart and use manual pairing if needed")
 			return
 		}
+		// A desktop restart must be an ordinary launch; the inherited
+		// descriptors have been consumed and must never be replayed.
+		os.Args = slices.DeleteFunc(os.Args, func(arg string) bool {
+			name := strings.TrimLeft(arg, "-")
+			return name == "bundled-bootstrap" || name == "bundled-bootstrap=true"
+		})
 		cfg = provider.Current()
 		logx.Infof("bundled pairing initialized")
 	}
