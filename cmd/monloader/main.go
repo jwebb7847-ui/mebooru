@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -44,6 +45,7 @@ func main() {
 	hashPassword := flag.String("hash-password", "", "print the bcrypt hash of the given password and exit")
 	desktopMode := flag.Bool("desktop", defaultDesktop == "true", "desktop profile: OS-native paths, a log file, a browser at startup")
 	noBrowser := flag.Bool("no-browser", false, "with -desktop, do not open a browser at startup")
+	bundledBootstrap := flag.Bool("bundled-bootstrap", false, "internal bundled companion bootstrap")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
@@ -146,6 +148,24 @@ func main() {
 	}
 	provider := config.NewProvider(cfg)
 	provider.Persist(*configPath, portableBase)
+	if *bundledBootstrap {
+		// No queue, watch, PTR or HTTP work has started yet. A failed
+		// transaction exits; on the next ordinary launch manual pairing
+		// remains available. Never proceed with a possibly partial grant.
+		if err := bootstrapFromParent(provider, *configPath, *desktopMode, *noBrowser); err != nil {
+			_ = ln.Close()
+			logx.Errorf("bundled pairing did not complete; restart and use manual pairing if needed")
+			return
+		}
+		// A desktop restart must be an ordinary launch; the inherited
+		// descriptors have been consumed and must never be replayed.
+		os.Args = slices.DeleteFunc(os.Args, func(arg string) bool {
+			name := strings.TrimLeft(arg, "-")
+			return name == "bundled-bootstrap" || name == "bundled-bootstrap=true"
+		})
+		cfg = provider.Current()
+		logx.Infof("bundled pairing initialized")
+	}
 	if *desktopMode {
 		ptrFolder(provider, *configPath, stateDir)
 		cfg = provider.Current()
