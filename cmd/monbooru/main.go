@@ -88,6 +88,7 @@ func main() {
 
 	var seed func(*config.Config)
 	var profile internalweb.Desktop
+	newBundleProfile := false
 	if *desktopMode {
 		dialogOnFatal = true
 		resolved, err := desktop.Resolve(appName, explicitFlag("config", *configPath))
@@ -96,6 +97,16 @@ func main() {
 		}
 		layout = resolved
 		*configPath = layout.ConfigPath
+		// Claim before logging creates this directory. An old profile with
+		// its TOML removed is not fresh and must never regain trust.
+		if useBundledMeloader == "true" && !layout.Portable &&
+			explicitFlag("config", *configPath) == "" {
+			var claimErr error
+			newBundleProfile, claimErr = claimNewProfileDir(layout.ConfigDir)
+			if claimErr != nil {
+				logx.Warnf("could not claim a fresh desktop profile")
+			}
+		}
 		profile = internalweb.Desktop{Active: true, LogDir: layout.LogDir}
 		// Before config load, so every fatal below reaches the file too.
 		if f, err := desktop.OpenLog(layout.LogDir, appName); err != nil {
@@ -111,7 +122,7 @@ func main() {
 	_, statErr := os.Stat(*configPath)
 	freshConfig := os.IsNotExist(statErr)
 	_, lstatErr := os.Lstat(*configPath)
-	newBundleProfile := os.IsNotExist(lstatErr)
+	newBundleProfile = newBundleProfile && os.IsNotExist(lstatErr)
 
 	load := config.LoadWithDefaults
 	if layout.Portable {
@@ -214,7 +225,6 @@ func main() {
 			srvErr <- err
 		}
 	}()
-
 
 	if *desktopMode {
 		if !*noBrowser {
