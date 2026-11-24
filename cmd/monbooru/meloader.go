@@ -35,6 +35,10 @@ func bundledMeloader(cfg *config.Config) (string, string, bool, error) {
 		return "", "", false, err
 	}
 	loaderDir := filepath.Join(configDir, "monloader")
+	newProfile, err := claimNewProfileDir(loaderDir)
+	if err != nil {
+		return "", "", false, err
+	}
 	if err := os.MkdirAll(loaderDir, 0o700); err != nil {
 		return "", "", false, err
 	}
@@ -43,7 +47,7 @@ func bundledMeloader(cfg *config.Config) (string, string, bool, error) {
 	if err != nil {
 		return "", "", false, err
 	}
-	return binary, loaderConfig, created, nil
+	return binary, loaderConfig, newProfile && created, nil
 }
 
 func seedBundledMeloader(path, libraryBind, gallery string) error {
@@ -246,4 +250,19 @@ func (p *bootstrapPipes) exchange(b *bundleBootstrap) error {
 		return err
 	}
 	return bundlepair.Parent(p.parentRead, p.parentWrite, b.persist, b.rollback)
+}
+
+// A missing config in an already existing directory may be a partial reset.
+// An exclusive directory creation is the proof that the profile is new.
+func claimNewProfileDir(path string) (bool, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return false, err
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		if os.IsExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
