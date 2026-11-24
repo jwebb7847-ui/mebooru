@@ -27,7 +27,7 @@ jobs:
         with:
           repository: jwebb7847-ui/meloader
           # Update this revision after verifying a new Meloader counterpart.
-          ref: 8ac2d7077596a72db6012b5f281267afe472c749
+          ref: 3913424a9ae66a5dc539bfd96c48fdc8fdf5e1e9
           path: meloader-src
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
@@ -68,3 +68,6 @@ jobs:
             echo 'Companion outlived Mebooru' >&2
             exit 1
           fi
+      - name: Verify first-party pairing and refusal paths
+        if: runner.os == 'macOS'
+        run: python .github/qa/bundled-pairing-smoke.py dist/Mebooru.app
