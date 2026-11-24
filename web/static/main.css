@@ -163,10 +163,6 @@
 .st-partial, .st-interrupted { color: var(--warning); }
 .st-failed, .o-failed { color: var(--error); }
 .st-canceled { color: var(--fg-dim); }
-.st-kaomoji { display: block; white-space: nowrap; }
-.st-succeeded > .st-kaomoji::before { content: "\2E1C(\FF61\2C3  \1D55  \2C2  )\2E1D"; }
-.st-running > .st-kaomoji::before { content: "\A242(\2F5\2C3  \15DC  \2C2\2F5)"; }
-.st-failed > .st-kaomoji::before { content: "(\2256_\2256  )"; }
 .o-duplicate, .o-skipped_archive, .o-skipped_unsupported, .o-skipped_blacklist, .o-canceled, .o-merge { color: var(--fg-dim); }
 .o-pending, .o-downloaded, .o-uploaded { color: var(--link); }
 .o-capped, .o-warn { color: var(--warning); }
