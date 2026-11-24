@@ -25,11 +25,11 @@ with:
 
 ## Development baseline
 
-- `mebooru-foundation` is the fork's working branch. Its latest accepted November 24 milestone is [PR #11](https://github.com/jwebb7847-ui/mebooru/pull/11) merged at `2958fed`; it includes gallery switching and banners, integrated Loader, [video WebP/static previews](https://github.com/jwebb7847-ui/mebooru/pull/9), [Stats](https://github.com/jwebb7847-ui/mebooru/pull/10), and independent unrated/rating visibility controls.
+- `mebooru-foundation` is the fork's working branch. Its latest accepted November 24 milestone is [PR #13](https://github.com/jwebb7847-ui/mebooru/pull/13) merged at `c5319ee` with [Meloader PR #24](https://github.com/jwebb7847-ui/meloader/pull/24) at `b5b9ddb`; it adds first-run automatic pairing and corrects image detail rendering. Earlier work in PR #11 and preceding PRs includes gallery switching and banners, integrated Loader, [video WebP/static previews](https://github.com/jwebb7847-ui/mebooru/pull/9), [Stats](https://github.com/jwebb7847-ui/mebooru/pull/10), and independent unrated/rating visibility controls.
 - `main` remains at the upstream-derived v1.24.0 baseline. The [audited baseline tag](https://github.com/jwebb7847-ui/mebooru/tree/mebooru-audited-baseline-v1.24.0) identifies the original validation checkpoint.
 - The [cross-repository handoff](https://github.com/jwebb7847-ui/meloader/blob/main/docs/project/handoff.md) and [local audit runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md) record the current paired workflow. The historical source-based audit used an explicit config and disposable `Audit_A` gallery; the later Finder acceptance and current status are documented in [the November 24 record](docs/validation/mac-acceptance-2026-11-24.md).
 
-## Acquisition boundary
+## Acquisition boundary — current implementation
 
 Meloader is the optional, explicitly WAN-capable acquisition companion. **Loader** opens its Queue, Watches, and PTR screens inside Mebooru. **Settings → Meloader** opens the companion settings. The screens use Meloader's configured browser origin and its own login. Pairing is configured in **Settings → Plugins**. Direct local HTTP uses the paired loopback address when the browser-facing Web URL is blank. Use distinct origins for the two services. The Mebooru server's paired API client remains separate from the browser panels.
 
@@ -71,4 +71,4 @@ The audited baseline is tagged:
 
 Start with the [project handoff](docs/project/handoff.md), [prioritized backlog](docs/project/backlog.md), [Mac acceptance evidence](docs/validation/mac-acceptance-2026-11-24.md), and [documentation index](docs/README.md). These supersede the November 15 snapshot for completed Finder acceptance while preserving the older test history.
 
-The packaged Finder Mac application starts its bundled Meloader process, but first-use manual pairing remains necessary. Automatic secure trust establishment for the known first-party companion, legacy setup/status mascots, empty-result emoticons, and virtual Unrated count alignment are deferred. Do not imply that all former `mon` symbols can be renamed safely: some are compatibility-critical on-disk/config/protocol identifiers.
+The packaged Finder Mac application automatically pairs its trusted bundled Meloader on a fresh eligible profile; existing, revoked and paused profiles retain their decisions. The next approved direction is [one product, one UI, one repository, separate managed acquisition worker](docs/project/unified-product-direction.md). This is an architectural decision, not an implemented migration. Legacy setup/status mascots, empty-result emoticons and virtual Unrated count alignment remain deferred. Do not imply that all former `mon` symbols can be renamed safely: some are compatibility-critical on-disk/config/protocol identifiers.

@@ -1,6 +1,6 @@
-# Bundled Meloader first-launch pairing — implementation candidate
+# Bundled Meloader first-launch pairing — completed milestone
 
-**Status:** under review, not accepted or merged. This candidate changes startup trust, not ordinary plugin approval or API permission semantics.
+**Status:** merged November 24, 2026: Mebooru #13 (`c5319ee`) and Meloader #24 (`b5b9ddb`). Local Apple Silicon Mac acceptance completed. Linux/Windows/Intel Mac native CI and Meloader CI/CodeQL passed; final hosted ARM Mac check was queued at merge following runner-allocation failures. The operator explicitly accepted this exception. See [validation record](../validation/mac-acceptance-2026-11-24.md). This candidate changes startup trust, not ordinary plugin approval or API permission semantics.
 
 ## Behavior and boundary
 
@@ -12,9 +12,9 @@
 
 ## Verification gates
 
-Both repositories must pass their existing CI. In Mebooru the paired Mac smoke additionally checks fresh profile credentials and their hashes, correct scopes and CSP, two authenticated API directions, preserved token IDs on restart, real API revocation and refusal afterward, partial config reset refusal, occupied-port impersonation refusal, and child shutdown. Unit tests cover invalid frames, persistence failure/rollback, pristine configuration and exact grant/rollback. A smoke fixture completes setup by setting the disposable config flag while stopped; it is not a claim that the Finder setup wizard was exercised.
+The intended CI gate is both repositories' existing CI; the one-time, explicitly authorized hosted Apple Silicon runner exception for this milestone is documented above and in the validation record. It is not a standing waiver. In Mebooru the paired Mac smoke additionally checks fresh profile credentials and their hashes, correct scopes and CSP, two authenticated API directions, preserved token IDs on restart, real API revocation and refusal afterward, partial config reset refusal, occupied-port impersonation refusal, and child shutdown. Unit tests cover invalid frames, persistence failure/rollback, pristine configuration and exact grant/rollback. A smoke fixture completes setup by setting the disposable config flag while stopped; it is not a claim that the Finder setup wizard was exercised.
 
-Operator acceptance on Apple Silicon Mac must cover:
+Operator acceptance on Apple Silicon Mac covered the following workflow (see the validation record for the exact observed evidence; not every automated negative path was manually repeated):
 1. Build both explicitly pinned candidate revisions from the new project root. Keep existing real profiles and database untouched. Confirm ports 8455/8456 are free after quitting the existing app.
 2. Launch with an isolated temporary HOME in the QA directory (Terminal invocation of the app executable), finish first-run setup with the disposable gallery and local-only reach. The Loader tab should connect without Connect/Approve. Confirm normal Finder behavior in a separate new macOS user profile if desired; never reset the actual user library just to simulate fresh Finder launch.
 3. Restart, pause/resume, and revoke. A revoked or paused link must not regenerate credentials. Confirm existing manually paired real profile keeps its pairing after upgrade. For a bounded acquisition test, retain strict pre-download blacklist verification and verify selected destination and source metadata. Do not copy private tokens, actual media or credentials into GitHub.
