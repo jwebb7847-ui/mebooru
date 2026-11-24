@@ -787,6 +787,7 @@ type baseData struct {
 	CollectionsCount      int
 	InboxNavActive        bool
 	HiddenByCeiling       int
+	GallerySearchPage     bool // Only the results page carries search counts.
 	RatingLevels          []ratingLevel
 	ActiveRating          string
 	HideUnrated           bool

@@ -2,7 +2,9 @@
 
 **Reviewed:** 2026-11-24. This is a *prioritized next-step proposal*, not a declaration that these features are implemented. Link new PRs and update statuses after acceptance. The working Mebooru branch is `mebooru-foundation`; Meloader develops from `main`.
 
-## Priority 1 — first-party bundled Meloader ready on launch (not implemented)
+## Priority 1 — first-party bundled Meloader ready on launch (candidate under review)
+
+**Candidate design and acceptance gates:** [bundled pairing](bundled-pairing.md). Do not call this complete until both repository checks and Mac operator acceptance pass.
 
 **Observed problem:** Finder `Mebooru.app` launches bundled Meloader, but a new/cleared profile still shows `Connect Meloader in Settings → Plugins` until an operator visits Meloader Settings, initiates pairing and manually approves it in Mebooru. The desired finished product needs no convoluted initialization.
 

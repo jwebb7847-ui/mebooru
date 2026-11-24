@@ -14,6 +14,7 @@ import (
 	"github.com/monbooru/monbooru/internal/peer"
 	"github.com/monbooru/monbooru/internal/plugins"
 	"github.com/monbooru/monbooru/internal/shared/apitoken"
+	"github.com/monbooru/monbooru/internal/shared/bundlepair"
 	"github.com/monbooru/monbooru/internal/shared/contract"
 	"github.com/monbooru/monbooru/internal/shared/logx"
 	"github.com/monbooru/monbooru/internal/shared/pairing"
@@ -231,6 +232,41 @@ func (s *Server) teardownMonloaderPairing(r *http.Request) error {
 func (s *Server) removePairing(app string) error {
 	return s.withConfig(func(c *config.Config) error {
 		peer.Revoke(c, app)
+		return nil
+	})
+}
+
+// PersistBundledPair is only called in-process by the desktop launcher after
+// an authenticated-by-inheritance handshake with its own bundled child.
+// It is intentionally not registered as an HTTP route.
+func (s *Server) PersistBundledPair(secrets bundlepair.Secrets) error {
+	const loaderURL = "http://127.0.0.1:" + contract.PortMonloader
+	scopes := peer.GrantedScopes([]string{config.ScopeRead, config.ScopeWrite})
+	tok := apitoken.FromSecret(contract.AppMonloader+" (paired)", secrets.Library, scopes)
+	tok.Paired = contract.AppMonloader
+	tok.PeerURL = loaderURL
+	req := peer.Req{
+		Request: pairing.Request{App: contract.AppMonloader, Source: "127.0.0.1", Scopes: scopes},
+		URL: loaderURL, PeerToken: secrets.Loader,
+	}
+	return s.withConfig(func(c *config.Config) error {
+		if !c.PristineBundledPair() {
+			return fmt.Errorf("bundle bootstrap refused previously configured Mebooru profile")
+		}
+		peer.Grant(c, req, tok)
+		return nil
+	})
+}
+
+// Rollback only our exact transaction, not a pairing changed by the operator.
+func (s *Server) RollbackBundledPair(secrets bundlepair.Secrets) error {
+	return s.withConfig(func(c *config.Config) error {
+		tok := c.Auth.Tokens.Paired(contract.AppMonloader)
+		if tok == nil || tok.TokenHash != apitoken.Hash(secrets.Library) ||
+			c.Monloader.APIToken != secrets.Loader {
+			return fmt.Errorf("bundle bootstrap rollback refused a changed pairing")
+		}
+		peer.Revoke(c, contract.AppMonloader)
 		return nil
 	})
 }
