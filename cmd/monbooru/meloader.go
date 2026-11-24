@@ -79,6 +79,9 @@ func seedBundledMeloaderNew(path, libraryBind, gallery string) (bool, error) {
 		return false, err
 	}
 	_, err = f.WriteString(contents)
+	if err == nil {
+		err = f.Sync()
+	}
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
@@ -170,4 +173,77 @@ func launchMeloader(binary, configPath string, bundled bool, bootstrap *bundleBo
 			<-done
 		}
 	}), nil
+}
+
+type bundleBootstrap struct {
+	persist  func(bundlepair.Secrets) error
+	rollback func(bundlepair.Secrets) error
+}
+
+// Only the actual sibling inside the macOS app is eligible. A matching
+// process name, port, external path or loopback HTTP response is not proof.
+func trustedBundleSibling(binary string) bool {
+	if runtime.GOOS != "darwin" || useBundledMeloader != "true" {
+		return false
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		return false
+	}
+	macOS := filepath.Dir(exe)
+	contents := filepath.Dir(macOS)
+	if filepath.Base(exe) != "monbooru" || filepath.Base(macOS) != "MacOS" ||
+		filepath.Base(contents) != "Contents" ||
+		filepath.Ext(filepath.Dir(contents)) != ".app" {
+		return false
+	}
+	info, err := os.Lstat(binary)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(binary)
+	return err == nil && resolved == filepath.Join(macOS, "monloader")
+}
+
+type bootstrapPipes struct {
+	childRead, parentWrite *os.File
+	parentRead, childWrite *os.File
+}
+
+func newBootstrapPipes() (*bootstrapPipes, error) {
+	p := &bootstrapPipes{}
+	var err error
+	p.childRead, p.parentWrite, err = os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	p.parentRead, p.childWrite, err = os.Pipe()
+	if err != nil {
+		p.close()
+		return nil, err
+	}
+	return p, nil
+}
+
+func (p *bootstrapPipes) close() {
+	for _, f := range []*os.File{p.childRead, p.parentWrite, p.parentRead, p.childWrite} {
+		if f != nil {
+			_ = f.Close()
+		}
+	}
+}
+
+func (p *bootstrapPipes) exchange(b *bundleBootstrap) error {
+	deadline := time.Now().Add(15 * time.Second)
+	if err := p.parentRead.SetReadDeadline(deadline); err != nil {
+		return err
+	}
+	if err := p.parentWrite.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
+	return bundlepair.Parent(p.parentRead, p.parentWrite, b.persist, b.rollback)
 }
