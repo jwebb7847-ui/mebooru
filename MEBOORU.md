@@ -25,9 +25,9 @@ with:
 
 ## Development baseline
 
-- `mebooru-foundation` is the fork's working branch. It includes the persistent gallery switcher, gallery banners, and the integrated [Loader queue](https://github.com/jwebb7847-ui/mebooru/pull/3).
+- `mebooru-foundation` is the fork's working branch. Its latest accepted November 24 milestone is [PR #11](https://github.com/jwebb7847-ui/mebooru/pull/11) merged at `2958fed`; it includes gallery switching and banners, integrated Loader, [video WebP/static previews](https://github.com/jwebb7847-ui/mebooru/pull/9), [Stats](https://github.com/jwebb7847-ui/mebooru/pull/10), and independent unrated/rating visibility controls.
 - `main` remains at the upstream-derived v1.24.0 baseline. The [audited baseline tag](https://github.com/jwebb7847-ui/mebooru/tree/mebooru-audited-baseline-v1.24.0) identifies the original validation checkpoint.
-- The [cross-repository handoff](https://github.com/jwebb7847-ui/meloader/blob/main/docs/project/handoff.md) and [local audit runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md) record the current paired workflow. The Mac audit uses this development branch with an explicit config, loopback port 8455 and the disposable `Audit_A` gallery.
+- The [cross-repository handoff](https://github.com/jwebb7847-ui/meloader/blob/main/docs/project/handoff.md) and [local audit runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md) record the current paired workflow. The historical source-based audit used an explicit config and disposable `Audit_A` gallery; the later Finder acceptance and current status are documented in [the November 24 record](docs/validation/mac-acceptance-2026-11-24.md).
 
 ## Acquisition boundary
 
@@ -66,3 +66,9 @@ began. The audit covered:
 The audited baseline is tagged:
 
 `mebooru-audited-baseline-v1.24.0`
+
+## Current handoff and deferred work (2026-11-24)
+
+Start with the [project handoff](docs/project/handoff.md), [prioritized backlog](docs/project/backlog.md), [Mac acceptance evidence](docs/validation/mac-acceptance-2026-11-24.md), and [documentation index](docs/README.md). These supersede the November 15 snapshot for completed Finder acceptance while preserving the older test history.
+
+The packaged Finder Mac application starts its bundled Meloader process, but first-use manual pairing remains necessary. Automatic secure trust establishment for the known first-party companion, legacy setup/status mascots, empty-result emoticons, and virtual Unrated count alignment are deferred. Do not imply that all former `mon` symbols can be renamed safely: some are compatibility-critical on-disk/config/protocol identifiers.
