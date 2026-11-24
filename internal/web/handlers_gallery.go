@@ -237,7 +237,7 @@ func (s *Server) galleryHandler(w http.ResponseWriter, r *http.Request) {
 
 	hiddenByCeiling, hiddenLater := 0, false
 	if ceiling.VisibilityActive() {
-		if search.Parse(queryStr) != nil {
+		if search.Parse(queryStr) != nil || result.TotalUnknown {
 			hiddenLater = true
 		} else if cx := s.active(); cx != nil {
 			if n, ok := cx.VisibleCount(); ok && n > result.Total {
@@ -415,7 +415,7 @@ func (s *Server) galleryCount(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if ceiling.VisibilityActive() && search.Parse(queryStr) != nil {
+	if ceiling.VisibilityActive() && (search.Parse(queryStr) != nil || q.Get("count") == "1") {
 		ctx, cancel := context.WithTimeout(r.Context(), galleryHiddenIndicatorBudget)
 		if n, err := search.HiddenByCeiling(ctx, s.source(), queryStr, ceiling.Level(), ceiling.HideUnrated()); err == nil {
 			data.HiddenByCeiling = n

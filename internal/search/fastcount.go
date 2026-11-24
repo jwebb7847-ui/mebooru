@@ -349,12 +349,24 @@ var fastCountFilters = map[string]func(Source, FilterExpr) (int, bool){
 	"cat":        fastCountCat,
 	"generated":  fastCountGenerated,
 	"rating":     fastCountRating,
+	"rated":      fastCountRated,
 	"tagged":     fastCountTagged,
 	"autotagged": fastCountTagged,
 	"inbox":      fastCountInbox,
 	"ai":         fastCountAI,
 	"folder":     fastCountFolder,
 	"lookup":     fastCountLookup,
+}
+
+// The preference's rated-only filter can count by the covering rating index,
+// including when the rating ceiling is Explicit and adds no upper bound.
+func fastCountRated(src Source, e FilterExpr) (int, bool) {
+	if e.Val != "true" {
+		return 0, false
+	}
+	return countRow(src,
+		`SELECT COUNT(*) FROM images INDEXED BY idx_images_rating_rank_visible
+		 WHERE is_missing = 0 AND rating_rank >= 0`)
 }
 
 // lookup:never is visible minus looked-up: its NOT EXISTS walks the whole
