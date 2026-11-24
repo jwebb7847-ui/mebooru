@@ -1,12 +1,42 @@
+{{define "partials/sidebar_virtual_unrated"}}
+<li class="tag-entry tag-entry-virtual" data-name="unrated">
+  <span class="tag-wiki" title="Virtual filter: images without an assigned rating; no tag is created">?</span>
+  {{if .Hidden}}
+  <form hx-post="/internal/rating-ceiling?unrated=show" hx-swap="none"
+        hx-on::after-request="if(event.detail.successful){window.location.assign('/?q=tagcount%3Arating%3D0')}">
+    <button type="submit" class="tag-link" style="color:var(--cat-rating, #b58c91);background:none;border:0;padding:0;font:inherit;cursor:pointer;text-align:left" title="Show unrated files and search for them">unrated</button>
+  </form>
+  {{else}}
+  <a href="/?q=tagcount%3Arating%3D0" class="tag-link" style="color:var(--cat-rating, #b58c91)" title="Search for files without a rating tag">unrated</a>
+  {{end}}
+  <span class="tag-add-btn" title="Virtual filter: not a stored tag"></span>
+  <span class="tag-count" title="{{.Count}} unrated images in this gallery">{{.Count}}</span>
+</li>
+{{end}}
+
 {{define "partials/sidebar_content.html"}}
   {{$groups := groupByCategory .SidebarTags}}
-  {{if $groups}}
+  {{$hasRating := false}}
+  {{range $groups}}{{if eq .Name "rating"}}{{$hasRating = true}}{{end}}{{end}}
+  {{if or $groups .UnratedCount}}
   <div id="tags-section">
     <div class="sidebar-section-header">
       <span class="sidebar-section-title" title="Tags on this page">Tags</span>
       <button id="tags-toggle" class="folder-toggle-btn" data-target="tag-groups">▼</button>
     </div>
     <div id="tag-groups">
+      {{if and .UnratedCount (not $hasRating)}}
+      <div class="tag-group" data-cat="rating">
+        <div class="tag-group-header">
+          <span class="cat-dot" style="background:var(--cat-rating, #b58c91)"></span>
+          <span class="cat-name">rating</span>
+          <button class="cat-collapse" title="Collapse">▾</button>
+        </div>
+        <ul class="tag-list-sidebar">
+          {{template "partials/sidebar_virtual_unrated" (dict "Count" .UnratedCount "Hidden" .HideUnrated)}}
+        </ul>
+      </div>
+      {{end}}
       {{range $groups}}
       <div class="tag-group" data-cat="{{.Name}}">
         <div class="tag-group-header">
@@ -28,6 +58,9 @@
             {{end}}
             <span class="tag-count" title="{{.UsageCount}} images in the library with this tag">{{abbrevCount .UsageCount}}</span>
           </li>
+          {{end}}
+          {{if and (eq .Name "rating") (gt $.UnratedCount 0)}}
+          {{template "partials/sidebar_virtual_unrated" (dict "Count" $.UnratedCount "Hidden" $.HideUnrated)}}
           {{end}}
         </ul>
       </div>

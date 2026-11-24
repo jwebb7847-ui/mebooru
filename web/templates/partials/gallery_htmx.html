@@ -10,6 +10,7 @@
 {{end}}
 {{template "partials/gallery_status.html" .}}
 <div id="search-warning" hx-swap-oob="true">{{if .SearchWarning}}<span class="field-hint">{{.SearchWarning}}</span>{{end}}</div>
+{{template "footer_shown" dict "D" . "OOB" true}}
 {{template "footer_hidden" dict "N" .HiddenByCeiling "OOB" true}}
 {{template "partials/sort_select.html" (dict "Query" .Query "Sort" .Sort "Order" .Order "Seed" .RandomSeed "OOB" true)}}
 {{template "footer_counts" .}}

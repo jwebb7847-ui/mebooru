@@ -46,6 +46,7 @@ type galleryData struct {
 	StatusOOB         bool
 	Result            *models.SearchResult
 	SidebarTags       []models.Tag
+	UnratedCount      int
 	Folders           *folderLevel
 	SourceLabelCounts []gallery.SourceLabelCount
 	SavedSearches     []models.SavedSearch
@@ -235,8 +236,8 @@ func (s *Server) galleryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hiddenByCeiling, hiddenLater := 0, false
-	if ceiling.IsActive() {
-		if search.Parse(queryStr) != nil {
+	if ceiling.VisibilityActive() {
+		if search.Parse(queryStr) != nil || result.TotalUnknown {
 			hiddenLater = true
 		} else if cx := s.active(); cx != nil {
 			if n, ok := cx.VisibleCount(); ok && n > result.Total {
@@ -275,6 +276,7 @@ func (s *Server) galleryHandler(w http.ResponseWriter, r *http.Request) {
 		PageSizeChoices:   s.pageSizeChoices(r),
 		Result:            result,
 		SidebarTags:       sb.Tags,
+		UnratedCount:      sb.UnratedCount,
 		Folders:           sb.Folders,
 		SourceLabelCounts: sb.SourceLabels,
 		SavedSearches:     sb.Saved,
@@ -413,9 +415,9 @@ func (s *Server) galleryCount(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if ceiling.IsActive() && search.Parse(queryStr) != nil {
+	if ceiling.VisibilityActive() && (search.Parse(queryStr) != nil || q.Get("count") == "1") {
 		ctx, cancel := context.WithTimeout(r.Context(), galleryHiddenIndicatorBudget)
-		if n, err := search.HiddenByCeiling(ctx, s.source(), queryStr, ceiling.Level()); err == nil {
+		if n, err := search.HiddenByCeiling(ctx, s.source(), queryStr, ceiling.Level(), ceiling.HideUnrated()); err == nil {
 			data.HiddenByCeiling = n
 		}
 		cancel()
@@ -425,6 +427,7 @@ func (s *Server) galleryCount(w http.ResponseWriter, r *http.Request) {
 
 type sidebarBundle struct {
 	Tags         []models.Tag
+	UnratedCount int
 	Folders      *folderLevel
 	SourceLabels []gallery.SourceLabelCount
 	Saved        []models.SavedSearch
@@ -454,6 +457,15 @@ func (s *Server) sidebarLoad(r *http.Request, query string, pageImageIDs []int64
 	wg.Go(func() {
 		sb.Tags, _ = search.SidebarTagsWithGlobalCount(s.source(), pageImageIDs)
 	})
+	// No synthetic tag is inserted in the catalog. The sidebar displays a
+	// computed, gallery-wide count from the cached rating_rank column.
+	if cx := s.active(); cx != nil {
+		wg.Go(func() {
+			if err := cx.DB.Read.QueryRow(`SELECT COUNT(*) FROM images WHERE is_missing = 0 AND rating_rank < 0`).Scan(&sb.UnratedCount); err != nil {
+				logx.Warnf("sidebar unrated count: %v", err)
+			}
+		})
+	}
 	wg.Go(func() {
 		var err error
 		if sb.Saved, err = search.SavedSearches(s.db()); err != nil {
@@ -479,6 +491,8 @@ func (s *Server) gallerySidebar(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, "partials/sidebar_content.html", map[string]any{
 		"Query":             queryStr,
 		"SidebarTags":       sb.Tags,
+		"UnratedCount":      sb.UnratedCount,
+		"HideUnrated":       ceiling.HideUnrated(),
 		"Folders":           sb.Folders,
 		"SourceLabelCounts": sb.SourceLabels,
 		"SavedSearches":     sb.Saved,

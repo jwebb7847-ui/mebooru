@@ -789,6 +789,7 @@ type baseData struct {
 	HiddenByCeiling       int
 	RatingLevels          []ratingLevel
 	ActiveRating          string
+	HideUnrated           bool
 	RequestStart          time.Time
 	MonloaderPaired       bool
 	MonloaderUsable       bool
@@ -897,6 +898,7 @@ func (s *Server) base(r *http.Request, nav, title string) baseData {
 		InboxNavActive:        inboxNavActive,
 		RatingLevels:          ratingFooterLevels,
 		ActiveRating:          active,
+		HideUnrated:           !showUnrated(r),
 		RequestStart:          requestStartFromContext(r.Context()),
 		PairNotice:            s.pairNotice(),
 	}

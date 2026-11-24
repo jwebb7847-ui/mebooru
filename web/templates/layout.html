@@ -110,11 +110,12 @@
 
 {{define "footer_version"}}<span id="footer-version"{{if .OOB}} hx-swap-oob="true"{{end}} title="page loaded in {{pageLoadMs .D.RequestStart}} ms"><a href="{{.D.RepoURL}}" target="_blank" rel="noopener">Mebooru{{if .D.Build}} ({{.D.Build}}){{end}}</a> {{.D.Version}}</span>{{end}}
 
-{{define "footer_hidden"}}<span id="footer-hidden" class="footer-hidden"{{if .OOB}} hx-swap-oob="true"{{end}}>{{with .N}}<span class="footer-sep-strong">::</span><span class="footer-hidden-n">{{.}} hidden<span class="footer-wide"> {{plural . "image" "images"}} in the current search</span></span>{{end}}</span>{{end}}
+{{define "footer_shown"}}<span id="footer-shown"{{if .OOB}} hx-swap-oob="true"{{end}} title="Images matching the current search and allowed by both visibility controls">{{if .D.Result}}{{if .D.Result.TotalUnknown}}counting…{{else}}{{.D.Result.Total}}{{end}}{{else}}counting…{{end}} shown</span>{{end}}
+{{define "footer_hidden"}}<span id="footer-hidden" class="footer-hidden"{{if .OOB}} hx-swap-oob="true"{{end}} title="Images matching the current search but hidden by rating or unrated visibility filters">{{.N}} hidden</span>{{end}}
 
 {{define "footer_tag_count"}}<span id="footer-count-tags"{{if .OOB}} hx-swap-oob="true"{{end}}>{{.Count}} catalog {{plural .Count "tag" "tags"}}</span>{{end}}
 
-{{define "footer_counts"}}<span id="footer-count-images" hx-swap-oob="true">{{.VisibleCount}} img</span>
+{{define "footer_counts"}}<span id="footer-count-images" hx-swap-oob="true">{{.VisibleCount}} total</span>
 {{template "footer_tag_count" (dict "Count" .TagCount "OOB" true)}}
 <span id="footer-count-collections" hx-swap-oob="true">{{.CollectionsCount}} collections</span>{{end}}
 
@@ -128,7 +129,8 @@
       {{end}}
       <span class="footer-wide">
       <span class="footer-sep">·</span>
-      <span id="footer-count-images">{{.VisibleCount}} img</span>
+      <span id="footer-count-images">{{.VisibleCount}} total</span>
+      {{if eq .ActiveNav "gallery"}}<span class="footer-sep">·</span>{{template "footer_shown" (dict "D" . "OOB" false)}}<span class="footer-sep">·</span>{{template "footer_hidden" (dict "N" .HiddenByCeiling "OOB" false)}}{{end}}
       <span class="footer-sep">·</span>
       {{template "footer_tag_count" (dict "Count" .TagCount "OOB" false)}}
       <span class="footer-sep">·</span>
@@ -137,8 +139,8 @@
       {{if .Degraded}}<span class="footer-sep">·</span><span class="footer-degraded">degraded</span>{{end}}
       <span class="footer-sep-strong">::</span>
       <span class="footer-rating-label footer-wide">show up to:</span>
-      {{$active := .ActiveRating}}{{range $i, $lv := .RatingLevels}}{{if $i}}<span class="footer-sep">·</span>{{end}}{{$title := printf "Hide images rated above %s (this browser only)" $lv.Label}}{{if eq $lv.Value "explicit"}}{{$title = "Show every rating (this browser only)"}}{{end}}{{if eq $lv.Value $active}}<span class="footer-rating-active" title="{{$title}}">[{{$lv.Label}}]</span>{{else}}<form hx-post="/internal/rating-ceiling?level={{$lv.Value}}" hx-swap="none" hx-on::after-request="if(event.detail.successful){clearSelection();window.location.reload()}" style="display:inline"><button type="submit" class="footer-rating-link" title="{{$title}}">{{$lv.Label}}</button></form>{{end}}{{end}}
-      {{template "footer_hidden" dict "N" .HiddenByCeiling "OOB" false}}
+      {{$active := .ActiveRating}}{{range $i, $lv := .RatingLevels}}{{if $i}}<span class="footer-sep">·</span>{{end}}{{$title := printf "Hide images rated above %s (this browser only)" $lv.Label}}{{if eq $lv.Value "explicit"}}{{$title = "Show up to Explicit; unrated visibility is controlled separately (this browser only)"}}{{end}}{{if eq $lv.Value $active}}<span class="footer-rating-active" title="{{$title}}">[{{$lv.Label}}]</span>{{else}}<form hx-post="/internal/rating-ceiling?level={{$lv.Value}}" hx-swap="none" hx-on::after-request="if(event.detail.successful){clearSelection();window.location.reload()}" style="display:inline"><button type="submit" class="footer-rating-link" title="{{$title}}">{{$lv.Label}}</button></form>{{end}}{{end}}
+      <span class="footer-sep">·</span><form hx-post="/internal/rating-ceiling?unrated={{if .HideUnrated}}show{{else}}hide{{end}}" hx-swap="none" hx-on::after-request="if(event.detail.successful){clearSelection();window.location.reload()}" style="display:inline"><button type="submit" class="footer-rating-link" title="{{if .HideUnrated}}Unrated files are hidden; click to show them{{else}}Unrated files are shown; click to hide them{{end}} (independent of rating ceiling, this browser only)">unrated: {{if .HideUnrated}}[hidden]{{else}}[shown]{{end}}</button></form>
     </div>
     <div id="footer-right">
       {{template "webui/peer_light" .MonloaderLight}}<span class="footer-peer-sep"> · </span><span class="footer-wide">{{template "footer_version" dict "D" .}} · <a href="#" id="footer-shortcuts" onclick="openShortcutSheet();return false">shortcuts</a> · </span><a href="{{.DocURL}}" target="_blank" rel="noopener">help</a><span class="footer-wide"> · <a href="/api/v1/docs" target="_blank" rel="noopener">API</a></span>

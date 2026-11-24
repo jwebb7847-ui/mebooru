@@ -2,5 +2,6 @@
 {{if .Result}}{{template "result_count" dict "D" . "OOB" true}}
 {{template "gallery_pager" (dict "D" . "Pos" "top" "Class" "pagination-top" "OOB" true)}}
 {{template "gallery_pager" (dict "D" . "Pos" "bottom" "OOB" true)}}{{end}}
+{{if .Result}}{{template "footer_shown" dict "D" . "OOB" true}}{{end}}
 {{template "footer_hidden" dict "N" .HiddenByCeiling "OOB" true}}
 {{end}}

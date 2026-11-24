@@ -157,7 +157,7 @@ func loadNextPair(cx *library.Gallery, order, detector string, ceiling *Ceiling,
 	if r, active := ceiling.RankCeiling(); active {
 		rank = &r
 	}
-	counts, err := cx.RelationsSvc.QueueCountsFor(detector, rank)
+	counts, err := cx.RelationsSvc.QueueCountsFor(detector, rank, ceiling.HideUnrated())
 	if err != nil {
 		return nil, counts, err
 	}
@@ -165,7 +165,7 @@ func loadNextPair(cx *library.Gallery, order, detector string, ceiling *Ceiling,
 	if counts.Open == 0 && !pinned {
 		return nil, counts, nil
 	}
-	pair, err := cx.RelationsSvc.NextPair(order, detector, rank, pinA, pinB)
+	pair, err := cx.RelationsSvc.NextPair(order, detector, rank, pinA, pinB, ceiling.HideUnrated())
 	if err != nil || pair == nil {
 		return nil, counts, err
 	}

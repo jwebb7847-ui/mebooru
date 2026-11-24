@@ -10,13 +10,17 @@ import (
 
 // RankCeiling's zero value hides nothing.
 type RankCeiling struct {
-	Rank   int
-	Active bool
+	Rank           int
+	Active         bool
+	ExcludeUnrated bool
 }
 
 func (c RankCeiling) and(imagesAlias string) (string, []any) {
 	if !c.Active {
 		return "", nil
+	}
+	if c.ExcludeUnrated {
+		return ` AND ` + imagesAlias + `.rating_rank BETWEEN 0 AND ?`, []any{c.Rank}
 	}
 	return ` AND ` + imagesAlias + `.rating_rank <= ?`, []any{c.Rank}
 }
