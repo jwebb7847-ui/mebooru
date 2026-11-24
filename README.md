@@ -6,7 +6,7 @@ Paste a URL from a booru, a gallery, [any site gallery-dl supports](https://gith
 
 Meloader never touches your files directly: everything goes through Mebooru's API. It can add images and tags and, for an upgrade Mebooru asks for, swap in a better file.
 
-**[Project docs](docs/project/handoff.md)** · **[Install](#install)** · **[Fork releases](https://github.com/jwebb7847-ui/meloader/releases)** · **[Changelog](CHANGELOG.md)**
+**[Current cross-repo handoff](docs/project/handoff.md)** · **[Mebooru handoff](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/project/handoff.md)** · **[Roadmap](ROADMAP.md)** · **[Install](#install)** · **[Fork releases](https://github.com/jwebb7847-ui/meloader/releases)** · **[Changelog](CHANGELOG.md)**
 
 For fork development, start with the [project handoff](docs/project/handoff.md), [roadmap](ROADMAP.md), and [local audit runbook](docs/validation/local-audit.md).
 
@@ -84,7 +84,11 @@ go build -o meloader ./cmd/monloader
 ./meloader -desktop=false -config ./monloader.toml
 ```
 
-When updating, point `-config` at your existing Meloader configuration to keep its pairing, queue, and archive settings. The command directory and default config filename retain their historical spelling. Meloader opens at `http://127.0.0.1:8456` in the local setup. See the [paired Mac audit runbook](docs/validation/local-audit.md) for the full launch sequence.
+When updating, point `-config` at your existing Meloader configuration to keep its pairing, queue, and archive settings. The Finder-built Mebooru macOS app can start its bundled Meloader process, but a fresh profile **still requires manual Connect/Approve pairing**; secure auto-pairing of only the trusted bundled companion is planned, not shipped. The command directory and default config filename retain their historical spelling. Meloader opens at `http://127.0.0.1:8456` in the local setup. See the [paired Mac audit runbook](docs/validation/local-audit.md) for the full launch sequence.
+
+### Strict blacklist / managed gallery-dl on macOS
+
+For strict pre-download verification, open **Settings → Rules** and review the global/per-source blacklist; verify the active gallery-dl build in **Settings → Advanced**. The project's CI-pinned regression baseline remains **gallery-dl `1.32.19`** (see [pins.env](packaging/pins.env)), not necessarily the most recent upstream release. On a recent Mac, a managed install using system Python 3.9/LibreSSL emitted `urllib3 NotOpenSSLWarning` and caused the strict filter self-test to fail despite otherwise valid source metadata. Rebuilding that environment under Homebrew Python 3.13/OpenSSL restored transfer. See the [verified diagnostic](docs/validation/blacklist-timing.md#mac-managed-gallery-dl-ssl-warning-2026-11-24). Do **not** disable strict verification merely to bypass environment warnings.
 
 ### Connect to Mebooru
 

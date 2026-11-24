@@ -1,6 +1,41 @@
 # Local audit runbook
 
-Last reported by the operator on the Apple Silicon MacBook Air on 2026-11-14. Verify current listeners, checkout SHAs, and config files before use.
+Updated with the operator's Apple Silicon Finder acceptance through **2026-11-24**. The original November 14 source-based Audit_A procedure is retained below as **historical, intentionally isolated state**. Verify current listeners, checkout SHAs and config files before use.
+
+## Current Finder build and smoke test (2026-11-24)
+
+This is the simplest workflow for a *fresh development checkout*. It intentionally does not delete/reinitialize the operator's existing databases or override personal configs. To reproduce the **exact accepted PR #11 Mac test**, use Mebooru `8edf75d3be0f12e4b694f036583e727a9e97d4be` and Meloader `8ac2d7077596a72db6012b5f281267afe472c749`. To build **the now-merged feature state**, use Mebooru `2958fed7378801ebe207154efbc5cc285cffaae1`; Meloader `main` moves independently, so explicitly record its SHA if you use it rather than the pinned historical companion.
+
+**Mac — Terminal:**
+
+```sh
+go version
+git --version
+lsof -nP -iTCP:8455 -iTCP:8456 -sTCP:LISTEN
+```
+
+If ports are occupied, identify the owning process and config first. Do not start another copy against the same per-user gallery state. When both ports are free, from a terminal with Go and Git installed:
+
+```sh
+mkdir -p "$HOME/Documents/VSC"
+qa_dir=$(mktemp -d "$HOME/Documents/VSC/mebooru-merged-qa.XXXXXX") &&
+  git clone --branch mebooru-foundation --single-branch https://github.com/jwebb7847-ui/mebooru.git "$qa_dir/mebooru" &&
+  git -C "$qa_dir/mebooru" checkout --detach 2958fed7378801ebe207154efbc5cc285cffaae1 &&
+  git clone https://github.com/jwebb7847-ui/meloader.git "$qa_dir/meloader" &&
+  git -C "$qa_dir/meloader" checkout --detach 8ac2d7077596a72db6012b5f281267afe472c749 &&
+  (cd "$qa_dir/mebooru" && sh packaging/build-macos-app.sh "$qa_dir/meloader") &&
+  open "$qa_dir/mebooru/dist/Mebooru.app"
+```
+
+The copied Finder build uses default per-user state under `~/Library/Application Support/monbooru` and `~/Library/Application Support/monloader` unless overridden. This test does not provide any missing media or DBs. On first run complete Mebooru setup, then in [Meloader Settings → Pairing](http://127.0.0.1:8456/settings#pairing) click **Connect**, and approve in [Mebooru → Settings → Plugins](http://127.0.0.1:8455/settings#plugins). Verify both listeners and the green Mebooru footer connection; **bundled Meloader starts automatically, but pairing is currently manual**. If there is no visible Quit action, close the app normally or send `TERM` to the **identified** `monbooru`/`monloader` listening processes and confirm the ports close.
+
+For the most recent operator's 101-item `default` fixture, check **Settings → Stats** for 95 images and six videos, and Rating for 50 Explicit / 49 General / two Unrated. The `Unrated` row must be a computed search entry, not a database tag. Search `tagcount:rating=0` with Unrated shown to locate those two files. Expected *empty-search* footer counts on unchanged data: Explicit+shown `101/0 hidden`, Explicit+hidden `99/2`, SFW+shown `51/50`, SFW+hidden `49/52`. Change the setting, refresh and verify persistence. The accepted screenshots directly showed Explicit+shown and the rating sidebar; the full combinations are automated expectations. The owner previously reset the database deliberately, so **don't rely on the old MLP/Audit_A contents** being present.
+
+**Strict filter runtime prerequisite.** In Meloader Settings → Advanced inspect the **active gallery-dl version**. The last Mac-tested strict transfer used `1.32.19`. A managed install via system Python 3.9/LibreSSL 2.8.3 emitted `urllib3 NotOpenSSLWarning` on stderr; both probe fixtures exited zero but the strict self-test rejected the warning. The operator rebuilt the managed virtualenv with Homebrew Python 3.13/OpenSSL and subsequently confirmed a real single-post import (one created, 40 tags). [Failure and repair notes](blacklist-timing.md#mac-managed-gallery-dl-ssl-warning-2026-11-24). Do not disable strict blacklist checks to work around this. New gallery-dl releases can be chosen after testing; `1.32.19` is the validated baseline.
+
+**Out of scope for this Finder smoke:** signed/notarized public Mac release, actual Windows/Linux installer trials, auto-pairing and cosmetic UI backlog. See [Mebooru handoff](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/project/handoff.md).
+
+## Historical November 14 source-based audit setup
 
 ## Last validated setup
 

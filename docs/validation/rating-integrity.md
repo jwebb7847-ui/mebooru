@@ -204,3 +204,12 @@ Use the [paired audit launch procedure](local-audit.md#launch-the-paired-audit-s
 - [x] Bounded Safebooru end-to-end acquisition: five new images in ~12 s and 20 new images in ~35 s; see the [staged workload results](negative-path-throughput.md#bounded-20-post-safebooru-run-and-continuation--passed)
 - [x] [Bounded Derpibooru taxonomy cache audit](negative-path-throughput.md#macbook-air-live-result--passed-2026-11-13): all three warm cache reloads reproduced the cold pass's mapped tags with zero taxonomy HTTP attempts
 - [ ] Compare larger end-to-end workloads that exercise source taxonomy cache behavior
+
+
+## Mebooru PR #11: source ratings versus local unrated files (2026-11-24)
+
+The operator's first Mebooru rating concern came from an Explicit-visibility footer paired with only `general` in the Rating sidebar. Database inspection of a *previous* snapshot showed `default` with 95 Derpibooru-backed `general` items and `MLP` with one Derpibooru-backed `explicit` item plus 249 **unrated locally indexed files**. The legitimate source mapping (Derpibooru `safe → general`, `explicit → explicit`) worked; local import from disk did not invent a rating. The older visible-in-SFW behavior was a separate library visibility issue, not a defective Meloader source mapping.
+
+After the user deliberately wiped the old database, a fresh bounded import test resulted in a 101-item `default` gallery: 50 Explicit, 49 General and two Unrated. The two unrated items were confirmed using `tagcount:rating=0`. [Mebooru PR #11](https://github.com/jwebb7847-ui/mebooru/pull/11), merged at `2958fed`, now supports independent rating ceilings and a browser-local Unrated shown/hidden preference, virtual Unrated sidebar entry and total/shown/hidden counts; source metadata and files remain unchanged. [Operator Mac acceptance evidence](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/validation/mac-acceptance-2026-11-24.md) · [Five CI jobs passed](https://github.com/jwebb7847-ui/mebooru/actions/runs/45323146804).
+
+**Scope boundary:** Meloader enforces required source ratings from known boorus; Mebooru's frontend determines visibility of *unrated* local items. Neither system should silently infer an Explicit or General rating from pixels, folder labels, or an unverified metadata match. A future opt-in source-backed rating recovery workflow remains separate product work.

@@ -46,3 +46,14 @@ The operator confirmed that the merged review build at `5bcd092` directed strict
 The operator confirmed the [PR #8](https://github.com/jwebb7847-ui/meloader/pull/8) workflow at `eb6edd3` in the same Mac audit setup. From an existing `Audit_A` queue item for Derpibooru post `3796956`, **[debug] → Trace a post** opened the Trace section and prefilled the source post URL. Trace runs when the operator clicks **Trace**. The prefill uses an existing queue entry and needs no new import.
 
 [Current matcher](../../internal/mapping/blacklist.go) · [Acquisition pipeline](../../internal/pipeline/processor.go) · [gallery-dl file dispatch and predicates](https://github.com/mikf/gallery-dl/blob/v1.32.19/gallery_dl/job.py#L252)
+
+
+## Mac managed gallery-dl SSL warning (2026-11-24)
+
+**Operator-reported diagnostic and repair, not a change to the strict policy.** After a fresh Mebooru/Meloader Finder setup, the Derpibooru single-post queue failed with `mapping_failed: strict blacklist: gallery-dl could not validate the pre-download filter`. Meloader's `Trace a post` passed metadata/blacklist checks and previewed 40 tags. **Settings → Advanced** initially showed `Active not available`; a managed `gallery-dl 1.32.19` installation resolved that part but the job still refused at its strict self-test.
+
+The operator ran a synthetic two-fixture gallery-dl filter probe. **Both probes returned exit status 0**, but each emitted Python `urllib3.exceptions.NotOpenSSLWarning` because managed Python 3.9's `ssl` was linked against LibreSSL 2.8.3, while urllib3 v2 expects OpenSSL 1.1.1 or later. The strict self-test treats unexpected stderr output as validation failure, which explains why Trace could pass but the transfer never started.
+
+**Operator-reported repair:** install Homebrew Python 3.13 (OpenSSL-backed), stop the paired app, back up the existing managed gallery-dl virtual environment, rebuild it with Python 3.13, reinstall `gallery-dl==1.32.19`, verify `ssl.OPENSSL_VERSION` and gallery-dl version, restart Mebooru/Meloader, and retry. **Outcome:** Derpibooru post `3932573` reported `succeeded · 1 created · 40 tags sent`. This validates that Mac environment at that time; it is not a general proof for other Python/gallery-dl combinations.
+
+**Do not** disable `Require blacklist verification before downloading` to bypass a warning. Prefer actionable diagnostics for the underlying stderr and an OpenSSL-backed managed install; preserve fail-closed source policy. `1.32.19` is the recorded strict-filter regression baseline in [packaging/pins.env](../../packaging/pins.env); a later available version must pass source, blacklist and import acceptance before being called validated.
