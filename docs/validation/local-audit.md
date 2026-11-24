@@ -4,6 +4,11 @@ Updated with the operator's Apple Silicon Finder acceptance through **2026-11-24
 
 ## Current Finder build and smoke test (2026-11-24)
 
+### Operator test directory (November 24 onward)
+
+Use `$HOME/Downloads/Projects/Coding/Mebooru` for **all new test source checkouts, build outputs and QA fixtures**. Give each candidate a unique directory under `testing/`, and record both exact Git SHAs. The existing OS-native gallery, media, database and companion runtime state remains in place unless the operator expressly chooses a disposable profile. Never delete or move the real state to reproduce first-run behavior. The older `Documents/VSC` commands below are historical.
+
+
 This is the simplest workflow for a *fresh development checkout*. It intentionally does not delete/reinitialize the operator's existing databases or override personal configs. To reproduce the **exact accepted PR #11 Mac test**, use Mebooru `8edf75d3be0f12e4b694f036583e727a9e97d4be` and Meloader `8ac2d7077596a72db6012b5f281267afe472c749`. To build **the now-merged feature state**, use Mebooru `2958fed7378801ebe207154efbc5cc285cffaae1`; Meloader `main` moves independently, so explicitly record its SHA if you use it rather than the pinned historical companion.
 
 **Mac — Terminal:**
@@ -17,8 +22,9 @@ lsof -nP -iTCP:8455 -iTCP:8456 -sTCP:LISTEN
 If ports are occupied, identify the owning process and config first. Do not start another copy against the same per-user gallery state. When both ports are free, from a terminal with Go and Git installed:
 
 ```sh
-mkdir -p "$HOME/Documents/VSC"
-qa_dir=$(mktemp -d "$HOME/Documents/VSC/mebooru-merged-qa.XXXXXX") &&
+test_root="$HOME/Downloads/Projects/Coding/Mebooru/testing"
+mkdir -p "$test_root"
+qa_dir=$(mktemp -d "$test_root/mebooru-merged-qa.XXXXXX") &&
   git clone --branch mebooru-foundation --single-branch https://github.com/jwebb7847-ui/mebooru.git "$qa_dir/mebooru" &&
   git -C "$qa_dir/mebooru" checkout --detach 2958fed7378801ebe207154efbc5cc285cffaae1 &&
   git clone https://github.com/jwebb7847-ui/meloader.git "$qa_dir/meloader" &&
