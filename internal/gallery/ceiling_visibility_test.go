@@ -13,6 +13,7 @@ func TestRankCeilingUnratedVisibility(t *testing.T) {
 		{RankCeiling{}, ""},
 		{RankCeiling{Rank: 0, Active: true}, "rating_rank <= ?"},
 		{RankCeiling{Rank: 0, Active: true, ExcludeUnrated: true}, "rating_rank BETWEEN 0 AND ?"},
+		{RankCeiling{Rank: 3, Active: true, ExcludeUnrated: true}, "rating_rank BETWEEN 0 AND ?"},
 	} {
 		where, args := tc.ceiling.and("i")
 		if !strings.Contains(where, tc.contains) {

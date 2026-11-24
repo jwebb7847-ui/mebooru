@@ -39,7 +39,12 @@ func (c *Ceiling) IsActive() bool {
 }
 
 func (c *Ceiling) HideUnrated() bool {
-	return c != nil && c.IsActive() && c.excludeUnrated
+	return c != nil && c.excludeUnrated
+}
+
+// Rating ceiling and unrated visibility are independent filters.
+func (c *Ceiling) VisibilityActive() bool {
+	return c.IsActive() || c.HideUnrated()
 }
 
 // Distinguish the two visibility modes in cached search result keys.
@@ -138,10 +143,17 @@ func (c *Ceiling) WhereGroupClean(membersTable, groupCol string) (string, []any)
 
 // The rank ceiling excludes higher ratings. HideUnrated separately sets a lower bound.
 func (c *Ceiling) RankCeiling() (int, bool) {
-	if c == nil || !c.IsActive() {
+	if c == nil {
 		return 0, false
 	}
-	return contract.RatingRank(c.level), true
+	if c.IsActive() {
+		return contract.RatingRank(c.level), true
+	}
+	if c.HideUnrated() {
+		// An Explicit ceiling keeps all rated files but omits unrated ones.
+		return contract.RatingRank("explicit"), true
+	}
+	return 0, false
 }
 
 func (c *Ceiling) RankFilter() gallery.RankCeiling {

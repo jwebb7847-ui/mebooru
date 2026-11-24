@@ -898,7 +898,7 @@ func (s *Server) base(r *http.Request, nav, title string) baseData {
 		InboxNavActive:        inboxNavActive,
 		RatingLevels:          ratingFooterLevels,
 		ActiveRating:          active,
-		HideUnrated:           active != "explicit" && !showUnrated(r),
+		HideUnrated:           !showUnrated(r),
 		RequestStart:          requestStartFromContext(r.Context()),
 		PairNotice:            s.pairNotice(),
 	}

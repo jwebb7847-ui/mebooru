@@ -129,10 +129,13 @@ func ApplyCeiling(expr Expr, level string) Expr {
 // level hides.
 func HiddenByCeiling(ctx context.Context, src Source, text, level string, hideUnrated ...bool) (int, error) {
 	rank := contract.RatingRank(level)
-	if rank < 0 || rank >= len(contract.RatingLevels)-1 {
+	exclude := len(hideUnrated) > 0 && hideUnrated[0]
+	if rank < 0 {
+		rank = contract.RatingRank("explicit")
+	}
+	if rank >= len(contract.RatingLevels)-1 && !exclude {
 		return 0, nil
 	}
-	exclude := len(hideUnrated) > 0 && hideUnrated[0]
 	cacheLevel := level
 	predicate := "i.rating_rank > ?"
 	if exclude {

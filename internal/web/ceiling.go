@@ -12,10 +12,19 @@ import (
 const ratingCeilingCookieName = "monbooru_rating_ceiling"
 const unratedVisibilityCookieName = "monbooru_unrated_visibility"
 
-// Unrated images are hidden under a restricted ceiling unless this browser
-// explicitly opts in to showing them. Explicit always shows everything.
+// Without a preference, Explicit shows everything and lower ceilings hide
+// unrated media. After a user choice, this becomes an independent toggle.
 func showUnrated(r *http.Request) bool {
-	return session.FromCookie(r, unratedVisibilityCookieName) == "show"
+	switch session.FromCookie(r, unratedVisibilityCookieName) {
+	case "show":
+		return true
+	case "hide":
+		return false
+	case "":
+		return readRatingCookie(r) == ""
+	default:
+		return false
+	}
 }
 
 func writeUnratedVisibilityCookie(w http.ResponseWriter, r *http.Request, show bool) {
@@ -23,7 +32,7 @@ func writeUnratedVisibilityCookie(w http.ResponseWriter, r *http.Request, show b
 		setPrefCookie(w, r, unratedVisibilityCookieName, "show")
 		return
 	}
-	setPrefCookie(w, r, unratedVisibilityCookieName, "")
+	setPrefCookie(w, r, unratedVisibilityCookieName, "hide")
 }
 
 func resolveCeiling(r *http.Request, cx *library.Gallery) *Ceiling {
