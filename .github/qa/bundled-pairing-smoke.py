@@ -155,12 +155,12 @@ with tempfile.TemporaryDirectory(prefix="mebooru-bundle-qa-") as scratch:
     finish_setup_fixture(home)
     with running(home):
         assert pair_credentials(home) == credentials, "Pair changed on restart"
-        request(8455, "/api/v1/images", credentials[0])
+        request(8455, "/api/v1/galleries", credentials[0])
         request(8456, "/api/v1/queue", credentials[1])
         request(8455, "/api/v1/pair/remove", credentials[0], method="POST")
         assert not paired(load(home, "monbooru"), "monloader")
         try:
-            request(8455, "/api/v1/images", credentials[0])
+            request(8455, "/api/v1/galleries", credentials[0])
         except urllib.error.HTTPError as error:
             assert error.code in (401, 403, 503)
         else:
