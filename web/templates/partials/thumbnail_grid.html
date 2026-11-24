@@ -82,11 +82,11 @@
   {{else}}
   <div class="no-results">
     <div>
-    {{if $.Degraded}}No images found. (≖_≖ )
+    {{if $.Degraded}}No images found.
     <p class="field-hint">The gallery folder can't be read, so nothing can be listed. Check its path in the configuration.</p>
     {{else if eq $.Query "inbox:true"}}Inbox zero.
     <p class="field-hint">New images land here. Press <kbd>Y</kbd> to sync now.</p>
-    {{else if $.Query}}No images found. (￣～￣;)
+    {{else if $.Query}}No images found.
     <p class="field-hint">Try fewer tags, or raise the rating ceiling in the footer.</p>
     {{else}}No images found.
     <p class="field-hint empty-gallery-hint">

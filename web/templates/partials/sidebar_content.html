@@ -2,7 +2,7 @@
 <li class="tag-entry tag-entry-virtual" data-name="unrated">
   <span class="tag-wiki" title="Virtual filter: images without an assigned rating; no tag is created">?</span>
   {{if .Hidden}}
-  <form hx-post="/internal/rating-ceiling?unrated=show" hx-swap="none"
+  <form class="tag-virtual-form" hx-post="/internal/rating-ceiling?unrated=show" hx-swap="none"
         hx-on::after-request="if(event.detail.successful){window.location.assign('/?q=tagcount%3Arating%3D0')}">
     <button type="submit" class="tag-link" style="color:var(--cat-rating, #b58c91);background:none;border:0;padding:0;font:inherit;cursor:pointer;text-align:left" title="Show unrated files and search for them">unrated</button>
   </form>
