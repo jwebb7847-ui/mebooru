@@ -110,6 +110,8 @@ func main() {
 
 	_, statErr := os.Stat(*configPath)
 	freshConfig := os.IsNotExist(statErr)
+	_, lstatErr := os.Lstat(*configPath)
+	newBundleProfile := os.IsNotExist(lstatErr)
 
 	load := config.LoadWithDefaults
 	if layout.Portable {
@@ -118,18 +120,6 @@ func main() {
 	cfg, err := load(*configPath, seed)
 	if err != nil {
 		fatalf("loading config: %v", err)
-	}
-	bundledCompanion := false
-	if *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
-		*meloaderBinary = cfg.Desktop.MeloaderBinary
-		*meloaderConfig = cfg.Desktop.MeloaderConfig
-		if *meloaderBinary == "" && *meloaderConfig == "" {
-			*meloaderBinary, *meloaderConfig, err = bundledMeloader(cfg)
-			bundledCompanion = err == nil && *meloaderBinary != ""
-			if err != nil {
-				logx.Errorf("preparing bundled Meloader: %v", err)
-			}
-		}
 	}
 	if layout.Portable {
 		portableGallery(layout, cfg)
@@ -166,6 +156,43 @@ func main() {
 	}
 	defer srv.Close()
 
+	bundledCompanion := false
+	bundledConfigCreated := false
+	if *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
+		*meloaderBinary = cfg.Desktop.MeloaderBinary
+		*meloaderConfig = cfg.Desktop.MeloaderConfig
+		if *meloaderBinary == "" && *meloaderConfig == "" {
+			*meloaderBinary, *meloaderConfig, bundledConfigCreated, err = bundledMeloader(cfg)
+			bundledCompanion = err == nil && *meloaderBinary != ""
+			if err != nil {
+				logx.Errorf("preparing bundled Meloader: %v", err)
+			}
+		}
+	}
+
+	// Freshness cannot be inferred from missing tokens: revocation and a
+	// partial reset can also leave them absent. Only this first launch may
+	// bootstrap, after the library has won its own listener.
+	var bootstrap *bundleBootstrap
+	if newBundleProfile && bundledConfigCreated && bundledCompanion &&
+		!layout.Portable && explicitFlag("config", *configPath) == "" &&
+		cfg.PristineBundledPair() && trustedBundleSibling(*meloaderBinary) {
+		bootstrap = &bundleBootstrap{
+			persist: srv.PersistBundledPair,
+			rollback: srv.RollbackBundledPair,
+		}
+	}
+	stopMeloader := func() {}
+	if *meloaderBinary != "" || *meloaderConfig != "" {
+		stop, err := launchMeloader(*meloaderBinary, *meloaderConfig, bundledCompanion, bootstrap)
+		if err != nil {
+			logx.Errorf("starting Meloader: %v", err)
+		} else {
+			stopMeloader = stop
+			defer stopMeloader()
+		}
+	}
+
 	srv.StartWatchers()
 
 	httpSrv := &http.Server{
@@ -188,16 +215,6 @@ func main() {
 		}
 	}()
 
-	stopMeloader := func() {}
-	if *meloaderBinary != "" || *meloaderConfig != "" {
-		stop, err := launchMeloader(*meloaderBinary, *meloaderConfig, bundledCompanion)
-		if err != nil {
-			logx.Errorf("starting Meloader: %v", err)
-		} else {
-			stopMeloader = stop
-			defer stopMeloader()
-		}
-	}
 
 	if *desktopMode {
 		if !*noBrowser {
