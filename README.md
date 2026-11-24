@@ -8,9 +8,9 @@ Your own private, lightweight and fast booru: a tag-based image gallery, in the 
 
 Mebooru is a fork of [Monbooru](https://github.com/monbooru/monbooru), based on the audited v1.24.0 release. It preserves Monbooru's lightweight, local-first architecture while developing a distinct interface, workflow, privacy model, and optional AI-assisted organization features.
 
-For fork development and the paired audit setup, see [MEBOORU.md](MEBOORU.md).
+For fork development and current acceptance status, see [MEBOORU.md](MEBOORU.md), the [dated handoff](docs/project/handoff.md), and the [documentation index](docs/README.md).
 
-Designed for organizing your local media collection: images, videos, animated GIFs and manga archives. Tag it by hand or auto-tag it locally with ONNX models (WD14, JoyTag...), then search it by tag. Generation metadata from AI image tools (A1111/Forge, ComfyUI) is read too. Mebooru itself never touches the internet; online features (downloading from boorus, reverse image lookup) live in [monloader](https://github.com/monbooru/monloader), an optional companion.
+Designed for organizing your local media collection: images, videos, animated GIFs and manga archives. Tag it by hand or auto-tag it locally with ONNX models (WD14, JoyTag...), then search it by tag. Generation metadata from AI image tools (A1111/Forge, ComfyUI) is read too. Mebooru itself never touches the internet; online features (downloading from boorus, reverse image lookup) live in [Meloader](https://github.com/jwebb7847-ui/meloader), the forked companion (originally Monloader).
 
 **[Upstream documentation](https://monbooru.github.io/mondocs/)** · **[Install](#install)** · **[Upstream Monbooru](https://github.com/monbooru/monbooru)** · **[Changelog](CHANGELOG.md)**
 
@@ -28,7 +28,7 @@ Designed for organizing your local media collection: images, videos, animated GI
 ### Tags
 
 - **Tag management**: merge duplicates, aliases, implications, custom categories
-- **Rating tags** (general / sensitive / questionable / explicit), with a SFW ceiling in the footer that hides anything rated above it
+- **Rating tags** (general / sensitive / questionable / explicit), with independent footer rating ceilings and a persistent **show/hide unrated** toggle. A virtual Unrated row supports searching for unrated items; local scans do not infer content ratings.
 - **Local auto-tagging** with ONNX models (WD14 SwinV2, animetimm EVA02, JoyTag, Camie v2, PixAI, or any compatible model), on CPU or GPU
 
 ### Browse and search
@@ -65,8 +65,7 @@ For the macOS app, build from the Mebooru checkout with
 background. Both use the existing per-user configs in
 `~/Library/Application Support` unless you supply an explicit config.
 On first use, request pairing from [Meloader Settings](http://127.0.0.1:8456/settings#pairing)
-and approve it in **Mebooru → Settings → Plugins**. Use **Quit** in Mebooru's
-web settings to stop the app and the companion it launched.
+and approve it in **Mebooru → Settings → Plugins**. The Finder bundle launches the companion, **but first-use auto-pairing is not yet implemented**. Exit the app to stop the process it launched; if a web Quit control is missing, identify the listening process before using a terminal TERM signal. See the [Mac runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md).
 
 The local build uses an ad-hoc signature. For downloads, a public macOS
 release needs signing and notarization. The bundle includes both app
@@ -125,7 +124,7 @@ The inherited [Compose example](docker/docker-compose.yml) pulls upstream images
 ### Current installation status
 
 Mebooru does not yet publish its own release binaries. The current development
-branch builds successfully from source on Apple Silicon macOS using Go 1.27.x.
+branch has been launched and exercised from Finder on Apple Silicon macOS with Go 1.27.x. PR #11 also passed native automated Linux (x64/ARM64), Windows, and both macOS architectures; those are **not** substitutes for Windows/Linux end-user installer tests.
 
 Upstream [Monbooru releases](https://github.com/monbooru/monbooru/releases)
 remain available for Linux and Windows, but those packages contain stock
@@ -133,7 +132,7 @@ Monbooru rather than Mebooru.
 
 ### Next steps
 
-The inherited [Monbooru documentation](https://monbooru.github.io/mondocs/) covers the current core functionality while Mebooru-specific documentation is developed.
+The [handoff](docs/project/handoff.md) records the last accepted Mac milestone; the [backlog](docs/project/backlog.md) prioritizes automatic bundled Meloader setup, cosmetic legacy-branding cleanup and release packaging. The inherited [Monbooru documentation](https://monbooru.github.io/mondocs/) remains useful for features retained from upstream.
 
 ## Warning
 
