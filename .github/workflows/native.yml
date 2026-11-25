@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GOWORK: 'off'
+
 jobs:
   native:
     name: Native core (${{ matrix.os }})
@@ -23,25 +26,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: jwebb7847-ui/meloader
-          # Update this revision after verifying a new Meloader counterpart.
-          ref: bd7b6b4addb831ff3711ad6a046abe3b010d94a7
-          path: meloader-src
-          persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: |
             go.sum
-            meloader-src/go.sum
+            meloader/go.sum
       - name: Test, build and run both apps
         run: python .github/qa/native-smoke.py
       - name: Build and sign macOS app
         if: runner.os == 'macOS'
         shell: bash
-        run: sh packaging/build-macos-app.sh meloader-src
+        run: sh packaging/build-macos-app.sh
       - name: Verify the bundled companion lifecycle
         if: runner.os == 'macOS'
         shell: bash
@@ -71,3 +67,39 @@ jobs:
       - name: Verify first-party pairing and refusal paths
         if: runner.os == 'macOS'
         run: python .github/qa/bundled-pairing-smoke.py dist/Mebooru.app
+
+  go-validation:
+    name: Both modules (race, vet and strict transfer)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+      - name: Mebooru race and vet
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Meloader race and vet
+        working-directory: meloader
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Strict download regression with pinned gallery-dl
+        working-directory: meloader
+        shell: bash
+        run: |
+          source packaging/pins.env
+          venv="$RUNNER_TEMP/meloader-strict-gallery-dl"
+          python3 -m venv "$venv"
+          "$venv/bin/python3" -m pip install --disable-pip-version-check "gallery-dl==$GDL_VERSION"
+          test "$("$venv/bin/gallery-dl" --version)" = "$GDL_VERSION"
+          MELOADER_STRICT_TEST_GDL="$venv/bin/gallery-dl" \
+            go test -race -count=1 -timeout=3m -v \
+              -run '^TestStrictBlacklistGalleryDLMediaBoundary$' ./internal/pipeline

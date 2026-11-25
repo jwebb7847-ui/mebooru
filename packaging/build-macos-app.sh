@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-loader_src=${1:?usage: sh packaging/build-macos-app.sh /path/to/meloader [output-directory]}
+# Default to the imported companion. An explicit path still supports rollback builds.
+loader_src=${1:-meloader}
 loader_src=$(cd "$loader_src" && pwd)
 output=${2:-dist}
 mkdir -p "$output"
@@ -20,7 +21,7 @@ trap 'rm -rf "$stage"' EXIT
 bundle="$stage/Mebooru.app/Contents"
 mkdir -p "$bundle/MacOS" "$bundle/Resources"
 
-export GOOS=darwin GOARCH="$arch" CGO_ENABLED=0
+export GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 GOWORK=off
 go build -trimpath -ldflags="$LDFLAGS -X 'main.defaultDesktop=true' -X 'main.useBundledMeloader=true' -X '$MOD.Package=macos-app'" \
   -o "$bundle/MacOS/monbooru" ./cmd/monbooru
 (

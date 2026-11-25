@@ -10,9 +10,9 @@ import urllib.request
 from pathlib import Path
 
 workspace = Path.cwd()
-env = dict(os.environ, CGO_ENABLED="0", GOTOOLCHAIN="local")
+env = dict(os.environ, CGO_ENABLED="0", GOTOOLCHAIN="local", GOWORK="off")
 apps = [
-    ("Meloader", "monloader", workspace / "meloader-src", "/queue", "/api/v1/queue"),
+    ("Meloader", "monloader", workspace / "meloader", "/queue", "/api/v1/queue"),
     ("Mebooru", "monbooru", workspace, "/", "/api/v1/images"),
 ]
 
