@@ -1,6 +1,6 @@
 # Mebooru unified product — architecture decision (2026-11-24)
 
-**Status:** owner approved direction in discussion; no migration or refactor implemented. Baseline: Mebooru PR #13 merge `c5319ee504e32eef0f52e20969c705accbfc4e3c`, Meloader PR #24 merge `b5b9ddb103a50b396fd81af9b3d94e0c6f29bc46`. The current paired bundle remains the working fallback.
+**Status:** owner approved direction in discussion; no migration or refactor implemented. Latest accepted feature baseline: Mebooru PR #15 merge `3715067d067417dabeec94c05f1b6bb90148f293`, Meloader PR #25 merge `10542e66537430d21cc295449103bb2832e0693a`. The current paired bundle remains the working fallback.
 
 ## Approved product direction
 
@@ -27,6 +27,6 @@ Proposed design to review, not yet committed UI or schema:
 2. Establish unified build/test pipeline and explicit library/worker interface. Existing paired APIs may serve as a transition bridge. Private IPC and platform-specific least-privilege isolation are candidates, not finalized. Separate processes alone do not constitute OS-enforced sandboxing. Library core should have no external network requirement; restrict worker access to necessary inputs/outputs. Preserve offline library and external plugin behavior.
 3. Consolidate UI/settings and implement worker lifecycle, explicit offline behavior, graceful Quit, and recoverable worker failures. Do not retain two independent settings experiences merely for compatibility; migrate old values with validation and user data protection.
 4. Integrate managed gallery-dl runtime, verify platform and dependency compatibility; keep strict blacklist regression and version rollback gates. Extend existing watch workflows only after baseline behavior is protected.
-5. Validate full feature parity, migration, backup/rollback, offline operation, worker crash/restart, watch checkpoints, blacklist and source metadata, and platform packaging. Keep cosmetic backlog and release signing/notarization visible.
+5. Validate full feature parity, migration, backup/rollback, offline operation, worker crash/restart, watch checkpoints, blacklist and source metadata, and platform packaging. Keep remaining compatibility/branding inventory and release signing/notarization visible; the focused mascot/kaomoji/Unrated cleanup is accepted.
 
 Discuss unresolved product/trust decisions with the owner before implementing them. No public release or Windows/Linux hands-on validation is implied by prior build/run CI. No source files, executable packaging, or runtime state are changed by this decision record.
