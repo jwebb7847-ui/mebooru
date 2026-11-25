@@ -18,6 +18,7 @@ var ErrProfileOwned = errors.New("managed acquisition profile already owned")
 type ProfileLock struct {
 	mu sync.Mutex
 	file *os.File
+	activeFence *WorkerFence
 }
 
 // LockProfile rejects path aliases by locking the actual opened inode/file,
@@ -69,6 +70,7 @@ func(l *ProfileLock)Close()error{
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file==nil{return nil}
+	if l.activeFence!=nil{return ErrWorkerRecoveryRequired}
 	err:=l.file.Close()
 	l.file=nil
 	return err
