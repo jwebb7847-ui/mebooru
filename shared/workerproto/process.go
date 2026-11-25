@@ -75,13 +75,15 @@ func StartOwnedProcess(ctx context.Context, opts ProcessOptions, handler Handler
 	}
 	defer childRead.Close()
 	defer childWrite.Close()
-	cmd := exec.Command(opts.Executable, opts.Args...)
+	lifetime, cancel := context.WithCancelCause(ctx)
+	// CommandContext also terminates a child that holds the pipe open
+	// during startup cancellation, independently of pipe Close semantics.
+	cmd := exec.CommandContext(lifetime, opts.Executable, opts.Args...)
 	cmd.Dir = opts.Dir
 	cmd.Env = opts.Env
 	cmd.Stdin = childRead
 	cmd.Stdout = childWrite
 	if opts.Stderr != nil { cmd.Stderr = opts.Stderr }
-	lifetime, cancel := context.WithCancelCause(ctx)
 	if err := cmd.Start(); err != nil {
 		cancel(err)
 		_ = parentRead.Close()
@@ -113,8 +115,9 @@ func StartOwnedProcess(ctx context.Context, opts ProcessOptions, handler Handler
 		return nil,fmt.Errorf("start private worker: %w",err)
 	}
 	p.Session = session
-	// Session loss or parent cancellation must not leave the direct
-	// child running. Give a cooperative child a bounded EOF grace period.
+	// Session loss must not leave the direct child running. Give a
+	// cooperative child a bounded EOF grace period. Parent context
+	// cancellation also triggers CommandContext's immediate kill.
 	go func(){
 		select{
 		case <-p.done:
