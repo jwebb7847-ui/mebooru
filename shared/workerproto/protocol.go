@@ -79,6 +79,7 @@ const (
 	Health Operation = "worker.health"
 	SetOffline Operation = "worker.set_offline"
 	Shutdown Operation = "worker.shutdown"
+	ReserveIdle Operation = "worker.reserve_idle"
 
 	QueueList Operation = "queue.list"
 	QueueGet Operation = "queue.get"
@@ -153,6 +154,7 @@ var rules = map[Operation]Rule{
 	Health: {Library, Local},
 	SetOffline: {Library, Local},
 	Shutdown: {Library, Local},
+	ReserveIdle: {Library, Local},
 	QueueList: {Library, Local},
 	QueueGet: {Library, Local},
 	QueueEnqueue: {Library, Mixed},

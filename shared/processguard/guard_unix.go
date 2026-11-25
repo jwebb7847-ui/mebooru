@@ -1,0 +1,106 @@
+//go:build darwin || linux
+
+// Package processguard contains isolated owned-process containment
+// primitives. It is not a general same-user sandbox.
+package processguard
+
+import (
+	"errors"
+	"io"
+	"os"
+	"os/exec"
+	"syscall"
+)
+
+var ErrGroupIdentity = errors.New("managed process group identity not established")
+
+// PrepareGuard creates a new process group at guard launch. The guard
+// executable must immediately enter RunGuard, not ordinary app startup.
+// Its parent owns a dedicated liveness pipe writer, never inherited by
+// the guard or worker. Do not combine this with other SysProcAttr fields.
+func PrepareGuard(cmd *exec.Cmd) error {
+	if cmd.SysProcAttr != nil || cmd.Process != nil {
+		return ErrGroupIdentity
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid:true}
+	return nil
+}
+
+// killOwnGroup uses only a group in which this live process is a member.
+// No previously recorded PID or PGID is used to target another group.
+// SIGKILL includes this process. If the OS refuses, report the error;
+// the caller must not claim successful containment.
+func killOwnGroup(group int) error {
+	current, err := syscall.Getpgid(0)
+	if err != nil || group <= 1 || current != group {
+		return ErrGroupIdentity
+	}
+	return syscall.Kill(-group,syscall.SIGKILL)
+}
+
+// RunGuard must execute in a dedicated process group leader. The worker
+// command is constructed by trusted application code (never remote input).
+// It inherits the group and an exclusive read end on fd 3. The worker MUST
+// install WatchGuard before doing any work or spawning descendants. All
+// managed descendants must remain in this group; no setsid or Setpgid.
+// Parent EOF or worker exit terminates the whole group, including guard.
+// An unexpected guard exit is handled by the live worker's WatchGuard.
+// Simultaneous loss of both sentinels is not guaranteed to be contained.
+func RunGuard(parentLife *os.File, worker *exec.Cmd) error {
+	group,err:=syscall.Getpgid(0)
+	if err!=nil || group!=os.Getpid() || group<=1 ||
+		worker.SysProcAttr!=nil || len(worker.ExtraFiles)!=0 ||
+		worker.Process!=nil {
+		return ErrGroupIdentity
+	}
+	syscall.CloseOnExec(int(parentLife.Fd()))
+	defer parentLife.Close()
+	read,write,err:=os.Pipe()
+	if err!=nil{return err}
+	defer write.Close()
+	defer read.Close()
+	worker.ExtraFiles=[]*os.File{read}
+	if err:=worker.Start();err!=nil{return err}
+	_ = read.Close()
+	// An EOF, unexpected byte, or read failure all revoke parent liveness.
+	lost:=make(chan struct{},1)
+	go func(){
+		var one [1]byte
+		_,_ = parentLife.Read(one[:])
+		lost<-struct{}{}
+	}()
+	exited:=make(chan error,1)
+	go func(){exited<-worker.Wait()}()
+	select{
+	case <-lost:
+	case <-exited:
+	}
+	return killOwnGroup(group)
+}
+
+// WatchGuard verifies that the worker was launched by its own group leader
+// before allowing work. The inherited fd must be excluded from every
+// descendant's handle list. Unexpected EOF kills this live worker's group.
+// The caller must treat an error from the watcher as fatal and must not
+// ignore it or continue network work. Normally group termination never returns.
+func WatchGuard(life *os.File) (<-chan error,error) {
+	group,err:=syscall.Getpgid(0)
+	if err!=nil || group<=1 || group!=os.Getppid() || group==os.Getpid() {
+		return nil,ErrGroupIdentity
+	}
+	info,err:=life.Stat()
+	if err!=nil || info.Mode()&os.ModeNamedPipe==0 {
+		return nil,ErrGroupIdentity
+	}
+	syscall.CloseOnExec(int(life.Fd()))
+	done:=make(chan error,1)
+	go func(){
+		defer life.Close()
+		var one [1]byte
+		_,err:=life.Read(one[:])
+		// Only liveness is carried on this pipe; any result means revoke.
+		if err==nil {err=io.ErrUnexpectedEOF}
+		done<-errors.Join(err,killOwnGroup(group))
+	}()
+	return done,nil
+}
