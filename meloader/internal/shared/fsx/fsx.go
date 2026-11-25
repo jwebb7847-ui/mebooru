@@ -1,11 +1,48 @@
 package fsx
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// WriteDurableIn replaces name entirely within an open filesystem root.
+func WriteDurableIn(root *os.Root, name string, write func(*os.File) error) error {
+	dir := filepath.Dir(name)
+	if err := root.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	parent, err := root.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	tmpName := "." + filepath.Base(name) + "." + rand.Text()
+	tmp, err := parent.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer parent.Remove(tmpName)
+	if err = write(tmp); err == nil {
+		err = tmp.Sync()
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err := retryRename(func() error { return parent.Rename(tmpName, filepath.Base(name)) }); err != nil {
+		return err
+	}
+	if dirFile, err := parent.Open("."); err == nil {
+		_ = dirFile.Sync()
+		_ = dirFile.Close()
+	}
+	return nil
+}
 
 // WriteAtomic is atomic, not durable: a caller that needs the content to
 // survive a crash calls Sync at the end of write and SyncDir after.
