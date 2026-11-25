@@ -16,7 +16,7 @@ func TestOwnedWorkerFixture(t *testing.T) {
 		// No handshake. The parent must enforce its startup deadline.
 		time.Sleep(time.Minute)
 		os.Exit(9)
-	case "refuse", "normal":
+	case "refuse", "normal", "hang":
 	default:
 		return
 	}
@@ -35,6 +35,11 @@ func TestOwnedWorkerFixture(t *testing.T) {
 	})
 	if err!=nil{os.Exit(2)}
 	<-s.Done()
+	if mode=="hang" {
+		// Deliberately ignore cooperative shutdown after disconnect.
+		time.Sleep(time.Minute)
+		os.Exit(9)
+	}
 	os.Exit(0)
 }
 
@@ -92,4 +97,32 @@ func TestOwnedProcessRefusalAndParentCancellation(t *testing.T){
 			}
 		})
 	}
+}
+
+
+func TestOwnedProcessSessionLossReapsAndFreshStart(t *testing.T) {
+	ctx,cancel:=context.WithTimeout(context.Background(),25*time.Second)
+	defer cancel()
+	opts:=ownedOptions(t,"hang")
+	opts.StopTimeout=time.Second
+	p,err:=StartOwnedProcess(ctx,opts,nil)
+	if err!=nil{t.Fatal(err)}
+	t.Cleanup(func(){_ = p.Stop(context.Background())})
+	e,err:=p.Session.Call(ctx,Health,nil)
+	if err!=nil||e.Error!=nil{t.Fatalf("health: %+v %v",e,err)}
+	p.Session.Close()
+	select{
+	case <-p.Done():
+	case <-ctx.Done():t.Fatal("uncooperative direct child not reaped")
+	}
+	if err:=p.Wait(ctx);err==nil{t.Fatal("uncooperative child unexpectedly exited successfully")}
+	// Fresh child must negotiate its own new session. The old transport
+	// remains permanently closed; no stale session can authorize work.
+	next,err:=StartOwnedProcess(ctx,ownedOptions(t,"normal"),nil)
+	if err!=nil{t.Fatal(err)}
+	t.Cleanup(func(){_ = next.Stop(context.Background())})
+	if _,err:=p.Session.Call(ctx,Health,nil);err==nil{t.Fatal("closed session reused")}
+	e,err=next.Session.Call(ctx,Health,nil)
+	if err!=nil||e.Error!=nil{t.Fatalf("fresh health: %+v %v",e,err)}
+	if err:=next.Stop(ctx);err!=nil{t.Fatal(err)}
 }
