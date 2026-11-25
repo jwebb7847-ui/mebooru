@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/monbooru/monloader/internal/shared/desktop"
-	"github.com/monbooru/monloader/internal/shared/fsx"
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
+	"github.com/jwebb7847-ui/mebooru/shared/fsx"
 
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"

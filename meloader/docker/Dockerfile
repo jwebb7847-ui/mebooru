@@ -3,7 +3,7 @@ FROM golang:1.27.4-trixie AS build
 WORKDIR /src/meloader
 ENV GOWORK=off
 COPY meloader/go.mod meloader/go.sum ./
-COPY shared/go.mod /src/shared/go.mod
+COPY shared/go.mod shared/go.sum /src/shared/
 RUN go mod download
 COPY shared /src/shared
 COPY meloader/cmd ./cmd

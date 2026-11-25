@@ -12,9 +12,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jwebb7847-ui/mebooru/shared/fsx"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
-	"github.com/monbooru/monbooru/internal/shared/fsx"
 )
 
 // maxNameBytes leaves room under the usual 255-byte filename limit for an

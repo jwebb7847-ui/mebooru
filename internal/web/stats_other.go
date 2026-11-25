@@ -2,7 +2,7 @@
 
 package web
 
-import "github.com/monbooru/monbooru/internal/shared/desktop"
+import "github.com/jwebb7847-ui/mebooru/shared/desktop"
 
 func procRSS() (rssBreakdown, bool) { return rssBreakdown{}, false }
 

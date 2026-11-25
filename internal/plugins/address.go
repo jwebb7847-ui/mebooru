@@ -4,8 +4,8 @@ import (
 	"net"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/monbooru/monbooru/internal/config"
-	"github.com/monbooru/monbooru/internal/shared/desktop"
 )
 
 // A paused block answers "", so every outbound call short-circuits.

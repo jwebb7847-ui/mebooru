@@ -4,7 +4,7 @@ import (
 	"os/exec"
 	"strconv"
 
-	"github.com/monbooru/monloader/internal/shared/desktop"
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 )
 
 // Windows has no process group to signal, so taskkill walks the tree; a

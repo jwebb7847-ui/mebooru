@@ -6,9 +6,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monbooru/internal/peer"
-	"github.com/monbooru/monbooru/internal/shared/desktop"
 )
 
 type loaderPanel struct {
