@@ -33,6 +33,11 @@ func readFrame(r io.Reader) ([]byte, error) {
 	}
 	body := make([]byte, int(n))
 	if _, err := io.ReadFull(r, body); err != nil {
+		// A complete header followed by no body is a truncated frame,
+		// not the clean EOF of an idle connection.
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
 		return nil, err
 	}
 	return body, nil

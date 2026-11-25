@@ -59,7 +59,7 @@ func TestFrameBoundsAndTruncation(t *testing.T) {
 			t.Fatalf("size %d: got %v", n, err)
 		}
 	}
-	for _, p := range [][]byte{{0, 0, 0}, {0, 0, 0, 3, '{'}} {
+	for _, p := range [][]byte{{0, 0, 0}, {0, 0, 0, 3}, {0, 0, 0, 3, '{'}} {
 		if _, err := ReadEnvelope(bytes.NewReader(p)); !errors.Is(err, io.ErrUnexpectedEOF) {
 			t.Fatalf("expected truncated frame, got %v", err)
 		}

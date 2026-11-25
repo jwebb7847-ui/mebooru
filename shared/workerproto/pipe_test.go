@@ -15,7 +15,24 @@ import (
 // This helper is a disposable subprocess of the test executable, not the
 // application or a production worker. Stdout is exclusively the protocol.
 func TestPipeFixtureChild(t *testing.T) {
-	if os.Getenv("MEBOORU_WORKER_PIPE_FIXTURE") != "1" {
+	mode := os.Getenv("MEBOORU_WORKER_PIPE_FIXTURE")
+	switch mode {
+	case "exit", "stall":
+		if err := Handshake(os.Stdin, os.Stdout, Worker); err != nil {
+			os.Exit(2)
+		}
+		if mode == "exit" {
+			os.Exit(7)
+		}
+		if err := WriteEnvelope(os.Stdout, Envelope{Kind: Event, Op: Operation("fixture.waiting")}); err != nil {
+			os.Exit(3)
+		}
+		// Block until the parent closes the pipe or terminates this process.
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		os.Exit(0)
+	case "1":
+		// Normal bidirectional exchange below.
+	default:
 		return
 	}
 	if err := fixtureChild(os.Stdin, os.Stdout); err != nil {
@@ -159,5 +176,69 @@ func TestInheritedPipeSubprocess(t *testing.T) {
 	waited = true
 	if err != nil {
 		t.Fatalf("fixture process failed: %v: %s", err, diagnostics.String())
+	}
+}
+
+func TestInheritedPipePeerLossAndCancellation(t *testing.T) {
+	for _, mode := range []string{"exit", "stall"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			exe, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.CommandContext(ctx, exe, "-test.run=^TestPipeFixtureChild$")
+			cmd.Env = append(os.Environ(), "MEBOORU_WORKER_PIPE_FIXTURE="+mode)
+			toChild, err := cmd.StdinPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			fromChild, err := cmd.StdoutPipe()
+			if err != nil {
+				_ = toChild.Close()
+				t.Fatal(err)
+			}
+			if err := cmd.Start(); err != nil {
+				_ = toChild.Close()
+				_ = fromChild.Close()
+				t.Fatal(err)
+			}
+			waited := false
+			defer func() {
+				_ = toChild.Close()
+				_ = fromChild.Close()
+				if !waited {
+					_ = cmd.Process.Kill()
+					_ = cmd.Wait()
+				}
+			}()
+			if err := Handshake(fromChild, toChild, Library); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "stall" {
+				e, err := ReadEnvelope(fromChild)
+				if err != nil || e.Kind != Event || e.Op != Operation("fixture.waiting") {
+					t.Fatalf("expected waiting fixture: %+v %v", e, err)
+				}
+				// The process is known to be waiting on the pipe. Cancellation
+				// must unblock reads through child termination.
+				cancel()
+			}
+			if _, err := ReadEnvelope(fromChild); err != io.EOF {
+				t.Fatalf("expected peer EOF, got %v", err)
+			}
+			err = cmd.Wait()
+			waited = true
+			if err == nil {
+				t.Fatal("unexpected successful exit")
+			}
+			if mode == "exit" {
+				exit, ok := err.(*exec.ExitError)
+				if !ok || exit.ExitCode() != 7 {
+					t.Fatalf("unexpected peer exit: %v", err)
+				}
+			}
+		})
 	}
 }
