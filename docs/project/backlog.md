@@ -1,6 +1,6 @@
 # Mebooru / Meloader outstanding work
 
-**Reviewed:** 2026-11-24. This is a *prioritized next-step proposal*, not a declaration that these features are implemented. Link new PRs and update statuses after acceptance. The working Mebooru branch is `mebooru-foundation`; Meloader develops from `main`.
+**Reviewed:** 2026-11-25. This is a *prioritized next-step proposal*, not a declaration that these features are implemented. Link new PRs and update statuses after acceptance. The working Mebooru branch is `mebooru-foundation`; Meloader develops from `main`.
 
 ## Completed — first-party bundled Meloader ready on launch
 
@@ -15,17 +15,11 @@
 - Expose deterministic recurring acquisition watches for selected booru sources and character queries: discover new posts, filter before download, retain source tags and provenance, route to chosen gallery as ordinary directly viewable media. No separate archive feature or compression. No agentic behavior or requirement to operate while app is closed. Investigate reuse of existing Watches.
 - Add prominent Quit Mebooru control that drains work and stops owned services, without shutting down external services indiscriminately.
 
-## Immediate cleanup before architecture review — visual rebranding
+## Completed — focused visual rebranding
 
-- Replace legacy Monbooru white-haired mascot on first-run `/setup` (default theme uses `themeMascots(theme)["hello"]`, with rendering in `web/templates/setup.html`). Respect custom themes and fallbacks.
-- Replace legacy top-right/sync/working mascot (job status uses `themeMascots(... )["sparkle-head"]`; inspect job status templates). Avoid functionality changes.
-- Remove kaomoji/emoticons from empty-results and degraded screens: `web/templates/partials/thumbnail_grid.html` contains `(≖_≖ )` and `(￣～￣;)`. Keep useful explanatory copy and recovery hints.
-- Align the virtual `Unrated` count with other Rating counts when the setting is hidden. The virtual row has a form/button rather than a conventional tag link in `web/templates/partials/sidebar_content.html`. Functionality and counts passed; this is cosmetic.
-- Review other user-visible old `mon` prefix branding **without renaming compatibility-critical binaries, Go packages, API/TOML keys, or persisted paths merely for appearance**. A focused inventory and cross-platform regression should accompany a future rebrand.
+[Mebooru #15](https://github.com/jwebb7847-ui/mebooru/pull/15) and [Meloader #25](https://github.com/jwebb7847-ui/meloader/pull/25) merged on November 25. The operator confirmed all seven fresh-profile checks and four existing-library checks: setup and sync branding, clean empty/search and queue text, automatic pairing, gallery/detail rendering and Unrated alignment. Default legacy mascot display and decorative kaomoji were removed; functional symbols, custom themes, opt-in legacy themes and compatibility-critical identifiers are retained. See [visual acceptance](../validation/mac-visual-acceptance-2026-11-25.md).
 
-Candidate cleanup: reuse the existing Mebooru mark for setup and working displays; suppress default upstream mascot art elsewhere, remove decorative text faces in both applications, and align the Unrated row. Preserve explicit custom/legacy themes and functional status symbols. Mac visual acceptance pending.
-
-These were deliberately deferred from [PR #11](https://github.com/jwebb7847-ui/mebooru/pull/11). Confirm expected visuals before making a design change.
+Remaining historical identifiers/assets are not an open defect in this scope; inventory them during repository consolidation and preserve compatibility. Do not delete custom or legacy artwork indiscriminately.
 
 ## Priority 3 — usability, provenance and workflows
 
