@@ -1,8 +1,8 @@
 {{define "queue_rows"}}
-{{if not .Groups}}<tr><td colspan="7" class="no-results"><div class="mascot-empty">{{with .Mascot.sleep}}<img src="{{.}}" alt="" class="mascot">{{end}}<div>Queue is empty. (－ω－) zzZ<p class="field-hint">Paste a URL above, or send one from monsender.</p></div></div></td></tr>{{end}}
+{{if not .Groups}}<tr><td colspan="7" class="no-results"><div class="mascot-empty">{{with .Mascot.sleep}}<img src="{{.}}" alt="" class="mascot">{{end}}<div>Queue is empty.<p class="field-hint">Paste a URL above, or send one from the Monsender extension.</p></div></div></td></tr>{{end}}
 {{range .Groups}}
 <tr class="job-row">
-  <td class="st-{{.Worst.Status}}">{{.Worst.Status}}<span class="st-kaomoji" aria-hidden="true"></span><span class="job-time" title="{{stampLocal .Worst.StatusChangedAt}}">{{humanSince .Worst.StatusChangedAt}}</span>{{if .Watched}}<span class="job-lane">watched</span>{{end}}</td>
+  <td class="st-{{.Worst.Status}}">{{.Worst.Status}}<span class="job-time" title="{{stampLocal .Worst.StatusChangedAt}}">{{humanSince .Worst.StatusChangedAt}}</span>{{if .Watched}}<span class="job-lane">watched</span>{{end}}</td>
   <td class="queue-url">{{.Lead.Subject}}{{if .Lead.URL}} <a class="queue-view" href="{{.Lead.URL}}" target="_blank" rel="noopener">source</a>{{end}}{{with clientMeta .Lead}} <span class="queue-sent" title="{{.}}">sent</span>{{end}}</td>
   <td>{{$kind := jobKindLabel .Lead}}<span class="status-badge job-kind">{{$kind}}</span>{{with .Lead.LookupClass}}<span class="job-lane">{{.}}</span>{{end}}</td>
   <td class="queue-site" title="{{.Lead.Site}}">{{.Lead.Site}}</td>

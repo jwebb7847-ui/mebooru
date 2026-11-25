@@ -27,7 +27,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 - **Meloader `main`** contains Loader integration, queue restart recovery, branding and setup/PTR hardening; observed at `1a0cef7` on 2026-11-24. The earlier tested Mac companion checkout `8ac2d70` remains a historical pinned baseline, not the current head.
 - **Mebooru `mebooru-foundation`** contains the integrated Loader, Mac launcher, video hover/static preview preference, Stats and unrated visibility; observed at [PR #11 merge `2958fed`](https://github.com/jwebb7847-ui/mebooru/pull/11). Its `main` still holds the upstream-derived v1.24.0 baseline. See [Mebooru handoff](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/project/handoff.md).
-- **Latest acceptance.** Finder Mac launch, paired live imports, video WebP previews, per-gallery Stats and PR #11 unrated visibility passed operator checks. Five native Mebooru CI jobs passed on [PR #11](https://github.com/jwebb7847-ui/mebooru/actions/runs/45323146804). Auto-pairing of the first-party bundled companion is **not** yet implemented. Next: design it securely, then tackle cosmetic branding and installer QA. See [dated evidence](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/validation/mac-acceptance-2026-11-24.md).
+- **Latest acceptance.** Finder Mac launch, paired live imports, video WebP previews, per-gallery Stats and PR #11 unrated visibility passed operator checks. Five native Mebooru CI jobs passed on [PR #11](https://github.com/jwebb7847-ui/mebooru/actions/runs/45323146804). Bundled first-run auto-pairing merged in Meloader #24 / Mebooru #13; local Mac acceptance passed, with the hosted Apple Silicon runner exception recorded in the dated acceptance record. The next product direction is a unified UI and separately managed acquisition worker in one repository. See the Mebooru architecture decision. See [dated evidence](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/validation/mac-acceptance-2026-11-24.md).
 
 ## Milestones
 
@@ -74,7 +74,7 @@ The integrated queue shows import results and opens the destination gallery. The
 
 ### 8. Naming and packaging — personal Mac Finder candidate accepted
 
-The paired app candidate passed native automated Linux x86-64/ARM64, Windows x86-64 and both macOS architectures, followed by **operator-confirmed Finder launch and Derpibooru imports on Apple Silicon macOS**. The built-in companion launches but **first-run pairing still requires manual Connect/Approve**. Retain legacy package/config/protocol identifiers for existing installs. Further branding, secure bundled auto-pairing, actual Windows/Linux installer acceptance, and public macOS signing/notarization remain. [Meloader branding PR](https://github.com/jwebb7847-ui/meloader/pull/19) · [Mac app PR](https://github.com/jwebb7847-ui/mebooru/pull/7) · [Current Mac acceptance](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/validation/mac-acceptance-2026-11-24.md).
+The paired app candidate passed native automated Linux x86-64/ARM64, Windows x86-64 and both macOS architectures, followed by **operator-confirmed Finder launch and Derpibooru imports on Apple Silicon macOS**. Historically, this candidate still required manual Connect/Approve; #24 and Mebooru #13 subsequently added fresh-profile automatic pairing. Retain legacy package/config/protocol identifiers for existing installs. Further branding, secure bundled auto-pairing, actual Windows/Linux installer acceptance, and public macOS signing/notarization remain. [Meloader branding PR](https://github.com/jwebb7847-ui/meloader/pull/19) · [Mac app PR](https://github.com/jwebb7847-ui/mebooru/pull/7) · [Current Mac acceptance](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/validation/mac-acceptance-2026-11-24.md).
 
 ### 9. Mebooru interface hardening — PRs #9–#11 merged
 
@@ -87,7 +87,7 @@ The paired app candidate passed native automated Linux x86-64/ARM64, Windows x86
 ### 10. Next iteration — secure first-run integration and polish (not yet implemented)
 
 1. Auto-initialize and **securely auto-pair only the trusted bundled, locally launched Meloader**, preserving manual approval for untrusted external/remote plugins and existing revoke/pause controls.
-2. Remove old setup/sync mascot art and empty-result kaomoji; align the virtual Unrated count when hidden.
+2. Visual cleanup candidate: remove default legacy mascot display and decorative queue/404 text faces; preserve custom themes and functional status labels. Mebooru handles setup/sync branding and Unrated alignment. Mac visual acceptance pending.
 3. Consider optional source-backed rating recovery, higher-level Meta display controls and validated gallery-dl upgrade only after product discussion.
 4. Perform release packaging acceptance separately (Mac signing/notarization; real Windows/Linux installers). Native CI does not establish those UX claims.
 

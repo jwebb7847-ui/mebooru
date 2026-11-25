@@ -50,8 +50,6 @@ func themeMascots(t webui.Theme) map[string]string {
 		switch {
 		case t.Mascots[face] != "":
 			out[face] = "/theme.mascot/" + face
-		case builtinArt[t.Name] != "":
-			out[face] = builtinArt[t.Name] + "mascot-" + face + ".png"
 		}
 	}
 	return out
