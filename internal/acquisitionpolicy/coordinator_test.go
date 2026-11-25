@@ -149,3 +149,36 @@ func TestCoordinatorCanceledOnlineAcknowledgementStopsPeer(t *testing.T){
 	if c.EffectiveOnline(){t.Fatal("canceled grant admitted work")}
 	checkLog(t,log,"apply offline","save online","apply online","stop")
 }
+
+
+func TestCoordinatorRealStoreRestart(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	var log []string
+	store := openTestStore(t, dir)
+	c, err := New(store)
+	if err != nil || !c.ConfiguredOffline() {
+		t.Fatalf("initial policy: %v", err)
+	}
+	if err := c.Attach(ctx, &fakePeer{log:&log}); err != nil { t.Fatal(err) }
+	if err := c.SetOffline(ctx, false); err != nil { t.Fatal(err) }
+	if err := c.Release(ctx); err != nil { t.Fatal(err) }
+
+	nextStore := openTestStore(t, dir)
+	next, err := New(nextStore)
+	if err != nil || next.ConfiguredOffline() || next.EffectiveOnline() {
+		t.Fatalf("saved consent should not authorize a missing peer: %v", err)
+	}
+	if err := next.Attach(ctx, &fakePeer{log:&log}); err != nil { t.Fatal(err) }
+	if !next.EffectiveOnline() { t.Fatal("online not restored after peer acknowledgement") }
+	if err := next.SetOffline(ctx, true); err != nil { t.Fatal(err) }
+	if err := next.Release(ctx); err != nil { t.Fatal(err) }
+
+	final, err := New(openTestStore(t, dir))
+	if err != nil || !final.ConfiguredOffline() || final.EffectiveOnline() {
+		t.Fatalf("offline restart: %v", err)
+	}
+	if err := final.Attach(ctx, &fakePeer{log:&log}); err != nil { t.Fatal(err) }
+	if final.EffectiveOnline() { t.Fatal("offline restart admitted network") }
+	checkLog(t,log,"apply offline","apply online","stop","apply online","apply offline","stop","apply offline")
+}

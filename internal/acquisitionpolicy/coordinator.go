@@ -30,12 +30,12 @@ var ErrPeerUnusable = errors.New("acquisition worker must be released before aut
 
 const cleanupTimeout = 10 * time.Second
 
+type onlineLease struct { done <-chan struct{} }
+
 // Coordinator serializes policy changes and worker attachment. It is owned by
 // the library supervisor, with one instance per exclusively locked profile.
 // EffectiveOnline is an admission hint, not a guarantee of network activity.
 // Worker-side gates remain authoritative for execution.
-type onlineLease struct { done <-chan struct{} }
-
 type Coordinator struct {
 	mu sync.Mutex
 	store policyStore
@@ -135,7 +135,7 @@ func (c *Coordinator) SetOffline(ctx context.Context, offline bool) error {
 
 // Release stops the current peer before clearing its ownership. Keep the
 // reference on cleanup failure so a second worker cannot silently attach.
-// The real supervisor must also mark unexpected peer loss immediately.
+// Done invalidates admission on peer loss; the supervisor must still reap.
 func (c *Coordinator) Release(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
