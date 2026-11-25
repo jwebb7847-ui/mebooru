@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/monbooru/monloader/internal/shared/webui"
+	"github.com/jwebb7847-ui/mebooru/shared/webui"
 	webFS "github.com/monbooru/monloader/web"
 )
 

@@ -3,7 +3,7 @@ package web
 import (
 	"testing"
 
-	"github.com/monbooru/monbooru/internal/shared/webui"
+	"github.com/jwebb7847-ui/mebooru/shared/webui"
 )
 
 func TestDefaultBrandingUsesMebooruMark(t *testing.T) {

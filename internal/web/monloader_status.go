@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/webui"
 	"github.com/monbooru/monbooru/internal/monloader"
 	"github.com/monbooru/monbooru/internal/peer"
-	"github.com/monbooru/monbooru/internal/shared/webui"
 )
 
 func (s *Server) monloaderStatusHandler(w http.ResponseWriter, r *http.Request) {
