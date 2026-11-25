@@ -77,7 +77,7 @@ contribute back`"| loader
 
 ## Install
 
-Build from the Meloader checkout with Go 1.27.x and an installed gallery-dl:
+Build from the `meloader/` directory of the consolidated Mebooru checkout with Go 1.27.x and an installed gallery-dl:
 
 ```bash
 go build -o meloader ./cmd/monloader
@@ -100,7 +100,7 @@ New environment settings can use `MELOADER_`, such as `MELOADER_SERVER_BIND_ADDR
 
 ### Docker and upstream builds
 
-The inherited [Compose example](docker/docker-compose.yml) pulls upstream Monloader. To run this fork in Docker, build an image from this checkout and use its tag in the Compose file. Reuse the existing config volume and service DNS names when updating. The [upstream documentation](https://monbooru.github.io/mondocs/addons/monloader/index.html) and [upstream releases](https://github.com/monbooru/monloader/releases) refer to Monloader.
+The inherited [Compose example](docker/docker-compose.yml) and Quadlet file pull upstream Monloader and are historical deployment examples, not accepted fork configurations. Build from the consolidated repository root as shown below. Full runtime and network-boundary validation remain outstanding; do not point unverified containers at real data. The [upstream documentation](https://monbooru.github.io/mondocs/addons/monloader/index.html) and [upstream releases](https://github.com/monbooru/monloader/releases) refer to Monloader.
 
 ### Public Tag Repository
 

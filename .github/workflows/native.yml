@@ -78,6 +78,9 @@ jobs:
           (cd meloader && go test -timeout 5m ./...)
           (cd shared && go test -timeout 5m ./...)
 
+      - name: Audit common source and dependency resolution
+        run: python3 .github/qa/consolidation-audit.py
+
   native:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     name: Native core (${{ matrix.os }})
@@ -184,6 +187,9 @@ jobs:
           MELOADER_STRICT_TEST_GDL="$venv/bin/gallery-dl" \
             go test -race -count=1 -timeout=3m -v \
               -run '^TestStrictBlacklistGalleryDLMediaBoundary$' ./internal/pipeline
+
+      - name: Audit common source and dependency resolution
+        run: python3 .github/qa/consolidation-audit.py
 
   container-build:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
