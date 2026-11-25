@@ -56,6 +56,11 @@ func witnessEOF(t *testing.T,ctx context.Context,r *bufio.Reader){
 func TestGuardGrandchild(t *testing.T){
 	if os.Getenv("MEBOORU_GUARD_FIXTURE")!="grandchild"{return}
 	_,_ = os.Stdout.WriteString("ready\n")
+	if os.Getenv("MEBOORU_GRANDCHILD_READY_FD")=="1"{
+		f:=os.NewFile(3,"grandchild-ready")
+		_,_ = f.Write([]byte{1})
+		_ = f.Close()
+	}
 	time.Sleep(30*time.Second)
 	os.Exit(8)
 }

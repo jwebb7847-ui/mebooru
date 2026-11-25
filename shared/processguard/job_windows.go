@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 	"unsafe"
@@ -28,6 +29,7 @@ func NewJob() (*Job,error) {
 	info.BasicLimitInformation.LimitFlags=windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
 	_,err=windows.SetInformationJobObject(h,windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)),uint32(unsafe.Sizeof(info)))
+	runtime.KeepAlive(&info)
 	if err!=nil{
 		_ = windows.CloseHandle(h)
 		return nil,err
@@ -59,6 +61,7 @@ func (j *Job) activeLocked()(uint32,error){
 	var info basicAccounting
 	err:=windows.QueryInformationJobObject(j.handle,windows.JobObjectBasicAccountingInformation,
 		uintptr(unsafe.Pointer(&info)),uint32(unsafe.Sizeof(info)),nil)
+	runtime.KeepAlive(&info)
 	return info.ActiveProcesses,err
 }
 

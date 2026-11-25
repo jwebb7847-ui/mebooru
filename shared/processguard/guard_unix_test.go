@@ -28,14 +28,16 @@ func TestUnixGuardFixture(t *testing.T){
 		if err!=nil{os.Exit(3)}
 		child:=fixtureCommand(t,"TestGuardGrandchild","grandchild")
 		child.Stdout=os.Stdout
+		readyR,readyW,err:=os.Pipe()
+		if err!=nil{os.Exit(4)}
+		child.ExtraFiles=[]*os.File{readyW}
+		child.Env=append(child.Env,"MEBOORU_GRANDCHILD_READY_FD=1")
 		if err:=child.Start();err!=nil{os.Exit(4)}
-		if mode=="worker-crash"{
-			// Wait for the grandchild to have inherited the witness.
-			// Start returning proves the child process was created;
-			// its readiness marker is emitted independently.
-			time.Sleep(500*time.Millisecond)
-			os.Exit(7)
-		}
+		_ = readyW.Close()
+		var ready [1]byte
+		if n,err:=readyR.Read(ready[:]);n!=1||err!=nil||ready[0]!=1{os.Exit(4)}
+		_ = readyR.Close()
+		if mode=="worker-crash"{os.Exit(7)}
 		select{
 		case <-done:os.Exit(5)
 		case <-time.After(30*time.Second):os.Exit(8)
