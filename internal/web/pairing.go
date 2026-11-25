@@ -184,7 +184,11 @@ func (s *Server) pluginPairApprove(w http.ResponseWriter, r *http.Request) {
 		writeFlashOOB(w, "flash-plugins", "warn", msg)
 		return
 	}
-	s.pairs.SetState(id, pairing.Approved)
+	if !s.pairs.SetState(id, pairing.Approved) {
+		s.renderTemplate(w, "partials/plugin_pairing.html", s.pairViewData())
+		writeFlashOOB(w, "flash-plugins", "warn", "Pairing request expired or already decided; request a new pairing if needed.")
+		return
+	}
 	logx.Infof("pairing: approved request %s from %s", id, session.ClientIP(r))
 	s.renderTemplate(w, "partials/plugin_pairing.html", s.pairViewData())
 	writeFlashOOB(w, "flash-plugins", "", "")

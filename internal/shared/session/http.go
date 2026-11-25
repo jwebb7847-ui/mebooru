@@ -44,7 +44,7 @@ func peerHost(r *http.Request) (host string, loopback bool) {
 // Browsers read "//host", a backslash, and a path whose tab or newline they
 // strip into "//", as another host.
 func LocalPath(p string) bool {
-	if p == "" || p[0] != '/' || (len(p) > 1 && (p[1] == '/' || p[1] == '\\')) || strings.Contains(p, `\`) {
+	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.Contains(p, `\`) {
 		return false
 	}
 	return !strings.ContainsFunc(p, func(c rune) bool { return c < 0x20 || c == 0x7f })

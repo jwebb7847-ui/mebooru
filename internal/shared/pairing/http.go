@@ -64,6 +64,11 @@ func (s *Store[T, P]) Poll(id string, mint func(T) (string, error)) (StatusBody,
 	}
 	claimed, won := s.Claim(id)
 	if !won {
+		// Expiry or another successful poll can remove the request between
+		// Get and Claim. Do not report a stale approval as still available.
+		if _, exists := s.Get(id); !exists {
+			return StatusBody{}, &Refusal{http.StatusNotFound, CodeNotFound, "unknown pairing request"}
+		}
 		return StatusBody{Status: Approved}, nil
 	}
 	secret, err := mint(claimed)

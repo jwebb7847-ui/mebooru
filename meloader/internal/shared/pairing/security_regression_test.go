@@ -107,8 +107,7 @@ func TestPendingReplacementCapAndSweep(t *testing.T) {
 	if _, f := s.Offer(Request{App: "overflow"}); f == nil || f.Status != http.StatusTooManyRequests {
 		t.Fatal("pending cap not enforced")
 	}
-	// Age the fixture directly; no five-minute sleep. Expiry is currently
-	// enforced by the store sweep, not independently by Get or Claim.
+	// Age the fixture directly; no five-minute sleep.
 	s.mu.Lock()
 	s.m[second].CreatedAt = time.Now().Add(-pendingTTL - time.Second)
 	s.mu.Unlock()
@@ -143,4 +142,80 @@ func TestPairingOfferValidation(t *testing.T) {
 	if f := DecodeOffer(httptest.NewRecorder(), r, &dst); f != nil || dst.App != "peer" || len(dst.RequestedScopes) != 1 || dst.RequestedScopes[0] != "read" {
 		t.Fatal("valid offer not decoded")
 	}
+}
+
+
+// Each case gets an independent expired request, so a preceding Get or
+// sweep cannot make a broken approval, claim or poll check appear safe.
+func TestExpiredRequestsRefusedWithoutSweep(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		approved bool
+		check func(*testing.T, *Store[Request, *Request], string)
+	}{
+		{"get pending", false, func(t *testing.T, s *Store[Request, *Request], id string) {
+			if _, ok := s.Get(id); ok { t.Fatal("expired request accessible") }
+		}},
+		{"approve pending", false, func(t *testing.T, s *Store[Request, *Request], id string) {
+			if s.SetState(id, Approved) { t.Fatal("expired request approved") }
+		}},
+		{"claim approved", true, func(t *testing.T, s *Store[Request, *Request], id string) {
+			if _, ok := s.Claim(id); ok { t.Fatal("expired approval claimed") }
+		}},
+		{"poll pending", false, assertExpiredPoll},
+		{"poll approved", true, assertExpiredPoll},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewStore[Request, *Request]()
+			id, ok := s.Create(Request{App: "peer"})
+			if !ok { t.Fatal("fixture creation failed") }
+			if tc.approved && !s.SetState(id, Approved) { t.Fatal("fixture approval failed") }
+			ageRequest(s, id)
+			tc.check(t, s, id)
+		})
+	}
+}
+
+func ageRequest(s *Store[Request, *Request], id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.m[id].CreatedAt = time.Now().Add(-pendingTTL - time.Second)
+}
+
+func assertExpiredPoll(t *testing.T, s *Store[Request, *Request], id string) {
+	t.Helper()
+	body, f := s.Poll(id, func(Request) (string, error) {
+		t.Fatal("expired request reached credential mint")
+		return "", nil
+	})
+	if f == nil || f.Status != http.StatusNotFound || f.Code != CodeNotFound || body.Token != "" {
+		t.Fatal("expired poll did not refuse without credentials")
+	}
+}
+
+func TestFailedMintCannotRetryAfterExpiry(t *testing.T) {
+	s := NewStore[Request, *Request]()
+	id, _ := s.Create(Request{App: "peer"})
+	if !s.SetState(id, Approved) { t.Fatal("fixture approval failed") }
+	_, f := s.Poll(id, func(Request) (string, error) {
+		ageRequest(s, id)
+		return "", errors.New("fixture failure after deadline")
+	})
+	if f == nil || f.Code != CodeMintFailed { t.Fatal("expected mint failure") }
+	assertExpiredPoll(t, s, id)
+}
+
+func TestClaimBeforeExpiryMayFinish(t *testing.T) {
+	s := NewStore[Request, *Request]()
+	id, _ := s.Create(Request{App: "peer"})
+	if !s.SetState(id, Approved) { t.Fatal("fixture approval failed") }
+	body, f := s.Poll(id, func(Request) (string, error) {
+		// Once minting starts, a durable grant may already be in progress.
+		// Expiration blocks new claims; it is not a credential revocation.
+		ageRequest(s, id)
+		assertExpiredPoll(t, s, id)
+		return "fixture", nil
+	})
+	if f != nil || body.Token != "fixture" { t.Fatal("valid in-flight claim lost its credential") }
+	assertExpiredPoll(t, s, id)
 }
