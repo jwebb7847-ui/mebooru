@@ -1,17 +1,16 @@
 # Mebooru documentation index
 
-**Reviewed:** 2026-11-24. The working development branch is `mebooru-foundation`, not `main`.
+**Reviewed:** 2026-11-25. The working branch is `mebooru-foundation`.
 
-| Start here | Purpose |
+**Start with [MEBOORU.md](../MEBOORU.md)** — the single maintained north star for architecture, chapter roadmap, current milestone, and outstanding work.
+
+| Reference | Purpose |
 | --- | --- |
-| [Project handoff](project/handoff.md) | Accurate current state, references, Mac operator workflow, known constraints, and next action |
-| [Approved unified-product direction](project/unified-product-direction.md) | Next architecture decisions, migration guardrails, archival watches |
-| [Bundled pairing closeout](project/bundled-pairing.md) | Current first-run behavior and trust boundary |
-| [Prioritized backlog](project/backlog.md) | Remaining product and UI work with acceptance criteria |
-| [November 24 Mac acceptance](validation/mac-acceptance-2026-11-24.md) | PRs #9–#13, pairing, CI exception, rating and Meta audits, environment issue, evidence boundaries |
-| [Mebooru direction](../MEBOORU.md) | Fork architecture, provenance, independent galleries, WAN isolation, compatibility |
-| [Meloader roadmap](https://github.com/jwebb7847-ui/meloader/blob/main/ROADMAP.md) | End-to-end acquisition milestones and future work |
-| [Meloader handoff](https://github.com/jwebb7847-ui/meloader/blob/main/docs/project/handoff.md) | Paired service, validation and troubleshooting |
-| [Mac runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md) | Reproducible build and launch steps; historical audit setup retained separately |
+| [Historical handoff](project/handoff.md) | Earlier operating context, test evidence and Mac environment |
+| [Bundled pairing](project/bundled-pairing.md) | Existing implementation and trust boundary |
+| [November 24 Mac acceptance](validation/mac-acceptance-2026-11-24.md) | Pairing, rating, detail regression and environment evidence |
+| [November 25 visual acceptance](validation/mac-visual-acceptance-2026-11-25.md) | Accepted branding and hosted CI exception |
+| [Mac runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md) | Build, launch and troubleshoot |
+| [Source semantics](https://github.com/jwebb7847-ui/meloader/blob/main/docs/architecture/source-semantics-proposal.md) | Acquisition mapping design and evidence |
 
-See [merged PR #11](https://github.com/jwebb7847-ui/mebooru/pull/11) for detailed implementation and [native CI](https://github.com/jwebb7847-ui/mebooru/actions/runs/45323146804) for cross-platform automated evidence. No personal gallery contents, credentials or configuration secrets belong in repository documentation.
+Former backlog and unified-product direction files are compatibility pointers. Earlier Meloader roadmap and handoff are historical references, not competing plans. Do not commit personal media or credentials.

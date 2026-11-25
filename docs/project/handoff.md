@@ -1,10 +1,12 @@
-# Mebooru / Meloader — next-chat handoff
+# Mebooru / Meloader — historical handoff and operating context
+
+**Historical snapshot, not a live roadmap.** Begin with [MEBOORU.md](../../MEBOORU.md) for current decisions, chapter status and next action. Preserve this document for operational context and earlier acceptance evidence.
 
 **Snapshot:** 2026-11-25, after visual closeout. **Mebooru working branch:** `mebooru-foundation`, feature merge `3715067d067417dabeec94c05f1b6bb90148f293` (PR #15). **Meloader working branch:** `main`, feature merge `10542e66537430d21cc295449103bb2832e0693a` (PR #25). Recheck live GitHub heads before editing; a snapshot is not a floating reference.
 
 ## Project goal and fixed boundaries
 
-Mebooru is a lightweight local-first media gallery with independent gallery databases, a persistent gallery switcher, search and tags, relationships, duplicate handling, source provenance and optional local AI tagging. In the current implementation, Meloader is the separately deployed, explicitly WAN-capable acquisition/reverse-lookup process. The approved future architecture is a managed acquisition worker in a unified Mebooru product and repository; see [architecture decision](unified-product-direction.md). The Loader tab embeds Meloader's queue, Watches and PTR pages rather than making the Mebooru library core contact the internet. Preserve the privacy boundary, existing source rating and provenance trust, local-only media storage, and backward-compatible legacy `monbooru` / `monloader` Go packages, config keys, paths and cookies until a deliberate migration is justified.
+Mebooru is a lightweight local-first media gallery with independent gallery databases, a persistent gallery switcher, search and tags, relationships, duplicate handling, source provenance and optional local AI tagging. In the current implementation, Meloader is the separately deployed, explicitly WAN-capable acquisition/reverse-lookup process. The approved future architecture is a managed acquisition worker in a unified Mebooru product and repository; see [project north star](../../MEBOORU.md). The Loader tab embeds Meloader's queue, Watches and PTR pages rather than making the Mebooru library core contact the internet. Preserve the privacy boundary, existing source rating and provenance trust, local-only media storage, and backward-compatible legacy `monbooru` / `monloader` Go packages, config keys, paths and cookies until a deliberate migration is justified.
 
 Conceptual, product-behavior, trust, privacy and user-facing policy changes require discussion. Reliability refactors and in-scope documentation/testing may proceed without changing approved semantics. The operator can test on Apple Silicon macOS, not directly on Windows or Linux; CI covers the latter. Always identify what was observed live on Mac versus simulated or verified in CI.
 
@@ -48,9 +50,9 @@ For strict downloads, keep **Require blacklist verification before downloading**
 
 One strict queue job refused transfer with `mapping_failed: strict blacklist: gallery-dl could not validate the pre-download filter`, while Trace passed. Managed gallery-dl `1.32.19` had installed under Apple-supplied Python 3.9 linked against LibreSSL 2.8.3. `urllib3` emitted `NotOpenSSLWarning` on stderr: both synthetic filter probes exited 0, but the warning triggered the preflight refusal. The operator rebuilt the managed virtual environment with Homebrew Python 3.13/OpenSSL and then reported **one image created, 40 tags sent** for Derpibooru post `3932573`. Preserve strict verification; do not suggest disabling it as a workaround. Version `1.32.19` is the **validated baseline**, not a permanent feature requirement; later gallery-dl versions must be tested against the strict filter and source adapters.
 
-## What to do next
+## Current planning
 
-Use the [approved architecture direction](unified-product-direction.md) and [prioritized backlog](backlog.md). Next: plan a non-destructive single-repository migration and unified UI with separate managed acquisition worker, hybrid lifecycle and explicit offline control. Preserve existing queue/watches, strict filtering, source provenance and library data. Consolidate settings, implement a bundled gallery-dl runtime with managed updates, and expose deterministic recurring character-query downloads while the application is running. The user has approved this direction, not an exact IPC, migration or sandbox implementation. Discuss material design decisions before coding; keep feature work in PRs and retain Mac acceptance and CI. Focused visual cleanup is merged and accepted; comprehensive repository inventory and consolidation planning are next. Ordinary downloads are directly viewable media; no separate archival/compression feature is intended. See the updated direction and backlog.
+See [MEBOORU.md](../../MEBOORU.md). The snapshot above is historical; do not treat its branch SHAs or fixture counts as live.
 
 ## Pointers and verification
 
