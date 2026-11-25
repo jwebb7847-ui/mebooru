@@ -62,12 +62,14 @@ func TestCustodyProcessFixture(t *testing.T){
 	dir:=os.Getenv("MEBOORU_TEST_CUSTODY_DIR")
 	gen:=os.Getenv("MEBOORU_TEST_CUSTODY_GENERATION")
 	switch mode{
-	case "library":
+	case "library", "library-contained":
 		l,err:=LockProfile(dir)
 		if err!=nil{os.Exit(2)}
 		f,err:=l.BeginWorker()
 		if err!=nil{os.Exit(3)}
-		cmd:=custodyFixtureCommand("custodian",dir,f.Generation())
+		childMode:="custodian"
+		if mode=="library-contained"{childMode="custodian-contained"}
+		cmd:=custodyFixtureCommand(childMode,dir,f.Generation())
 		life,err:=cmd.StdinPipe()
 		if err!=nil{os.Exit(4)}
 		if err:=cmd.Start();err!=nil{os.Exit(4)}
@@ -78,10 +80,15 @@ func TestCustodyProcessFixture(t *testing.T){
 		runtime.KeepAlive(f)
 		runtime.KeepAlive(l)
 		os.Exit(7)
-	case "custodian":
+	case "custodian", "custodian-contained":
 		ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second)
 		defer cancel()
 		err:=RunCustodian(ctx,dir,gen,os.Stdin,func(start context.Context)(CustodyChild,error){
+			if mode=="custodian-contained"{
+				child,err:=startPlatformCustodyFixture(dir)
+				if child==nil{return nil,err}
+				return &delayedPlatformFixture{CustodyChild:child,dir:dir},err
+			}
 			cmd:=custodyFixtureCommand("leaf",dir,"")
 			in,err:=cmd.StdinPipe()
 			if err!=nil{return nil,err}
@@ -93,7 +100,7 @@ func TestCustodyProcessFixture(t *testing.T){
 		if err!=nil{_,_=os.Stderr.WriteString(err.Error()+"\n");os.Exit(8)}
 		_,_=os.Stdout.WriteString("custody-complete\n")
 		os.Exit(0)
-	case "leaf":
+	case "leaf", "platform-leaf":
 		// Trusted test leaf creates no descendants.
 		_,_=os.Stdout.WriteString("worker-ready\n")
 		done:=make(chan struct{})
@@ -102,6 +109,8 @@ func TestCustodyProcessFixture(t *testing.T){
 		case <-done:os.Exit(0)
 		case <-time.After(25*time.Second):os.Exit(9)
 		}
+	default:
+		runPlatformCustodyFixture(mode,dir)
 	}
 }
 
@@ -116,11 +125,21 @@ func readCustodyLine(t *testing.T,ctx context.Context,r *bufio.Reader,want strin
 }
 
 func TestCustodyRecoversAfterAbruptLibraryLoss(t *testing.T){
+	testCustodyRecovery(t,"library")
+}
+
+func TestContainedCustodyRecoversAfterAbruptLibraryLoss(t *testing.T){
+	if runtime.GOOS!="darwin"&&runtime.GOOS!="linux"&&runtime.GOOS!="windows"{t.Skip("platform containment unsupported")}
+	testCustodyRecovery(t,"library-contained")
+}
+
+func testCustodyRecovery(t *testing.T,mode string){
+	t.Helper()
 	ctx,cancel:=context.WithTimeout(context.Background(),25*time.Second)
 	defer cancel()
 	dir:=t.TempDir()
 	defer os.WriteFile(filepath.Join(dir,"fixture-allow-cleanup"),nil,0o600)
-	cmd:=custodyFixtureCommand("library",dir,"")
+	cmd:=custodyFixtureCommand(mode,dir,"")
 	in,err:=cmd.StdinPipe()
 	if err!=nil{t.Fatal(err)}
 	defer in.Close()
@@ -197,4 +216,27 @@ func TestCustodyUnconfirmedStopNeverPublishesReceipt(t *testing.T){
 	if !errors.Is(err,ErrCustodyUnconfirmed){t.Fatalf("stop: %v",err)}
 	if err:=l.checkRecovery();!errors.Is(err,ErrWorkerRecoveryRequired){t.Fatalf("uncertain stop recovered: %v",err)}
 	if _,err:=os.Stat(filepath.Join(dir,cleanupReceiptFile));!errors.Is(err,os.ErrNotExist){t.Fatalf("unexpected receipt: %v",err)}
+}
+
+// Delay only the disposable test's cleanup to make the dirty-window
+// assertion deterministic. Production custody does not poll this file.
+type delayedPlatformFixture struct{
+	CustodyChild
+	dir string
+}
+func(c *delayedPlatformFixture)Stop(ctx context.Context)error{
+	_,_=os.Stdout.WriteString("cleanup-pending\n")
+	tick:=time.NewTicker(10*time.Millisecond)
+	defer tick.Stop()
+	for{
+		if _,err:=os.Stat(filepath.Join(c.dir,"fixture-allow-cleanup"));err==nil{break}
+		select{
+		case <-ctx.Done():
+			cleanup,cancel:=context.WithTimeout(context.Background(),3*time.Second)
+			defer cancel()
+			return errors.Join(ctx.Err(),c.CustodyChild.Stop(cleanup))
+		case <-tick.C:
+		}
+	}
+	return c.CustodyChild.Stop(ctx)
 }
