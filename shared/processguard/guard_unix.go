@@ -38,6 +38,42 @@ func killOwnGroup(group int) error {
 	return syscall.Kill(-group,syscall.SIGKILL)
 }
 
+// ActivationByte is sent over the exclusive guard liveness pipe only
+// after the supervisor has recorded the verified group identity. It is
+// an internal readiness boundary, not authentication.
+const ActivationByte byte = 1
+
+var ErrActivationRefused = errors.New("managed guard activation refused")
+
+// RunDormantGuard establishes a no-worker-before-activation boundary.
+// The supervisor must persist the established local group identity and
+// retain exclusive ownership before writing ActivationByte. If the
+// supervisor exits before that point, EOF exits without spawning a worker.
+// The same pipe subsequently serves as the parent liveness pipe; every
+// further byte or EOF revokes liveness. The worker still must install
+// WatchGuard and start with default-deny network admission.
+func RunDormantGuard(parentLife *os.File, worker *exec.Cmd) error {
+	if parentLife == nil || worker == nil {
+		return ErrActivationRefused
+	}
+	defer parentLife.Close()
+	group, err := syscall.Getpgid(0)
+	if err != nil || group <= 1 || group != os.Getpid() {
+		return ErrGroupIdentity
+	}
+	info, err := parentLife.Stat()
+	if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+		return ErrActivationRefused
+	}
+	syscall.CloseOnExec(int(parentLife.Fd()))
+	var one [1]byte
+	n, err := io.ReadFull(parentLife, one[:])
+	if err != nil || n != 1 || one[0] != ActivationByte {
+		return ErrActivationRefused
+	}
+	return RunGuard(parentLife, worker)
+}
+
 // RunGuard must execute in a dedicated process group leader. The worker
 // command is constructed by trusted application code (never remote input).
 // It inherits the group and an exclusive read end on fd 3. The worker MUST
