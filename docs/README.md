@@ -2,7 +2,7 @@
 
 **Reviewed:** 2026-11-25. The working branch is `mebooru-foundation`.
 
-**Start with [MEBOORU.md](../MEBOORU.md)** — the single maintained north star for architecture, chapter roadmap, current milestone, and outstanding work.
+**Start with [MEBOORU.md](../MEBOORU.md)** — the single maintained north star for architecture, chapter roadmap, current milestone, [development workflow](../MEBOORU.md#development-workflow), and outstanding work.
 
 | Reference | Purpose |
 | --- | --- |

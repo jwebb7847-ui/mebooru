@@ -8,7 +8,7 @@ Your own private, lightweight and fast booru: a tag-based image gallery, in the 
 
 Mebooru is a fork of [Monbooru](https://github.com/monbooru/monbooru), based on the audited v1.24.0 release. It preserves Monbooru's lightweight, local-first architecture while developing a distinct interface, workflow, privacy model, and optional AI-assisted organization features.
 
-For project direction, chapter roadmap, current milestone and development decisions, start with [MEBOORU.md](MEBOORU.md), our single project north star. The [documentation index](docs/README.md) points to technical and historical evidence.
+For project direction, chapter roadmap, current milestone and development decisions, start with [MEBOORU.md](MEBOORU.md), our single project north star. The [documentation index](docs/README.md) points to technical and historical evidence. Development uses [milestone-level draft PRs and final acceptance](MEBOORU.md#development-workflow), not a full matrix for every intermediate commit.
 
 Designed for organizing your local media collection: images, videos, animated GIFs and manga archives. Tag it by hand or auto-tag it locally with ONNX models (WD14, JoyTag...), then search it by tag. Generation metadata from AI image tools (A1111/Forge, ComfyUI) is read too. Mebooru itself never touches the internet; online features (downloading from boorus, reverse image lookup) live in [Meloader](https://github.com/jwebb7847-ui/meloader), the forked companion (originally Monloader).
 
@@ -55,7 +55,7 @@ Designed for organizing your local media collection: images, videos, animated GI
 
 Mebooru is developed on Apple Silicon macOS. The [native verification workflow](https://github.com/jwebb7847-ui/mebooru/actions/workflows/native.yml) builds and runs Mebooru and Meloader on Linux (x86_64, arm64), Windows (x86_64), and macOS (Intel, Apple Silicon). Once started, Mebooru is available at `http://localhost:8455`.
 
-Build from the `mebooru-foundation` branch with `make build-all` for both executables, or `go build -o mebooru ./cmd/monbooru` for the library alone. The two modules retain independent dependency graphs; `make test-all`, `make test-race-all` and `make vet-all` cover both. The command directory and default config name retain their historical spelling.
+Build from the `mebooru-foundation` branch with `make build-all` for both executables, or `go build -o mebooru ./cmd/monbooru` for the library alone. The two application modules retain independent dependency graphs and use a common `shared/` module; `make test-all`, `make test-race-all` and `make vet-all` cover all three. The command directory and default config name retain their historical spelling.
 
 ### Open Mebooru with Meloader
 
@@ -131,7 +131,7 @@ Monbooru rather than Mebooru.
 
 ### Next steps
 
-The [handoff](docs/project/handoff.md) records the last accepted Mac milestone; the [backlog](docs/project/backlog.md) prioritizes automatic bundled Meloader setup, cosmetic legacy-branding cleanup and release packaging. The inherited [Monbooru documentation](https://monbooru.github.io/mondocs/) remains useful for features retained from upstream.
+[MEBOORU.md](MEBOORU.md) records the latest accepted milestone, active roadmap and outstanding work. The [handoff](docs/project/handoff.md) preserves earlier acceptance context; the former backlog is a compatibility pointer. The inherited [Monbooru documentation](https://monbooru.github.io/mondocs/) remains useful for features retained from upstream.
 
 ## Warning
 

@@ -1,6 +1,6 @@
-# Mebooru and Meloader — active project handoff
+# Mebooru and Meloader — historical project handoff
 
-**Reviewed 2026-11-24.** This is the current cross-repository handoff; earlier November 13–15 experiments remain documented in the dated validation pages.
+**Snapshot 2026-11-24; superseded by [MEBOORU.md](../../../MEBOORU.md).** The current [development workflow](../../../MEBOORU.md#development-workflow) uses one repository and milestone PRs. The old two-repository instructions, fixture counts and next actions below are historical evidence.
 
 ## Start with these documents
 

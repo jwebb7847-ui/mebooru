@@ -1,6 +1,6 @@
 # Mebooru / Meloader — historical handoff and operating context
 
-**Historical snapshot, not a live roadmap.** Begin with [MEBOORU.md](../../MEBOORU.md) for current decisions, chapter status and next action. Preserve this document for operational context and earlier acceptance evidence.
+**Historical snapshot, not a live roadmap.** Begin with [MEBOORU.md](../../MEBOORU.md) for current decisions, chapter status and next action. Preserve this document for operational context and earlier acceptance evidence. Current branch/PR/CI instructions are in [Development workflow](../../MEBOORU.md#development-workflow); the old per-change PR process and separate repository instructions are superseded.
 
 **Snapshot:** 2026-11-25, after visual closeout. **Mebooru working branch:** `mebooru-foundation`, feature merge `3715067d067417dabeec94c05f1b6bb90148f293` (PR #15). **Meloader working branch:** `main`, feature merge `10542e66537430d21cc295449103bb2832e0693a` (PR #25). Recheck live GitHub heads before editing; a snapshot is not a floating reference.
 

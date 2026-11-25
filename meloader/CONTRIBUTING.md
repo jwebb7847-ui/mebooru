@@ -1,6 +1,3 @@
 # Contributing
 
-See [monbooru's CONTRIBUTING](https://github.com/monbooru/monbooru/blob/main/CONTRIBUTING.md);
-it covers all the monbooru repos, including this one. 
-
-Open issues for downloading and site support here.
+This module is now part of Mebooru. Follow the root [development workflow](../MEBOORU.md#development-workflow) and open issues/PRs in the consolidated Mebooru repository targeting `mebooru-foundation`. The original Meloader repository is a frozen fallback. Upstream contributor guidance is retained in the root [CONTRIBUTING.md](../CONTRIBUTING.md) for historical reference.
