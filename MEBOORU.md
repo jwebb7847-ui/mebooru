@@ -1,6 +1,6 @@
 # Mebooru — project north star
 
-**Updated:** 2026-11-25. **Active milestone:** II.4 — unify build and verification.
+**Updated:** 2026-11-25. **Active milestone:** II.5 — reconcile shared infrastructure.
 **Authority:** this file is the single maintained source of truth for product direction, architectural decisions, chapter roadmap, current milestone and outstanding work. Update it at each accepted milestone. Other documents are historical evidence, technical references or runbooks, not independent roadmaps. Start here on every new project chat; verify live GitHub refs before editing.
 
 ## Product vision and approved boundaries
@@ -25,15 +25,15 @@ Status vocabulary: **Complete** = verified accepted work; **Active** = current m
 | II.1 — Repository reconnaissance | Complete (design review) | Inventory both exact trees, shared divergence, dependency versions, contracts, state and packaging. No new builds/tests run in this review. |
 | II.2 — Freeze the baseline | Complete | Preserve exact pre-consolidation refs in both repos, verify rollback branches/tags, retain known-good app and establish data backup plan. Do not start import until rollback references are confirmed. |
 | II.3 — Import Meloader | Complete | Non-squashed subtree or equivalent history-preserving merge into `meloader/` on a feature branch. Verify imported tree identity and original commits reachable. No functional source changes. |
-| II.4 — Unify build and verification | Active | One checkout builds both existing executables. Retain both Go modules and dependency versions, root CI covers both modules and paired smoke, race/vet, strict transfer and security scanning. Test fresh and copied existing profiles. |
-| II.5 — Reconcile shared infrastructure | Planned | Compare shared files individually; preserve stronger safeguards and tests. Decide common module/package layout only after II.4 parity. Avoid hidden dependency upgrades. |
+| II.4 — Unify build and verification | Complete | One checkout builds both existing executables. Retain both Go modules and dependency versions, root CI covers both modules and paired smoke, race/vet, strict transfer and security scanning. Test fresh and copied existing profiles. |
+| II.5 — Reconcile shared infrastructure | Active | Compare shared files individually; preserve stronger safeguards and tests. Decide common module/package layout only after II.4 parity. Avoid hidden dependency upgrades. |
 | II.6 — Formalize worker interface | Planned | Define library/worker operations, permissions, compatibility, lifecycle, failure recovery and private communication. Current HTTP contract is transitional; exact IPC/sandbox design requires review. |
 | III — Unify the experience | Planned | Native Mebooru Loader views and settings (remove embedded companion settings), internal service management, hybrid lifecycle, explicit offline mode, worker recovery, graceful Quit. No separate first-party plugin management for users. |
 | IV — Self-contained acquisition | Planned | Bundled gallery-dl, verified updates, compatibility probes, safe activation and rollback on supported platforms. |
 | V — Advanced acquisition | Planned | Deterministic recurring character/source queries, durable checkpoints, gallery selection, multi-source watches, pause/cancel/retry, ordinary direct-view downloads. |
 | VI — Product refinement | Planned | Remaining usability and compatibility inventory, final security, performance, platform packaging and release acceptance as appropriate for personal use. |
 
-**Next action:** complete II.4 existing-profile and bounded acquisition acceptance on a disposable baseline-created profile, then merge unified build PR #20. Before testing real data, complete a consistent data backup and isolate paths. Do not begin functional shared-package changes until II.4 acceptance. Do not combine import, module deduplication, UI redesign and storage changes in a single PR.
+**Next action:** II.5.1, extract byte-identical logging and API contracts into a common source module. Preserve independent application dependency graphs and all build paths; validate before proceeding. Before testing real data, complete a consistent data backup and isolate paths. Do not combine import, module deduplication, UI redesign and storage changes in a single PR.
 
 ## Chapter II — migration baseline and evidence
 
@@ -56,7 +56,7 @@ Both rollback branches were created and read back at the exact SHAs on November 
 
 ### II.3–II.4 implementation guardrails and acceptance
 
-II.3 completed November 25: [PR #19](https://github.com/jwebb7847-ui/mebooru/pull/19) merged at `57277c942ace82cdade7a5e35e4ccc23c4efcb9c`. Exact original parents of import `dc3e419cabd69064cfac01cefc674048c837e37d` and identical nested tree `ad65075c852dcff551073e323aed93bfa22f862f` independently verified; merge tree matches import. Four hosted native jobs passed; Apple Silicon hosted queued at merge, not green. User approved merge after successful six-item fresh-profile Mac acceptance of II.4 candidate `225b690a5a6f0e47c7706679177b1b57dd1a52bc` with unchanged application source. [PR #20](https://github.com/jwebb7847-ui/mebooru/pull/20) remains pending existing-profile and bounded acquisition acceptance; its four native jobs, race/vet, pinned strict transfer regression and Go CodeQL passed at that revision. Hosted Apple Silicon still queued. Runtime data has not been tested against real profiles. II.4 follow-up preserves the previously observed Meloader CodeQL language coverage (Actions, JavaScript/TypeScript, C/C++ as well as Go); fresh acceptance remains evidence for the unchanged application source, while modified workflow checks must rerun.
+II.3 completed November 25: [PR #19](https://github.com/jwebb7847-ui/mebooru/pull/19) merged at `57277c942ace82cdade7a5e35e4ccc23c4efcb9c`. Exact original parents of import `dc3e419cabd69064cfac01cefc674048c837e37d` and identical nested tree `ad65075c852dcff551073e323aed93bfa22f862f` independently verified; merge tree matches import. Four hosted native jobs passed; Apple Silicon hosted queued at merge, not green. User approved merge after successful six-item fresh-profile Mac acceptance of II.4 candidate `225b690a5a6f0e47c7706679177b1b57dd1a52bc` with unchanged application source. [PR #20](https://github.com/jwebb7847-ui/mebooru/pull/20) had four native jobs, race/vet, pinned strict transfer regression and Go CodeQL passed at that revision. Hosted Apple Silicon was queued at that revision. Runtime data has not been tested against real profiles. II.4 completed November 25: PR #20 merged at `d5c5b7352a6084b9150692f1d5bc4b98e979c0bd` (accepted head `182523e6795bdad84a3e545dee7cc178a61f310f`). Operator confirmed all 13 manual checks on unchanged Mac application/build source, including seven disposable existing-profile upgrade and bounded acquisition checks. Latest [native run](https://github.com/jwebb7847-ui/mebooru/actions/runs/45588147819) passed Linux x64/arm64, Windows, Intel Mac, both module race/vet and strict transfer. Hosted Apple Silicon queued at merge, explicitly not green; local Apple Silicon passed. [CodeQL](https://github.com/jwebb7847-ui/mebooru/actions/runs/45588147806) passed Go, Actions, JavaScript/TypeScript and C/C++. No real user data touched.
 
 Keep Mebooru at repo root and import Meloader as `meloader/` with its own module, assets and package paths. Do not overlay roots or squash away the imported history. Verify Git tree equality for imported source and reachability of both original commits; preserve rollback refs and accepted executable. Consolidate root CI explicitly: nested .github workflows do not execute automatically. Replace external companion checkout with nested path; adapt build scripts, cache keys, version stamps and root security scanning without lowering test coverage. Keep both binaries and current APIs; no user-data migration in the initial consolidation.
 
@@ -74,7 +74,17 @@ Proposed design to review, not yet committed UI or schema:
 - Apply the existing strict metadata-first blacklist and fail-closed transfer checks, preserve source ratings, taxonomy, aliases, provenance and user overrides. Never bypass source restrictions, rate limits or missing filter evidence.
 - Show progress, results (created/skipped/blacklisted/failed), pause/cancel, and resume/retry. Offline control stops network work and retains durable state; no internet requests merely because the gallery is open in offline mode.
 
+## II.5 — shared infrastructure substeps
+
+- II.5.1: common module foundation, logging and API contracts.
+- II.5.2: authentication tokens, pairing and session handling; preserve stricter validation.
+- II.5.3: durable filesystem operations and desktop integration; preserve safeguards from both copies.
+- II.5.4: shared web assets, templates and theme infrastructure.
+- II.5.5: remove redundant implementations and verify full build parity. Maintain two specialized processes; common source is compiled into each, not a third service. Validate standalone/legacy packaging paths or explicitly isolate them as historical, never silently break active builds.
+
 ## Additional outstanding work (track here, not in separate backlogs)
+
+- **Remaining branding:** operator screenshot November 25 shows `Paste a URL above, or send one from the Monsender extension.` in the Advanced queue empty state. Defer to the Chapter VI branding/UI pass (or Chapter III queue UI consolidation); Monsender is a separate extension name, so decide whether to remove the reference or retain a factual external integration label. No immediate change.
 
 - **Meta category:** source Meta labels are useful for search but overpopulate the sidebar. The November sample found 44 Derpibooru-backed Meta names (29 appearing on one file, five on two, ten on three or more) versus ten file-derived Meta names. User prefers **retaining** these tags. Manual workaround: drag Meta to the bottom in **Categories** (order persists per gallery). Discuss any future hide/collapse/low-use threshold before implementing; do not discard provenance.
 - **Gallery semantics:** media subfolders inside one gallery are not auto-created galleries. This was clarified as intended behavior, not a defect. Revisit only if the user explicitly chooses a folder-to-gallery workflow.
