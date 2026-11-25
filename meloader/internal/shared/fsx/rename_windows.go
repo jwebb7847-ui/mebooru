@@ -15,9 +15,13 @@ const (
 
 // An antivirus scanner or an indexer holding the target for a moment fails the rename.
 func rename(oldpath, newpath string) error {
+	return retryRename(func() error { return os.Rename(oldpath, newpath) })
+}
+
+func retryRename(operation func() error) error {
 	deadline := time.Now().Add(renameRetryFor)
 	for {
-		err := os.Rename(oldpath, newpath)
+		err := operation()
 		if !errors.Is(err, windows.ERROR_ACCESS_DENIED) && !errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
 			return err
 		}
