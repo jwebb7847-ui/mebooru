@@ -49,6 +49,8 @@ type Manager struct {
 	now func()time.Time
 
 	peer ManagedPeer
+	fence *WorkerFence
+	unconfirmedStart bool
 	attached bool
 	invalid bool
 	active int
@@ -63,6 +65,7 @@ type Manager struct {
 // independently use the Coordinator while the manager owns it.
 func NewManager(lifetime context.Context,lock *ProfileLock,policy *Coordinator,start Starter,opts LifecycleOptions)(*Manager,error){
 	if lifetime==nil||lock==nil||policy==nil||start==nil{return nil,errors.New("incomplete managed lifecycle configuration")}
+	if err:=lock.checkRecovery();err!=nil{return nil,err}
 	if opts.IdleAfter<=0{opts.IdleAfter=2*time.Minute}
 	if opts.RestartDelay<=0{opts.RestartDelay=2*time.Second}
 	return &Manager{lifetime:lifetime,lock:lock,policy:policy,start:start,opts:opts,now:time.Now},nil
@@ -108,20 +111,35 @@ func(m *Manager)ensure(ctx context.Context)error{
 	if m.peer!=nil{
 		if !m.peerLost(){return nil}
 		if m.active>0{return ErrActiveLeases}
-		if err:=m.stopPeer(ctx);err!=nil{return err}
 		m.retryAfter=m.now().Add(m.opts.RestartDelay)
+		if err:=m.stopPeer(ctx);err!=nil{return err}
 	}
+	// A stopped peer may still have an unpersisted clean marker. Retry
+	// only the same proof; never spawn another worker until it is saved.
+	if m.fence!=nil{if err:=m.stopPeer(ctx);err!=nil{return err}}
 	if m.now().Before(m.retryAfter){return ErrRestartBackoff}
+	fence,err:=m.lock.BeginWorker()
+	if err!=nil{return err}
+	m.fence=fence
 	peer,err:=m.start(ctx,m.lifetime)
 	m.peer=peer
 	if err!=nil||peer==nil{
-		if err==nil{err=errors.New("starter returned no worker")}
+		if err==nil{
+			// A nil peer with no error violates the starter contract. Do not
+			// infer that no child exists, or release the ownership fence.
+			m.unconfirmedStart=true
+			err=errors.New("starter returned no worker")
+		}
 		m.retryAfter=m.now().Add(m.opts.RestartDelay)
 		if peer!=nil{
 			m.invalid=true
 			cleanup,cancel:=context.WithTimeout(context.WithoutCancel(ctx),cleanupTimeout)
 			defer cancel()
 			err=errors.Join(err,m.stopPeer(cleanup))
+		}else if !m.unconfirmedStart{
+			// Starter explicitly guarantees nil peer on error means no
+			// owned processes remain. Preserve the marker on sync failure.
+			err=errors.Join(err,m.finishFence())
 		}
 		return err
 	}
@@ -181,6 +199,10 @@ func(m *Manager)SetOffline(ctx context.Context,offline bool)error{
 	if err:=m.available(ctx);err!=nil{return err}
 	// A startup failure with unconfirmed cleanup may own a peer not yet
 	// attached to policy. Never grant online until that peer is released.
+	if m.unconfirmedStart{
+		if !offline{return ErrWorkerRecoveryRequired}
+		return errors.Join(m.policy.SetOffline(ctx,true),ErrWorkerRecoveryRequired)
+	}
 	if !offline&&m.peer!=nil&&m.peerLost(){return ErrPeerUnusable}
 	err:=m.policy.SetOffline(ctx,offline)
 	if err!=nil&&m.peer!=nil{m.invalid=true}
@@ -196,7 +218,8 @@ func(m *Manager)EffectiveOnline()bool{return m.policy.EffectiveOnline()}
 
 // Caller holds mu. Failure retains ownership and prevents replacement.
 func(m *Manager)stopPeer(ctx context.Context)error{
-	if m.peer==nil{return nil}
+	if m.unconfirmedStart{return ErrWorkerRecoveryRequired}
+	if m.peer==nil{return m.finishFence()}
 	m.invalid=true
 	var err error
 	if m.attached{err=m.policy.Release(ctx)}else{err=m.peer.Stop(ctx)}
@@ -204,6 +227,15 @@ func(m *Manager)stopPeer(ctx context.Context)error{
 	m.peer=nil
 	m.attached=false
 	m.invalid=false
+	return m.finishFence()
+}
+
+// finishFence may run only after the starter or Stop contract established
+// that no owned processes remain. A failed sync retains the capability.
+func(m *Manager)finishFence()error{
+	if m.fence==nil{return nil}
+	if err:=m.fence.ConfirmStopped();err!=nil{return err}
+	m.fence=nil
 	return nil
 }
 

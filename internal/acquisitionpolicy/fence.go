@@ -64,6 +64,25 @@ func (l *ProfileLock) writeFence(state byte) error {
 	return l.file.Sync()
 }
 
+// checkRecovery is used before constructing a manager. A dirty reopened
+// profile must not report successful policy/drain or start local work via
+// a new managed peer until previous ownership has been reconciled.
+func (l *ProfileLock) checkRecovery() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil || l.activeFence != nil {
+		return ErrWorkerRecoveryRequired
+	}
+	clean, err := l.readFence()
+	if err != nil {
+		return err
+	}
+	if !clean {
+		return ErrWorkerRecoveryRequired
+	}
+	return nil
+}
+
 // BeginWorker refuses both a second in-process launch and a recovered
 // profile with unconfirmed old ownership. The caller may start a child
 // only after this method succeeds. All worker launch paths must opt into
