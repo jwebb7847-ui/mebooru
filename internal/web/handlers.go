@@ -13,11 +13,11 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/gallery"
 	meta "github.com/monbooru/monbooru/internal/metadata"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/session"
 )
 
 func setFlashHeader(w http.ResponseWriter, text, kind string, extras map[string]any) {

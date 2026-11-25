@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/apitoken"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/apitoken"
-	"github.com/monbooru/monloader/internal/shared/session"
 	"github.com/monbooru/monloader/internal/shared/webui"
 	"golang.org/x/crypto/bcrypt"
 )

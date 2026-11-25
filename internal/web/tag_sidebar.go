@@ -12,9 +12,9 @@ import (
 	"strings"
 
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/session"
 	"github.com/monbooru/monbooru/internal/tags"
 )
 

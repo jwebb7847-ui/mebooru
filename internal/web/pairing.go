@@ -8,17 +8,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/apitoken"
+	"github.com/jwebb7847-ui/mebooru/shared/bundlepair"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/pairing"
+	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monbooru/internal/api"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/monloader"
 	"github.com/monbooru/monbooru/internal/peer"
 	"github.com/monbooru/monbooru/internal/plugins"
-	"github.com/monbooru/monbooru/internal/shared/apitoken"
-	"github.com/monbooru/monbooru/internal/shared/bundlepair"
-	"github.com/monbooru/monbooru/internal/shared/pairing"
-	"github.com/monbooru/monbooru/internal/shared/session"
 )
 
 // The pairing routes sit outside the api auth wrapper, since the operator's

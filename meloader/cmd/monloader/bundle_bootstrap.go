@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/jwebb7847-ui/mebooru/shared/apitoken"
+	"github.com/jwebb7847-ui/mebooru/shared/bundlepair"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/apitoken"
-	"github.com/monbooru/monloader/internal/shared/bundlepair"
 )
 
 const bundledLibraryURL = "http://127.0.0.1:" + contract.PortMonbooru

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/monbooru/monbooru/internal/shared/session"
+	"github.com/jwebb7847-ui/mebooru/shared/session"
 )
 
 type backContext struct {

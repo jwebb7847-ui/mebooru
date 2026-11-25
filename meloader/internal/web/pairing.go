@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/apitoken"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/pairing"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/apitoken"
-	"github.com/monbooru/monloader/internal/shared/pairing"
 )
 
 type outboundPair struct {

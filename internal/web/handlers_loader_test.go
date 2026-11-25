@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jwebb7847-ui/mebooru/shared/apitoken"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/monloader"
 	"github.com/monbooru/monbooru/internal/peer"
-	"github.com/monbooru/monbooru/internal/shared/apitoken"
 )
 
 func TestLoaderResultLinksOnlyToRecordedGallery(t *testing.T) {

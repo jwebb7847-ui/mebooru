@@ -4,10 +4,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jwebb7847-ui/mebooru/shared/apitoken"
+	"github.com/jwebb7847-ui/mebooru/shared/bundlepair"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/apitoken"
-	"github.com/monbooru/monloader/internal/shared/bundlepair"
 )
 
 func freshBundleConfig() *config.Config {
