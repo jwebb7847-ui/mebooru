@@ -33,7 +33,7 @@ Status vocabulary: **Complete** = verified accepted work; **Active** = current m
 | V — Advanced acquisition | Planned | Deterministic recurring character/source queries, durable checkpoints, gallery selection, multi-source watches, pause/cancel/retry, ordinary direct-view downloads. |
 | VI — Product refinement | Planned | Remaining usability and compatibility inventory, final security, performance, platform packaging and release acceptance as appropriate for personal use. |
 
-**Next action:** II.5.1, extract byte-identical logging and API contracts into a common source module. Preserve independent application dependency graphs and all build paths; validate before proceeding. Before testing real data, complete a consistent data backup and isolate paths. Do not combine import, module deduplication, UI redesign and storage changes in a single PR.
+**Next action:** II.5.2, reconcile authentication tokens, pairing (including bundled bootstrap), and sessions. Preserve existing authorization and persisted credentials; test stricter redirect validation, refusal and revocation paths. Keep separate module dependency graphs and verify all build paths. Before testing real data, complete a consistent data backup and isolate paths. Do not combine import, module deduplication, UI redesign and storage changes in a single PR.
 
 ## Chapter II — migration baseline and evidence
 
@@ -76,8 +76,8 @@ Proposed design to review, not yet committed UI or schema:
 
 ## II.5 — shared infrastructure substeps
 
-- II.5.1 (candidate): extract identical `logx` and `contract` files to `shared/` (stdlib-only Go module). Both engines use explicit local module replacements; no existing dependency version changes. Keep application names and API vocabulary. Root native/race/vet verification covers the shared module; root Docker and worker Docker/Flatpak source contexts adapted. No acceptance claimed until CI and Mac tests pass. Legacy standalone release/AUR workflow retained as historical fallback; unified release packaging remains Chapter VI.
-- II.5.2: authentication tokens, pairing and session handling; preserve stricter validation.
+- II.5.1 (complete): [PR #23](https://github.com/jwebb7847-ui/mebooru/pull/23), merged `90711d6fa2017b69eede98658c8888342156c598`, tested `c4b3b53eda7ea8e4d4bf4c55224284a86c6bfbb8`. Four byte-identical source files extracted into the stdlib-only `shared/` module; 241 import references migrated, 507 net lines removed, original go.sum files and external dependency graphs unchanged. All seven Mac acceptance items passed on disposable II.4 profile, including new acquisition and metadata. TERM to the library released both listener ports; detached terminal was not a lifecycle failure. [Native CI](https://github.com/jwebb7847-ui/mebooru/actions/runs/45608129259): four native platforms, all module race/vet, strict transfer regression and both Docker build stages passed; hosted Apple Silicon queued at merge, local Mac accepted separately. [CodeQL](https://github.com/jwebb7847-ui/mebooru/actions/runs/45608129308): four language checks passed. Full container runtime/Flatpak and legacy installer acceptance remain outstanding. No trust, schema, or protocol changes.
+- II.5.2 (next): authentication tokens, pairing and session handling; preserve stricter validation, maintain persisted token hashes and scope semantics, and add direct regression tests for security-sensitive shared code.
 - II.5.3: durable filesystem operations and desktop integration; preserve safeguards from both copies.
 - II.5.4: shared web assets, templates and theme infrastructure.
 - II.5.5: remove redundant implementations and verify full build parity. Maintain two specialized processes; common source is compiled into each, not a third service. Validate standalone/legacy packaging paths or explicitly isolate them as historical, never silently break active builds.
