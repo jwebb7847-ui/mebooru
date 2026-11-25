@@ -27,9 +27,10 @@ type ManagedPeer interface {
 // request/startup context. A nil peer on error MUST mean there is no
 // owned child left to clean up. If cleanup is unconfirmed, return the
 // peer and error together so replacement remains blocked.
-// generation identifies the already-persisted worker fence. The production
-// starter must give it only to its trusted cleanup custodian.
-type Starter func(startup,lifetime context.Context,generation string)(ManagedPeer,error)
+// The starter may prepare only a dormant custodian before fence.Arm.
+// It must arm successfully before activating a worker. The custodian
+// independently checks the armed generation before actual launch.
+type Starter func(startup,lifetime context.Context,fence *WorkerFence)(ManagedPeer,error)
 
 type LifecycleOptions struct {
 	IdleAfter time.Duration
@@ -120,10 +121,11 @@ func(m *Manager)ensure(ctx context.Context)error{
 	// only the same proof; never spawn another worker until it is saved.
 	if m.fence!=nil{if err:=m.stopPeer(ctx);err!=nil{return err}}
 	if m.now().Before(m.retryAfter){return ErrRestartBackoff}
-	fence,err:=m.lock.BeginWorker()
+	fence,err:=m.lock.PrepareCustody()
 	if err!=nil{return err}
 	m.fence=fence
-	peer,err:=m.start(ctx,m.lifetime,fence.Generation())
+	peer,err:=m.start(ctx,m.lifetime,fence)
+	if peer!=nil&&!fence.isArmed(){err=errors.Join(err,ErrCustodyActivation)}
 	m.peer=peer
 	if err!=nil||peer==nil{
 		if err==nil{

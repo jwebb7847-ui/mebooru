@@ -62,17 +62,22 @@ func TestCustodyProcessFixture(t *testing.T){
 	dir:=os.Getenv("MEBOORU_TEST_CUSTODY_DIR")
 	gen:=os.Getenv("MEBOORU_TEST_CUSTODY_GENERATION")
 	switch mode{
-	case "library", "library-contained":
+	case "library", "library-contained", "library-pending":
 		l,err:=LockProfile(dir)
 		if err!=nil{os.Exit(2)}
-		f,err:=l.BeginWorker()
+		f,err:=l.PrepareCustody()
 		if err!=nil{os.Exit(3)}
+		if mode=="library-pending"{
+			_,_=os.Stdout.WriteString("pending-ready\n")
+			var b [1]byte;_,_=os.Stdin.Read(b[:]);runtime.KeepAlive(f);runtime.KeepAlive(l);os.Exit(7)
+		}
 		childMode:="custodian"
 		if mode=="library-contained"{childMode="custodian-contained"}
 		cmd:=custodyFixtureCommand(childMode,dir,f.Generation())
 		life,err:=cmd.StdinPipe()
 		if err!=nil{os.Exit(4)}
 		if err:=cmd.Start();err!=nil{os.Exit(4)}
+		if err:=f.Arm();err!=nil{os.Exit(5)}
 		if _,err:=life.Write([]byte{custodyActivate});err!=nil{os.Exit(5)}
 		var b [1]byte
 		_,_=os.Stdin.Read(b[:])
@@ -239,4 +244,53 @@ func(c *delayedPlatformFixture)Stop(ctx context.Context)error{
 		}
 	}
 	return c.CustodyChild.Stop(ctx)
+}
+
+// Actual process crash before any custodian starts must not leave an
+// armed marker. No worker could have been activated.
+func TestPendingCustodyRecoversBeforeCustodianStartup(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
+	defer cancel()
+	dir:=t.TempDir()
+	cmd:=custodyFixtureCommand("library-pending",dir,"")
+	in,err:=cmd.StdinPipe()
+	if err!=nil{t.Fatal(err)}
+	defer in.Close()
+	out,err:=cmd.StdoutPipe()
+	if err!=nil{t.Fatal(err)}
+	if err:=cmd.Start();err!=nil{t.Fatal(err)}
+	waited:=false
+	defer func(){if !waited{_ = cmd.Process.Kill();_ = cmd.Wait()}}()
+	readCustodyLine(t,ctx,bufio.NewReader(out),"pending-ready")
+	if err:=cmd.Process.Kill();err!=nil{t.Fatal(err)}
+	_ = cmd.Wait()
+	waited=true
+	l,err:=LockProfile(dir)
+	if err!=nil{t.Fatal(err)}
+	defer l.Close()
+	f,err:=l.PrepareCustody()
+	if err!=nil{t.Fatal(err)}
+	if err:=f.Arm();err!=nil{t.Fatal(err)}
+	if err:=f.ConfirmStopped();err!=nil{t.Fatal(err)}
+}
+
+func TestCustodianRefusesActivationWithoutDurableArm(t *testing.T){
+	dir:=t.TempDir()
+	l,err:=LockProfile(dir)
+	if err!=nil{t.Fatal(err)}
+	defer l.Close()
+	f,err:=l.PrepareCustody()
+	if err!=nil{t.Fatal(err)}
+	r,w,err:=os.Pipe()
+	if err!=nil{t.Fatal(err)}
+	defer r.Close()
+	defer w.Close()
+	if _,err:=w.Write([]byte{custodyActivate});err!=nil{t.Fatal(err)}
+	err=RunCustodian(context.Background(),dir,f.Generation(),r,func(context.Context)(CustodyChild,error){
+		t.Fatal("pending custodian activated")
+		return nil,errors.New("unexpected launch")
+	})
+	if !errors.Is(err,ErrCustodyActivation){t.Fatalf("activation: %v",err)}
+	if _,err:=os.Stat(filepath.Join(dir,cleanupReceiptFile));!errors.Is(err,os.ErrNotExist){t.Fatalf("unexpected receipt: %v",err)}
+	if err:=f.ConfirmStopped();err!=nil{t.Fatal(err)}
 }

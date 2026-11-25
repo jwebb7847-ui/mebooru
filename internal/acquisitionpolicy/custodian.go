@@ -32,23 +32,24 @@ type CustodyStarter func(context.Context) (CustodyChild,error)
 
 // Read beyond the Windows lock byte using a separate descriptor. The
 // disk record is never itself authority to activate.
-func verifyCustodyFence(root *os.Root,generation string) error {
-	if !validGeneration(generation){return ErrWorkerRecoveryRequired}
+func verifyCustodyFence(root *os.Root,generation string,states ...byte) (byte,error) {
+	if !validGeneration(generation){return 0,ErrWorkerRecoveryRequired}
 	info,err:=root.Lstat(lockFile)
-	if err!=nil{return err}
-	if !info.Mode().IsRegular() || info.Size()!=int64(3+generationSize){return ErrWorkerRecoveryRequired}
+	if err!=nil{return 0,err}
+	if !info.Mode().IsRegular() || info.Size()!=int64(3+generationSize){return 0,ErrWorkerRecoveryRequired}
 	f,err:=root.Open(lockFile)
-	if err!=nil{return err}
+	if err!=nil{return 0,err}
 	defer f.Close()
 	opened,err:=f.Stat()
-	if err!=nil{return err}
-	if !opened.Mode().IsRegular() || !os.SameFile(info,opened){return ErrWorkerRecoveryRequired}
+	if err!=nil{return 0,err}
+	if !opened.Mode().IsRegular() || !os.SameFile(info,opened){return 0,ErrWorkerRecoveryRequired}
 	var buf [2+generationSize+1]byte
 	n,err:=f.ReadAt(buf[:],1)
-	if err!=nil&&!errors.Is(err,io.EOF){return err}
-	if n!=2+generationSize || buf[0]!=custodyFenceVersion || buf[1]!=fenceDirty ||
-		hex.EncodeToString(buf[2:n])!=generation{return ErrWorkerRecoveryRequired}
-	return nil
+	if err!=nil&&!errors.Is(err,io.EOF){return 0,err}
+	if n!=2+generationSize || buf[0]!=custodyFenceVersion ||
+		hex.EncodeToString(buf[2:n])!=generation{return 0,ErrWorkerRecoveryRequired}
+	for _,state:=range states{if buf[1]==state{return state,nil}}
+	return 0,ErrWorkerRecoveryRequired
 }
 
 // RunCustodian runs in a transient trusted process outside its worker
@@ -66,10 +67,12 @@ func RunCustodian(ctx context.Context,profileDir,generation string,parentLife *o
 	root,err:=os.OpenRoot(profileDir)
 	if err!=nil{return err}
 	defer root.Close()
-	if err:=verifyCustodyFence(root,generation);err!=nil{return err}
+	if _,err:=verifyCustodyFence(root,generation,fencePending,fenceDirty);err!=nil{return err}
 	// Publication is the final mutation. Never reopen the profile path.
 	finish:=func()error{
-		if err:=verifyCustodyFence(root,generation);err!=nil{return err}
+		state,err:=verifyCustodyFence(root,generation,fencePending,fenceDirty)
+		if err!=nil{return err}
+		if state==fencePending{return nil} // no worker could have started
 		return recordCleanupReceipt(root,generation)
 	}
 	lifetime,cancel:=context.WithCancel(ctx)
@@ -88,6 +91,9 @@ func RunCustodian(ctx context.Context,profileDir,generation string,parentLife *o
 		// No launch attempted; this channel cannot be activated again.
 		return errors.Join(ErrCustodyActivation,err,lifetime.Err(),finish())
 	}
+	// Even a received activation byte is insufficient without the exact
+	// durable armed generation. A stale or premature arm launches nothing.
+	if _,err:=verifyCustodyFence(root,generation,fenceDirty);err!=nil{return errors.Join(ErrCustodyActivation,err)}
 	go func(){var b [1]byte;_,_=parentLife.Read(b[:]);cancel()}()
 	startup,stopStartup:=context.WithTimeout(lifetime,custodyStartupTimeout)
 	child,startErr:=start(startup)

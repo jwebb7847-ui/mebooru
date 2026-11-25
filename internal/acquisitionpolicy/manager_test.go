@@ -46,7 +46,8 @@ func TestLifecycleDemandIdleAndFreshSession(t *testing.T){
 	ctx:=context.Background()
 	var log []string
 	var peers []*lifecyclePeer
-	m,now,_:=newTestManager(t,func(_, _ context.Context,_ string)(ManagedPeer,error){
+	m,now,_:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
 		p:=&lifecyclePeer{fakePeer:fakePeer{log:&log}}
 		peers=append(peers,p)
 		return p,nil
@@ -78,7 +79,8 @@ func TestLifecycleCrashBackoffAndFailedCleanup(t *testing.T){
 	ctx:=context.Background()
 	var log []string
 	var peers []*lifecyclePeer
-	m,now,dir:=newTestManager(t,func(_, _ context.Context,_ string)(ManagedPeer,error){
+	m,now,dir:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
 		p:=&lifecyclePeer{fakePeer:fakePeer{log:&log}}
 		peers=append(peers,p)
 		return p,nil
@@ -108,7 +110,8 @@ func TestLifecycleCrashRestartsOnlyOnDemandAfterCooldown(t *testing.T){
 	ctx:=context.Background()
 	var log []string
 	var peers []*lifecyclePeer
-	m,now,_:=newTestManager(t,func(_, _ context.Context,_ string)(ManagedPeer,error){
+	m,now,_:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
 		p:=&lifecyclePeer{fakePeer:fakePeer{log:&log}}
 		peers=append(peers,p)
 		return p,nil
@@ -130,7 +133,8 @@ func TestLifecycleStartupFailureRetainsUnconfirmedPeer(t *testing.T){
 	stopErr:=errors.New("cleanup failed")
 	p:=&lifecyclePeer{fakePeer:fakePeer{log:&log,stopErr:stopErr}}
 	starts:=0
-	m,_,_:=newTestManager(t,func(_, _ context.Context,_ string)(ManagedPeer,error){
+	m,_,_:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
 		starts++
 		return p,startErr
 	})

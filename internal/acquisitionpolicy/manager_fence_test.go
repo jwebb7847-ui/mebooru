@@ -18,7 +18,8 @@ func TestManagerRefusesUnrecoveredProfile(t *testing.T) {
 	store := openTestStore(t,dir)
 	policy, err := New(store)
 	if err != nil { t.Fatal(err) }
-	m,err := NewManager(context.Background(),l,policy,func(_, _ context.Context,_ string)(ManagedPeer,error){
+	m,err := NewManager(context.Background(),l,policy,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
 		t.Fatal("unexpected launch")
 		return nil,errors.New("unexpected launch")
 	},LifecycleOptions{})
@@ -32,11 +33,14 @@ func TestManagerFencesBeforeStartupAndClearsAfterConfirmedStop(t *testing.T) {
 	var dir string
 	var m *Manager
 	starts := 0
-	manager,_,profile := newTestManager(t,func(_, _ context.Context,generation string)(ManagedPeer,error){
+	manager,_,profile := newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
 		starts++
 		// Inspect the already-owned descriptor, not a separate Windows handle.
 		record,err := m.lock.readFence()
-		if err != nil || record.version!=custodyFenceVersion || record.state!=fenceDirty || record.generationID()!=generation { t.Fatalf("not fenced before launch: %v %v",record,err) }
+		if err != nil || record.version!=custodyFenceVersion || record.state!=fencePending || record.generationID()!=f.Generation() { t.Fatalf("not pending before custody: %v %v",record,err) }
+		if err:=f.Arm();err!=nil{return nil,err}
+		record,err=m.lock.readFence()
+		if err!=nil||record.state!=fenceDirty||record.generationID()!=f.Generation(){t.Fatalf("not armed before launch: %v %v",record,err)}
 		return p,nil
 	})
 	m=manager
@@ -57,9 +61,20 @@ func TestManagerFencesBeforeStartupAndClearsAfterConfirmedStop(t *testing.T) {
 func TestManagerClearsNoChildStartupFailure(t *testing.T){
 	ctx:=context.Background()
 	startErr:=errors.New("verified no child")
-	m,now,_:=newTestManager(t,func(_, _ context.Context,_ string)(ManagedPeer,error){return nil,startErr})
+	m,now,_:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}return nil,startErr})
 	if _,err:=m.Acquire(ctx);!errors.Is(err,startErr){t.Fatal(err)}
 	if m.fence!=nil{t.Fatal("no-child failure retained fence")}
 	*now=now.Add(2*time.Second)
 	if _,err:=m.Acquire(ctx);!errors.Is(err,startErr){t.Fatal(err)}
+}
+
+func TestManagerRefusesPeerReturnedWithoutArm(t *testing.T){
+	ctx:=context.Background()
+	var log []string
+	p:=&lifecyclePeer{fakePeer:fakePeer{log:&log}}
+	m,_,_:=newTestManager(t,func(_, _ context.Context,_ *WorkerFence)(ManagedPeer,error){return p,nil})
+	if _,err:=m.Acquire(ctx);!errors.Is(err,ErrCustodyActivation){t.Fatalf("unarmed peer: %v",err)}
+	if m.EffectiveOnline(){t.Fatal("unarmed peer authorized")}
+	select{case <-p.Done():default:t.Fatal("unarmed peer not stopped")}
 }
