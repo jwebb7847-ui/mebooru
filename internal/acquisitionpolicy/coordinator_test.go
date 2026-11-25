@@ -21,11 +21,16 @@ func (s *fakeStore) Save(offline bool)error{
 	return nil
 }
 type fakePeer struct{
+	done chan struct{}
 	log *[]string
 	applyErr error
 	stopErr error
 	beforeApply func(bool)
 	beforeStop func(context.Context)
+}
+func(p *fakePeer)Done() <-chan struct{} {
+	if p.done==nil{p.done=make(chan struct{})}
+	return p.done
 }
 func(p *fakePeer)ApplyOffline(_ context.Context,offline bool)error{
 	if p.beforeApply!=nil{p.beforeApply(offline)}
@@ -94,6 +99,9 @@ func TestCoordinatorFailedCleanupRetainsOwnership(t *testing.T){
 	if err:=c.SetOffline(ctx,false);!errors.Is(err,p.applyErr)||!errors.Is(err,p.stopErr){t.Fatalf("failure: %v",err)}
 	if c.EffectiveOnline(){t.Fatal("failed apply opened admission")}
 	if err:=c.Attach(ctx,&fakePeer{log:&log});!errors.Is(err,ErrPeerAttached){t.Fatalf("second peer: %v",err)}
+	p.applyErr=nil
+	if err:=c.SetOffline(ctx,false);!errors.Is(err,ErrPeerUnusable){t.Fatalf("poisoned peer reauthorized: %v",err)}
+	if c.EffectiveOnline(){t.Fatal("poisoned peer admitted work")}
 	p.stopErr=nil
 	if err:=c.Release(ctx);err!=nil{t.Fatal(err)}
 	if err:=c.Attach(ctx,&fakePeer{log:&log});err!=nil{t.Fatal(err)}
@@ -108,4 +116,36 @@ func TestCoordinatorMalformedRecordAttachesOffline(t *testing.T){
 	if err:=c.Attach(context.Background(),&fakePeer{log:&log});err!=nil{t.Fatal(err)}
 	if c.EffectiveOnline(){t.Fatal("malformed record enabled network")}
 	checkLog(t,log,"apply offline")
+}
+
+
+func TestCoordinatorPeerLossClosesAdmission(t *testing.T){
+	ctx:=context.Background()
+	var log []string
+	store:=&fakeStore{offline:false,log:&log}
+	c,_:=newCoordinator(store)
+	p:=&fakePeer{log:&log}
+	if err:=c.Attach(ctx,p);err!=nil{t.Fatal(err)}
+	if !c.EffectiveOnline(){t.Fatal("not online before peer loss")}
+	close(p.done)
+	if c.EffectiveOnline(){t.Fatal("dead session retains online admission")}
+	if err:=c.SetOffline(ctx,false);!errors.Is(err,ErrPeerUnusable){t.Fatalf("stale grant: %v",err)}
+	checkLog(t,log,"apply online")
+	if err:=c.Release(ctx);err!=nil{t.Fatal(err)}
+	if err:=c.Attach(ctx,&fakePeer{log:&log});err!=nil{t.Fatal(err)}
+	if !c.EffectiveOnline(){t.Fatal("fresh verified session not authorized")}
+}
+
+func TestCoordinatorCanceledOnlineAcknowledgementStopsPeer(t *testing.T){
+	ctx,cancel:=context.WithCancel(context.Background())
+	defer cancel()
+	var log []string
+	store:=&fakeStore{offline:true,log:&log}
+	c,_:=newCoordinator(store)
+	p:=&fakePeer{log:&log}
+	if err:=c.Attach(ctx,p);err!=nil{t.Fatal(err)}
+	p.beforeApply=func(offline bool){if !offline{cancel()}}
+	if err:=c.SetOffline(ctx,false);!errors.Is(err,context.Canceled){t.Fatalf("canceled grant: %v",err)}
+	if c.EffectiveOnline(){t.Fatal("canceled grant admitted work")}
+	checkLog(t,log,"apply offline","save online","apply online","stop")
 }
