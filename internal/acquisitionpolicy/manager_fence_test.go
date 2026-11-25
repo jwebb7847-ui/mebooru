@@ -62,7 +62,8 @@ func TestManagerClearsNoChildStartupFailure(t *testing.T){
 	ctx:=context.Background()
 	startErr:=errors.New("verified no child")
 	m,now,_:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
-		if err:=f.Arm();err!=nil{return nil,err}return nil,startErr})
+		if err:=f.Arm();err!=nil{return nil,err}
+		return nil,startErr})
 	if _,err:=m.Acquire(ctx);!errors.Is(err,startErr){t.Fatal(err)}
 	if m.fence!=nil{t.Fatal("no-child failure retained fence")}
 	*now=now.Add(2*time.Second)
