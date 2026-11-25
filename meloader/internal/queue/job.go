@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/outcome"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 type JobStatus string

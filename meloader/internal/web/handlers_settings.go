@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/gdl"
 	"github.com/monbooru/monloader/internal/kwdict"
@@ -22,7 +23,6 @@ import (
 	"github.com/monbooru/monloader/internal/monbooru"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/pipeline"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 func (s *Server) settingsScreen(w http.ResponseWriter, r *http.Request) {

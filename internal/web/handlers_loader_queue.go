@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/monloader"
 	"github.com/monbooru/monbooru/internal/peer"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 const loaderQueueLimit = 20

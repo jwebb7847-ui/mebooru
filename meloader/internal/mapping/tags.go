@@ -7,7 +7,7 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/monbooru/monloader/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 // A comma is part of a name on space-joined sites (hello,_happy_world!), so it

@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/contrib"
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/ptr"
 	"github.com/monbooru/monloader/internal/queue"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 // Per range, and it caps the rows answered, not the walk: a substring query

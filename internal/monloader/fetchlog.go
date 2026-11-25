@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/monbooru/monbooru/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 type FetchEntry struct {

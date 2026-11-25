@@ -26,6 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/api"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/db"
@@ -40,9 +42,7 @@ import (
 	"github.com/monbooru/monbooru/internal/registry"
 	"github.com/monbooru/monbooru/internal/schedule"
 	"github.com/monbooru/monbooru/internal/search"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 	"github.com/monbooru/monbooru/internal/shared/desktop"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 	"github.com/monbooru/monbooru/internal/shared/session"
 	"github.com/monbooru/monbooru/internal/shared/webui"
 	"github.com/monbooru/monbooru/internal/tagger"

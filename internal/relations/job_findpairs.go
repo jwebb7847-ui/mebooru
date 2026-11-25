@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 var IncrementalProbeDistance atomic.Int32

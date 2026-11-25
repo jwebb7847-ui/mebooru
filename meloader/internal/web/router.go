@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/api"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/gdl"
@@ -25,9 +27,7 @@ import (
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/ptr"
 	"github.com/monbooru/monloader/internal/queue"
-	"github.com/monbooru/monloader/internal/shared/contract"
 	"github.com/monbooru/monloader/internal/shared/desktop"
-	"github.com/monbooru/monloader/internal/shared/logx"
 	"github.com/monbooru/monloader/internal/shared/pairing"
 	"github.com/monbooru/monloader/internal/shared/session"
 	"github.com/monbooru/monloader/internal/shared/webui"

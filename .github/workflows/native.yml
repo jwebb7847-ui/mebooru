@@ -82,6 +82,11 @@ jobs:
           cache-dependency-path: |
             go.sum
             meloader/go.sum
+      - name: Shared module race and vet
+        working-directory: shared
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
       - name: Mebooru race and vet
         run: |
           go test -race -timeout 30m ./...
@@ -103,3 +108,22 @@ jobs:
           MELOADER_STRICT_TEST_GDL="$venv/bin/gallery-dl" \
             go test -race -count=1 -timeout=3m -v \
               -run '^TestStrictBlacklistGalleryDLMediaBoundary$' ./internal/pipeline
+
+  container-build:
+    name: Container build stage (${{ matrix.app }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: library
+            file: docker/Dockerfile
+          - app: acquisition
+            file: meloader/docker/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compile container build stage without publishing
+        run: docker build --target build -f '${{ matrix.file }}' .

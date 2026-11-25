@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/counts"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/lookup"
@@ -19,7 +20,6 @@ import (
 	"github.com/monbooru/monbooru/internal/models"
 	"github.com/monbooru/monbooru/internal/relations"
 	"github.com/monbooru/monbooru/internal/searchkw"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 	"github.com/monbooru/monbooru/internal/tags"
 	"github.com/monbooru/monbooru/internal/upgrade"
 )
@@ -823,8 +823,8 @@ var filterBuilders = map[string]func(*whereBuilder, FilterExpr) string{
 		}
 		return "1=0"
 	},
-	"lookup":     (*whereBuilder).buildLookupFilter,
-	"upgrade":    (*whereBuilder).buildUpgradeFilter,
+	"lookup":  (*whereBuilder).buildLookupFilter,
+	"upgrade": (*whereBuilder).buildUpgradeFilter,
 }
 
 func comp(sqlTemplate string, parseVal func(string) (any, bool)) func(*whereBuilder, FilterExpr) string {

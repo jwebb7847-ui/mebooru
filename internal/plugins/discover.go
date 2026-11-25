@@ -10,7 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/monbooru/monbooru/internal/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 )
 
 // Contract moves on any change a plugin built against the old one would

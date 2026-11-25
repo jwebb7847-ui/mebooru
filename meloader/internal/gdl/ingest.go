@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/monbooru/monloader/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 func Ingestable(path string) bool {

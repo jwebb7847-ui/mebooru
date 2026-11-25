@@ -6,7 +6,7 @@ import (
 	"github.com/monbooru/monloader/internal/contrib"
 	"github.com/monbooru/monloader/internal/outcome"
 
-	"github.com/monbooru/monloader/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 // The error payload's code values: clients branch on them and the OpenAPI

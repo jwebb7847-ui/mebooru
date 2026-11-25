@@ -22,7 +22,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/monbooru/monbooru/internal/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 )
 
 type ipcMethod uint8

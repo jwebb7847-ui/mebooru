@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/monbooru/monloader/internal/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 )
 
 // Adapter declares ownership of one gallery-dl source category.

@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/ptr"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 const (

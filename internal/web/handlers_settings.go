@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/models"
@@ -18,7 +19,6 @@ import (
 	"github.com/monbooru/monbooru/internal/schedule"
 	"github.com/monbooru/monbooru/internal/shared/apitoken"
 	"github.com/monbooru/monbooru/internal/shared/desktop"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 	"github.com/monbooru/monbooru/internal/shared/session"
 	"github.com/monbooru/monbooru/internal/shared/webui"
 	"github.com/monbooru/monbooru/internal/tagger"

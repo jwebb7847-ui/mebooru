@@ -1,8 +1,16 @@
 FROM golang:1.27.4-trixie AS build
-WORKDIR /src
-COPY go.mod go.sum ./
+# Build from the Mebooru repository root.
+WORKDIR /src/meloader
+ENV GOWORK=off
+COPY meloader/go.mod meloader/go.sum ./
+COPY shared/go.mod /src/shared/go.mod
 RUN go mod download
-COPY . .
+COPY shared /src/shared
+COPY meloader/cmd ./cmd
+COPY meloader/internal ./internal
+COPY meloader/web ./web
+COPY meloader/packaging/release-env.sh ./packaging/release-env.sh
+COPY meloader/VERSION.md meloader/REPOSITORY.md meloader/DOC.md ./
 RUN . ./packaging/release-env.sh && \
     CGO_ENABLED=0 go build \
       -ldflags="-s -w $LDFLAGS -X '$MOD.Package=docker'" \

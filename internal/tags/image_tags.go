@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 func (s *Service) AddTagToImage(imageID, tagID int64, isAuto bool, confidence *float64) error {

@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/contrib"
 	"github.com/monbooru/monloader/internal/ptr"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 func (h *Handler) contribGate(w http.ResponseWriter) bool {

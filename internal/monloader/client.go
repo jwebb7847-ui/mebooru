@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/peer"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 // App is the peer's name in pairing records and error text.

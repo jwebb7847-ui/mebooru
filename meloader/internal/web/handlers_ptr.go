@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/api"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/contrib"
 	"github.com/monbooru/monloader/internal/ptr"
-	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 type ptrEngine interface {

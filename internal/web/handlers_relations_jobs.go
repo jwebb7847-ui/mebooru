@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/models"
 	"github.com/monbooru/monbooru/internal/relations"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 func (s *Server) findRelationPairsPost(w http.ResponseWriter, r *http.Request) {

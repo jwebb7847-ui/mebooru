@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/jobs"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // others are galleries the job writes besides the active one.

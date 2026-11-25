@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/monbooru/monbooru/internal/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 )
 
 type DownloadEntry struct {

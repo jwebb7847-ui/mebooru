@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/galleryio"
 	"github.com/monbooru/monbooru/internal/library"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 func (s *Server) switchGallery(name string) error { return s.set.Switch(name) }

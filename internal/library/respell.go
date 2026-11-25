@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/gallery"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // respellRelativeRows makes absolute the paths stored while the root was

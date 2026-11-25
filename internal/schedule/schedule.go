@@ -14,6 +14,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/gallery"
@@ -22,7 +23,6 @@ import (
 	"github.com/monbooru/monbooru/internal/models"
 	"github.com/monbooru/monbooru/internal/relations"
 	"github.com/monbooru/monbooru/internal/shared/fsx"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 	"github.com/monbooru/monbooru/internal/tagger"
 )
 

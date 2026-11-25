@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/monbooru/monbooru/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 func (h *Handler) listGalleries(w http.ResponseWriter, r *http.Request) {

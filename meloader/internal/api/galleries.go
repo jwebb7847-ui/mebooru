@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 func (h *Handler) galleryRename(w http.ResponseWriter, r *http.Request) {

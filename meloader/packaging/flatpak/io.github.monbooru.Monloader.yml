@@ -35,22 +35,25 @@ modules:
     build-commands:
       - |
         set -eu
+        cd meloader
+        export GOWORK=off
         export GOTOOLCHAIN=go$(awk '/^go /{print $2; exit}' go.mod)
         . ./packaging/release-env.sh
         CGO_ENABLED=0 go build \
           -ldflags="-s -w $LDFLAGS -X '$MOD.Package=flatpak'" \
           -o monloader ./cmd/monloader
         sh packaging/metainfo.sh io.github.monbooru.Monloader.desktop > metainfo.xml
-      - install -Dm755 monloader /app/bin/monloader
-      - install -Dm755 packaging/flatpak/monloader-run /app/bin/monloader-run
-      - install -Dm644 packaging/flatpak/io.github.monbooru.Monloader.desktop /app/share/applications/io.github.monbooru.Monloader.desktop
-      - install -Dm644 metainfo.xml /app/share/metainfo/io.github.monbooru.Monloader.metainfo.xml
-      - install -Dm644 packaging/icons/monloader-64.png /app/share/icons/hicolor/64x64/apps/io.github.monbooru.Monloader.png
-      - install -Dm644 packaging/icons/monloader-128.png /app/share/icons/hicolor/128x128/apps/io.github.monbooru.Monloader.png
-      - install -Dm644 packaging/icons/monloader-256.png /app/share/icons/hicolor/256x256/apps/io.github.monbooru.Monloader.png
+      - install -Dm755 meloader/monloader /app/bin/monloader
+      - install -Dm755 meloader/packaging/flatpak/monloader-run /app/bin/monloader-run
+      - install -Dm644 meloader/packaging/flatpak/io.github.monbooru.Monloader.desktop /app/share/applications/io.github.monbooru.Monloader.desktop
+      - install -Dm644 meloader/metainfo.xml /app/share/metainfo/io.github.monbooru.Monloader.metainfo.xml
+      - install -Dm644 meloader/packaging/icons/monloader-64.png /app/share/icons/hicolor/64x64/apps/io.github.monbooru.Monloader.png
+      - install -Dm644 meloader/packaging/icons/monloader-128.png /app/share/icons/hicolor/128x128/apps/io.github.monbooru.Monloader.png
+      - install -Dm644 meloader/packaging/icons/monloader-256.png /app/share/icons/hicolor/256x256/apps/io.github.monbooru.Monloader.png
     sources:
       - type: dir
         path: ../..
+        dest: meloader
         skip:
           - .git
           - monloader
@@ -58,3 +61,6 @@ modules:
           - stage
           - tools
           - test-results
+      - type: dir
+        path: ../../../shared
+        dest: shared

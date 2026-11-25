@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // Indexed is what a row recorded of the bytes at one of its paths; a zero

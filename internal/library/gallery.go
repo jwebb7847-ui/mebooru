@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/counts"
 	"github.com/monbooru/monbooru/internal/db"
@@ -23,7 +24,6 @@ import (
 	"github.com/monbooru/monbooru/internal/models"
 	"github.com/monbooru/monbooru/internal/relations"
 	"github.com/monbooru/monbooru/internal/search"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 	"github.com/monbooru/monbooru/internal/tags"
 )
 

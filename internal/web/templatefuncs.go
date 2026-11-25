@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/models"
 	"github.com/monbooru/monbooru/internal/peer"
 	"github.com/monbooru/monbooru/internal/search"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 	"github.com/monbooru/monbooru/internal/shared/webui"
 	"github.com/monbooru/monbooru/internal/tags"
 	"github.com/monbooru/monbooru/internal/upgrade"

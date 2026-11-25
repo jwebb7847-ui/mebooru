@@ -3,7 +3,7 @@ package relations
 import (
 	"database/sql"
 
-	"github.com/monbooru/monbooru/internal/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 )
 
 const DefaultSessionOrder = "smallest_distance_first"

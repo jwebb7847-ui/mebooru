@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/registry"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 const (

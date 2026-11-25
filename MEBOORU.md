@@ -76,7 +76,7 @@ Proposed design to review, not yet committed UI or schema:
 
 ## II.5 — shared infrastructure substeps
 
-- II.5.1: common module foundation, logging and API contracts.
+- II.5.1 (candidate): extract identical `logx` and `contract` files to `shared/` (stdlib-only Go module). Both engines use explicit local module replacements; no existing dependency version changes. Keep application names and API vocabulary. Root native/race/vet verification covers the shared module; root Docker and worker Docker/Flatpak source contexts adapted. No acceptance claimed until CI and Mac tests pass. Legacy standalone release/AUR workflow retained as historical fallback; unified release packaging remains Chapter VI.
 - II.5.2: authentication tokens, pairing and session handling; preserve stricter validation.
 - II.5.3: durable filesystem operations and desktop integration; preserve safeguards from both copies.
 - II.5.4: shared web assets, templates and theme infrastructure.

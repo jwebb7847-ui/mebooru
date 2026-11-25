@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/gdl"
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/monbooru"
 	"github.com/monbooru/monloader/internal/shared/fsx"
-	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 const searchLimit = 12

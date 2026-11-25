@@ -1,0 +1,15 @@
+*
+!shared
+!meloader
+meloader/*
+!meloader/go.mod
+!meloader/go.sum
+!meloader/cmd
+!meloader/internal
+!meloader/web
+!meloader/packaging
+meloader/packaging/*
+!meloader/packaging/release-env.sh
+!meloader/VERSION.md
+!meloader/REPOSITORY.md
+!meloader/DOC.md

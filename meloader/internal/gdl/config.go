@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/shared/fsx"
-	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 type SiteLists struct {

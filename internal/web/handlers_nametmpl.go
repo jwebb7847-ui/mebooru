@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/search"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // The click-for-more is bounded too: a {md5} template hashes each file

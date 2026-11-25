@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/library"
 	"github.com/monbooru/monbooru/internal/lookup"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // Comfortably past a real backlog, so a busy queue is never mistaken for

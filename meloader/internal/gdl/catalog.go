@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 type catalogData struct {

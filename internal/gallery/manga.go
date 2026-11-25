@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 const mangaPageCacheTTL = 5 * time.Minute

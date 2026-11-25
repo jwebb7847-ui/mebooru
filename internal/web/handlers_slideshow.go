@@ -5,10 +5,10 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/contract"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 func (s *Server) slideshowItems(w http.ResponseWriter, r *http.Request) {

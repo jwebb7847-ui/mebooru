@@ -11,13 +11,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/library"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 	"github.com/monbooru/monbooru/internal/shared/fsx"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 func (s *Server) generateMangaCollection(w http.ResponseWriter, r *http.Request) {
