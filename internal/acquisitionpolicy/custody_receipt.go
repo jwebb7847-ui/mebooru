@@ -36,6 +36,11 @@ func RecordCustodyStopped(profileDir, generation string) error {
 	root,err := os.OpenRoot(profileDir)
 	if err != nil { return err }
 	defer root.Close()
+	return recordCleanupReceipt(root,generation)
+}
+
+func recordCleanupReceipt(root *os.Root,generation string) error {
+	if !validGeneration(generation){return ErrInvalidCleanupReceipt}
 	info,err := root.Lstat(cleanupReceiptFile)
 	if err != nil && !errors.Is(err,os.ErrNotExist) { return err }
 	if err == nil && !info.Mode().IsRegular() { return ErrInvalidCleanupReceipt }
