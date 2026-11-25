@@ -64,9 +64,9 @@ func pairID() string {
 }
 
 func (s *Store[T, P]) sweepLocked() {
-	cutoff := time.Now().Add(-pendingTTL)
+	now := time.Now()
 	maps.DeleteFunc(s.m, func(_ string, p P) bool {
-		return p.request().CreatedAt.Before(cutoff)
+		return !now.Before(p.request().ExpiresAt())
 	})
 }
 
@@ -134,10 +134,26 @@ func (s *Store[T, P]) ListApproved() []T {
 	return out
 }
 
+// liveLocked enforces the same deadline on direct access as on a sweep.
+// Call only with mu held. A claim acquired before expiry may finish its
+// already-started mint; expiry does not revoke previously issued tokens.
+func (s *Store[T, P]) liveLocked(id string) (P, bool) {
+	p, ok := s.m[id]
+	if ok && !time.Now().Before(p.request().ExpiresAt()) {
+		delete(s.m, id)
+		ok = false
+	}
+	if !ok {
+		var zero P
+		return zero, false
+	}
+	return p, true
+}
+
 func (s *Store[T, P]) Get(id string) (T, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if p, ok := s.m[id]; ok {
+	if p, ok := s.liveLocked(id); ok {
 		return *p, true
 	}
 	var zero T
@@ -148,7 +164,7 @@ func (s *Store[T, P]) Get(id string) (T, bool) {
 func (s *Store[T, P]) SetState(id string, st State) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, ok := s.m[id]
+	p, ok := s.liveLocked(id)
 	if !ok || p.request().State != Pending {
 		return false
 	}
@@ -160,7 +176,7 @@ func (s *Store[T, P]) SetState(id string, st State) bool {
 func (s *Store[T, P]) Claim(id string) (T, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, ok := s.m[id]
+	p, ok := s.liveLocked(id)
 	if !ok || p.request().State != Approved || p.request().Claimed {
 		var zero T
 		return zero, false
@@ -173,7 +189,7 @@ func (s *Store[T, P]) Claim(id string) (T, bool) {
 func (s *Store[T, P]) Unclaim(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if p, ok := s.m[id]; ok {
+	if p, ok := s.liveLocked(id); ok {
 		p.request().Claimed = false
 	}
 }
