@@ -103,8 +103,9 @@ func TestUnixGuardParentAndWorkerLoss(t *testing.T){
 }
 
 func TestUnixGuardAbruptParentExit(t *testing.T){
-	ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
+	ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second)
 	defer cancel()
+	unrelated:=unrelatedWitness(t,ctx)
 	cmd:=fixtureCommand(t,"TestUnixGuardFixture","parent")
 	control,err:=cmd.StdinPipe()
 	if err!=nil{t.Fatal(err)}
@@ -123,4 +124,5 @@ func TestUnixGuardAbruptParentExit(t *testing.T){
 	err=cmd.Wait()
 	waited=true
 	if exit,ok:=err.(*exec.ExitError);!ok||exit.ExitCode()!=6{t.Fatalf("unexpected parent exit: %v",err)}
+	unrelated()
 }

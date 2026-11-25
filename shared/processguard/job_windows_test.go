@@ -65,6 +65,7 @@ func TestWindowsJobWorkerLossAndContainment(t *testing.T){
 	defer func(){if !waited{_ = cmd.Process.Kill();_ = cmd.Wait()}}()
 	_ = w.Close()
 	if err:=job.Assign(cmd.Process);err!=nil{t.Fatal(err)}
+	if err:=job.Assign(cmd.Process);err==nil{t.Fatal("job accepted duplicate assignment")}
 	if _,err:=gate.Write([]byte{1});err!=nil{t.Fatal(err)}
 	_ = gate.Close()
 	reader:=witnessReady(t,ctx,r)
@@ -79,6 +80,7 @@ func TestWindowsJobWorkerLossAndContainment(t *testing.T){
 func TestWindowsJobOwnerLoss(t *testing.T){
 	ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second)
 	defer cancel()
+	unrelated:=unrelatedWitness(t,ctx)
 	cmd:=fixtureCommand(t,"TestWindowsJobFixture","parent")
 	gate,err:=cmd.StdinPipe()
 	if err!=nil{t.Fatal(err)}
@@ -97,4 +99,5 @@ func TestWindowsJobOwnerLoss(t *testing.T){
 	_ = cmd.Wait()
 	waited=true
 	witnessEOF(t,ctx,reader)
+	unrelated()
 }

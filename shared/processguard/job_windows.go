@@ -20,6 +20,8 @@ import (
 type Job struct {
 	mu sync.Mutex
 	handle windows.Handle
+	assigned bool
+	sealed bool
 }
 
 func NewJob() (*Job,error) {
@@ -43,11 +45,12 @@ func NewJob() (*Job,error) {
 func (j *Job) Assign(p *os.Process) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if j.handle==0{return errors.New("managed job already closed")}
+	if j.handle==0||j.sealed||j.assigned{return errors.New("managed job unavailable for assignment")}
 	var assignErr error
 	err:=p.WithHandle(func(h uintptr){
 		assignErr=windows.AssignProcessToJobObject(j.handle,windows.Handle(h))
 	})
+	if err==nil&&assignErr==nil{j.assigned=true}
 	return errors.Join(err,assignErr)
 }
 
@@ -72,6 +75,7 @@ func(j *Job)TerminateAndWait(ctx context.Context)error{
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if j.handle==0{return errors.New("managed job already closed")}
+	j.sealed=true
 	if err:=windows.TerminateJobObject(j.handle,1);err!=nil{return err}
 	ticker:=time.NewTicker(20*time.Millisecond)
 	defer ticker.Stop()

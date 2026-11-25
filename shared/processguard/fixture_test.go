@@ -64,3 +64,50 @@ func TestGuardGrandchild(t *testing.T){
 	time.Sleep(30*time.Second)
 	os.Exit(8)
 }
+
+
+func TestUnrelatedGuardFixture(t *testing.T){
+	if os.Getenv("MEBOORU_GUARD_FIXTURE")!="unrelated"{return}
+	_,_=os.Stdout.WriteString("ready\n")
+	var one [1]byte
+	if n,err:=os.Stdin.Read(one[:]);n!=1||err!=nil||one[0]!=1{os.Exit(3)}
+	_,_=os.Stdout.WriteString("survived\n")
+	os.Exit(0)
+}
+
+// The returned closure proves an unrelated process still accepts work
+// after the tested containment boundary terminates its own descendants.
+func unrelatedWitness(t *testing.T,ctx context.Context)func(){
+	t.Helper()
+	cmd:=fixtureCommand(t,"TestUnrelatedGuardFixture","unrelated")
+	in,err:=cmd.StdinPipe()
+	if err!=nil{t.Fatal(err)}
+	r,w,err:=os.Pipe()
+	if err!=nil{_ = in.Close();t.Fatal(err)}
+	cmd.Stdout=w
+	if err:=cmd.Start();err!=nil{_ = in.Close();_ = r.Close();_ = w.Close();t.Fatal(err)}
+	_ = w.Close()
+	waited:=false
+	t.Cleanup(func(){
+		_ = in.Close()
+		_ = r.Close()
+		if !waited{_ = cmd.Process.Kill();_ = cmd.Wait()}
+	})
+	reader:=witnessReady(t,ctx,r)
+	return func(){
+		t.Helper()
+		if _,err:=in.Write([]byte{1});err!=nil{t.Fatal("unrelated process stopped: ",err)}
+		_ = in.Close()
+		ch:=make(chan string,1)
+		go func(){line,_:=reader.ReadString('\n');ch<-line}()
+		select{
+		case line:=<-ch:
+			if strings.TrimSpace(line)!="survived"{t.Fatalf("unrelated witness: %q",line)}
+		case <-ctx.Done():t.Fatal(ctx.Err())
+		}
+		witnessEOF(t,ctx,reader)
+		err:=cmd.Wait()
+		waited=true
+		if err!=nil{t.Fatalf("unrelated process failed: %v",err)}
+	}
+}
