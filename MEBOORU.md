@@ -33,18 +33,18 @@ Status vocabulary: **Complete** = verified accepted work; **Active** = current m
 | V — Advanced acquisition | Planned | Deterministic recurring character/source queries, durable checkpoints, gallery selection, multi-source watches, pause/cancel/retry, ordinary direct-view downloads. |
 | VI — Product refinement | Planned | Remaining usability and compatibility inventory, final security, performance, platform packaging and release acceptance as appropriate for personal use. |
 
-**Next action:** finish II.2; then II.3 and II.4 as separately reviewable gates. Do not combine import, module deduplication, UI redesign and storage changes in a single PR.
+**Next action:** preserve the accepted Mac app to complete II.2, then import the exact tagged Meloader source and ancestry into an isolated feature branch for II.3. II.4 remains a separate build/CI gate. Do not combine import, module deduplication, UI redesign and storage changes in a single PR.
 
 ## Chapter II — migration baseline and evidence
 
 Working branches: Mebooru `mebooru-foundation` (not upstream-derived `main`); Meloader `main`. Baseline snapshots frozen before the documentation update:
 
-| Repository | Exact rollback commit | Verified rollback branch | Planned tag |
+| Repository | Exact rollback commit | Verified rollback branch | Verified tag |
 | --- | --- | --- | --- |
-| Mebooru | `ef7d0ad0ab235c7d4662353e6fec87e47cd83866` | [rollback/pre-consolidation](https://github.com/jwebb7847-ui/mebooru/tree/rollback/pre-consolidation) | `baseline/pre-consolidation` (not created yet) |
-| Meloader | `10542e66537430d21cc295449103bb2832e0693a` | [rollback/pre-consolidation](https://github.com/jwebb7847-ui/meloader/tree/rollback/pre-consolidation) | `baseline/pre-consolidation` (not created yet) |
+| Mebooru | `ef7d0ad0ab235c7d4662353e6fec87e47cd83866` | [rollback/pre-consolidation](https://github.com/jwebb7847-ui/mebooru/tree/rollback/pre-consolidation) | `baseline/pre-consolidation` (verified) |
+| Meloader | `10542e66537430d21cc295449103bb2832e0693a` | [rollback/pre-consolidation](https://github.com/jwebb7847-ui/meloader/tree/rollback/pre-consolidation) | `baseline/pre-consolidation` (verified) |
 
-Both rollback branches were created and read back at the exact SHAs on November 25. Branches/tags are not intrinsically immutable; do not move or delete these refs. The GitHub connector cannot create tags; create them using authenticated Git and verify exact refs. Keep both original repositories and the known-good app through migration; no requirement to retain redundant repos forever after acceptance. Optional local Git bundles provide independent backup. The app and its user data are not backed up by Git.
+Both rollback branches were created and read back at the exact SHAs on November 25. Branches/tags are not intrinsically immutable; do not move or delete these refs. The operator created both lightweight tags through authenticated Git on November 25; independent GitHub readback confirms both tags point to the exact commits above. Local mirror backups and self-contained Git bundles were created and verified by the operator: Mebooru 6,393 objects / 40 refs; Meloader 3,210 objects / 57 refs. Stored under the project backups/pre-consolidation.5M193N directory. Keep them private; do not mirror-push these backups. Known-good executable preservation remains to be confirmed. Before any real-profile test, make a consistent runtime data backup and isolate copied media paths. No runtime data has been copied or modified in this milestone. Keep both original repositories and the known-good app through migration; no requirement to retain redundant repos forever after acceptance. The verified local Git bundles provide independent backup. The app and its user data are not backed up by Git.
 
 ### Reconnaissance findings (II.1)
 
