@@ -79,6 +79,7 @@ jobs:
         run: |
           go build -a ./...
           (cd meloader && go build -a ./...)
+          (cd shared && go build -a ./...)
       - uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4
         with:
           category: '/language:go'
