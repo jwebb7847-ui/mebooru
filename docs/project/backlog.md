@@ -6,22 +6,24 @@
 
 [Mebooru #13](https://github.com/jwebb7847-ui/mebooru/pull/13) and [Meloader #24](https://github.com/jwebb7847-ui/meloader/pull/24) merged; see [pairing design and closeout](bundled-pairing.md) and [Mac acceptance](../validation/mac-acceptance-2026-11-24.md). Final hosted Apple Silicon runner was outstanding at merge, accepted explicitly by the operator based on successful local Mac testing and the runner-allocation failures. This is not a green hosted CI result.
 
-## Priority 1 — unified product architecture
+## Next major milestone — unified product architecture
 
 [Approved direction](unified-product-direction.md): consolidate repositories with history/licensing preserved; keep a separate acquisition worker, one UI and one application lifecycle, hybrid on-demand/scheduled operation while app is open, explicit offline switch. Plan migration and compatibility gates before implementation.
 
 - Replace the nested Meloader Settings page with ordinary Mebooru settings. First-party acquisition should not appear as an external plugin users can accidentally remove; provide clear enable/disable and recovery controls. Preserve explicit external plugin approval.
 - Bundle a self-contained gallery-dl runtime with managed updates, validated dependencies, strict pre-download verification and rollback; no manual Python/Homebrew requirement for ordinary use.
-- Expose deterministic archival watches for selected booru sources and character queries: discover new posts, filter before download, retain source tags and provenance, route to chosen gallery. No agentic behavior or requirement to operate while app is closed. Investigate reuse of existing Watches.
+- Expose deterministic recurring acquisition watches for selected booru sources and character queries: discover new posts, filter before download, retain source tags and provenance, route to chosen gallery as ordinary directly viewable media. No separate archive feature or compression. No agentic behavior or requirement to operate while app is closed. Investigate reuse of existing Watches.
 - Add prominent Quit Mebooru control that drains work and stops owned services, without shutting down external services indiscriminately.
 
-## Priority 2 — finish visual rebranding and cleanup
+## Immediate cleanup before architecture review — visual rebranding
 
 - Replace legacy Monbooru white-haired mascot on first-run `/setup` (default theme uses `themeMascots(theme)["hello"]`, with rendering in `web/templates/setup.html`). Respect custom themes and fallbacks.
 - Replace legacy top-right/sync/working mascot (job status uses `themeMascots(... )["sparkle-head"]`; inspect job status templates). Avoid functionality changes.
 - Remove kaomoji/emoticons from empty-results and degraded screens: `web/templates/partials/thumbnail_grid.html` contains `(≖_≖ )` and `(￣～￣;)`. Keep useful explanatory copy and recovery hints.
 - Align the virtual `Unrated` count with other Rating counts when the setting is hidden. The virtual row has a form/button rather than a conventional tag link in `web/templates/partials/sidebar_content.html`. Functionality and counts passed; this is cosmetic.
 - Review other user-visible old `mon` prefix branding **without renaming compatibility-critical binaries, Go packages, API/TOML keys, or persisted paths merely for appearance**. A focused inventory and cross-platform regression should accompany a future rebrand.
+
+Candidate cleanup: reuse the existing Mebooru mark for setup and working displays; suppress default upstream mascot art elsewhere, remove decorative text faces in both applications, and align the Unrated row. Preserve explicit custom/legacy themes and functional status symbols. Mac visual acceptance pending.
 
 These were deliberately deferred from [PR #11](https://github.com/jwebb7847-ui/mebooru/pull/11). Confirm expected visuals before making a design change.
 

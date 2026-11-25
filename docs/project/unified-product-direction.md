@@ -11,13 +11,13 @@
 - Bundle a self-contained gallery-dl runtime with managed updates. No required manual Homebrew/Python install for ordinary users. Exact runtime packaging, licensing, verification, version compatibility, update transport and rollback remain design decisions.
 - Provide a prominent Quit Mebooru action; graceful application shutdown stops owned workers and preserves queue state.
 
-## Advanced archival acquisition
+## Advanced recurring acquisition
 
-The owner wants advanced users to configure selected boorus and collect newly available images related to a selected character (or analogous source query), excluding blacklisted items, with source tags retained for archival use. This is a deterministic rule-based workflow, not an agent. It should be usable while Mebooru is open and need not run after the app is closed.
+The owner wants advanced users to configure selected boorus and collect newly available images related to a selected character (or analogous source query), excluding blacklisted items, with source tags retained. Ordinary downloading of directly viewable media to the chosen local gallery is the preservation mechanism. Do not introduce a separate archival mode, compression/container format, or a separate collection of inaccessible files for this purpose. Existing ordinary download deduplication history (sometimes called a download archive) is bookkeeping, not media compression. This is a deterministic rule-based workflow, not an agent. It should be usable while Mebooru is open and need not run after the app is closed.
 
 Proposed design to review, not yet committed UI or schema:
-- Reuse existing Watches and queue/archive mechanisms where possible; user selects sources, source-specific query or verified character mapping, destination gallery, and manual/scheduled run.
-- Maintain a durable per-source checkpoint/seen-post history; handle pagination, retries, overlap, missed intervals, source changes, duplicate and alias policies without silently losing eligible posts. First-run historical backfill versus start-from-now is a user choice to discuss.
+- Reuse existing Watches, queue and download-history mechanisms where possible; user selects sources, source-specific query or verified character mapping, destination gallery, and manual/scheduled run.
+- Maintain a durable per-source checkpoint/seen-post history; handle pagination, retries, overlap, missed intervals, source changes, duplicate and alias policies without silently losing eligible posts. Historical matches use the ordinary download queue; recurring watches discover new eligible posts. Exact checkpoint and initial-run behavior remain design decisions.
 - Apply the existing strict metadata-first blacklist and fail-closed transfer checks, preserve source ratings, taxonomy, aliases, provenance and user overrides. Never bypass source restrictions, rate limits or missing filter evidence.
 - Show progress, results (created/skipped/blacklisted/failed), pause/cancel, and resume/retry. Offline control stops network work and retains durable state; no internet requests merely because the gallery is open in offline mode.
 

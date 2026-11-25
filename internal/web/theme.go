@@ -52,8 +52,9 @@ func themeMascots(e webui.Theme) map[string]string {
 		switch {
 		case e.Mascots[face] != "":
 			out[face] = "/theme.mascot/" + face
-		case builtinArt[e.Name] != "":
-			out[face] = builtinArt[e.Name] + "mascot-" + face + ".png"
+		case builtinArt[e.Name] != "" && (face == "hello" || face == "sparkle-head"):
+			// Reuse the approved Mebooru mark rather than the upstream mascot.
+			out[face] = "/static/logo.png"
 		}
 	}
 	return out

@@ -27,7 +27,7 @@ jobs:
         with:
           repository: jwebb7847-ui/meloader
           # Update this revision after verifying a new Meloader counterpart.
-          ref: 3913424a9ae66a5dc539bfd96c48fdc8fdf5e1e9
+          ref: bd7b6b4addb831ff3711ad6a046abe3b010d94a7
           path: meloader-src
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
