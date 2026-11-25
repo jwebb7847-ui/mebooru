@@ -11,7 +11,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/monbooru/monbooru/internal/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 )
 
 func RunWorkerServer(ctx context.Context, addr string) error {

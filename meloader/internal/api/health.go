@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/monbooru/monloader/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 // APIVersion moves on any change to /api/v1 a paired peer would trip

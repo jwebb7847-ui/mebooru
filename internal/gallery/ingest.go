@@ -16,10 +16,10 @@ import (
 
 	_ "golang.org/x/image/webp"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/metadata"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // FolderPath returns "" for the root and outside it; the value is stored,

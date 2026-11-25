@@ -1,6 +1,8 @@
 FROM golang:1.27.4-trixie AS build
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY shared/go.mod ./shared/go.mod
+ENV GOWORK=off
 RUN go mod download
 COPY . .
 # CGO_ENABLED=1 is required for the tagger build tag: the onnxruntime_go bindings use cgo.

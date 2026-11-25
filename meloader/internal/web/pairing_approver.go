@@ -5,11 +5,11 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/api"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/shared/apitoken"
-	"github.com/monbooru/monloader/internal/shared/contract"
-	"github.com/monbooru/monloader/internal/shared/logx"
 	"github.com/monbooru/monloader/internal/shared/pairing"
 	"github.com/monbooru/monloader/internal/shared/session"
 	"github.com/monbooru/monloader/internal/shared/webui"

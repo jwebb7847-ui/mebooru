@@ -13,13 +13,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/gdl"
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/monbooru"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/queue"
-	"github.com/monbooru/monloader/internal/shared/contract"
 	"github.com/monbooru/monloader/internal/taxonomy"
 )
 

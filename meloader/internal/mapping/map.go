@@ -12,10 +12,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/kwdict"
-	"github.com/monbooru/monloader/internal/shared/contract"
-	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 // Via lands in monbooru's images.origin and each pushed tag's tagger_name.

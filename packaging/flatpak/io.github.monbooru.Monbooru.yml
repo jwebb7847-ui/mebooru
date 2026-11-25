@@ -55,6 +55,7 @@ modules:
     build-commands:
       - |
         set -eu
+        export GOWORK=off
         export GOTOOLCHAIN=go$(awk '/^go /{print $2; exit}' go.mod)
         . ./packaging/release-env.sh
         CGO_ENABLED=1 go build -tags tagger \
@@ -73,6 +74,7 @@ modules:
         path: ../..
         skip:
           - .git
+          - meloader
           - monbooru
           - perf
           - dist

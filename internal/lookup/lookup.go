@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/monbooru/monbooru/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 // Backends lists the history rows a lookup on monloader's backend covers.

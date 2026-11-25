@@ -3,7 +3,7 @@ package queue
 import (
 	"time"
 
-	"github.com/monbooru/monloader/internal/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 )
 
 const lookupBudgetCounter = "scheduled_lookup"

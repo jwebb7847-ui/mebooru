@@ -4,6 +4,8 @@
 FROM golang:1.27.4-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY shared/go.mod ./shared/go.mod
+ENV GOWORK=off
 RUN go mod download
 COPY . .
 RUN . ./packaging/release-env.sh && \

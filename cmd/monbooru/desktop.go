@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/shared/desktop"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 	internalweb "github.com/monbooru/monbooru/internal/web"
 )
 

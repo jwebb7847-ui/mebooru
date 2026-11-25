@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/shared/desktop"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 type Launch struct {

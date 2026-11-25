@@ -8,12 +8,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/jobs"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/contract"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 const collectionsPerPage = 60

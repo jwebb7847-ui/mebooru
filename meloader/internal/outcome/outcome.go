@@ -5,7 +5,7 @@ package outcome
 import (
 	"strings"
 
-	"github.com/monbooru/monloader/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 type Outcome string

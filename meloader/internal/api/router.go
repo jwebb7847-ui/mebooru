@@ -4,13 +4,13 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/contrib"
 	"github.com/monbooru/monloader/internal/gdl"
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/ptr"
 	"github.com/monbooru/monloader/internal/queue"
-	"github.com/monbooru/monloader/internal/shared/contract"
 	"github.com/monbooru/monloader/internal/sitestate"
 )
 

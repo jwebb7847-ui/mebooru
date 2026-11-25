@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"net/http"
 
-	"github.com/monbooru/monbooru/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/tags"
 )
 

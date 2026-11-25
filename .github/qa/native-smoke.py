@@ -70,6 +70,8 @@ def verify_process(binary, app, legacy, page, api, directory):
             process.wait(timeout=10)
 
 
+subprocess.run(["go", "test", "./..."], cwd=workspace / "shared", env=env, check=True)
+
 with tempfile.TemporaryDirectory() as scratch:
     for app, legacy, repo, page, api in apps:
         directory = Path(scratch) / app

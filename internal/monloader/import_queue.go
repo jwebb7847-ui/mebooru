@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/monbooru/monbooru/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 const importQueuePath = "/api/v1/queue"

@@ -12,7 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/monbooru/monloader/internal/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 )
 
 // Store is the queue's disk mirror, read only at boot; the in-memory

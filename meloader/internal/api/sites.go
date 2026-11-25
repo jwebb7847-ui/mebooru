@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/gdl"
 	"github.com/monbooru/monloader/internal/mapping"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 type SiteEntry struct {

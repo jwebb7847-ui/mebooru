@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/monbooru/monloader/internal/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 // ContribStore's staged rows are operator intent, not a rebuildable

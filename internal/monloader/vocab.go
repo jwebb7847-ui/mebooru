@@ -1,8 +1,8 @@
 package monloader
 
 import (
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/lookup"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 // Fetch states a detail page's fetch status passes through: pending and

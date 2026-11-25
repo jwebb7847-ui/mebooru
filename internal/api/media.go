@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/library"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 func (h *Handler) serveImageFile(w http.ResponseWriter, r *http.Request) {

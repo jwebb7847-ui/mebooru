@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/gdl"
 	"github.com/monbooru/monloader/internal/kwdict"
@@ -28,7 +29,6 @@ import (
 	"github.com/monbooru/monloader/internal/ptr"
 	"github.com/monbooru/monloader/internal/queue"
 	"github.com/monbooru/monloader/internal/shared/fsx"
-	"github.com/monbooru/monloader/internal/shared/logx"
 	"github.com/monbooru/monloader/internal/similarity"
 	"github.com/monbooru/monloader/internal/sitestate"
 	"github.com/monbooru/monloader/internal/taxonomy"

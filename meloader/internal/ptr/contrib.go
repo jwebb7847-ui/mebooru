@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 var ErrAccountExists = errors.New("a personal account key is already set")

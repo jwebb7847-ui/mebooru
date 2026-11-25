@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/logx"
 	"github.com/monbooru/monloader/internal/shared/webui"
 	webFS "github.com/monbooru/monloader/web"
 )

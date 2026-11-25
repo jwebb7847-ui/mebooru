@@ -11,10 +11,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/jobs"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // A read request holds the read lock for its whole handler and loads the

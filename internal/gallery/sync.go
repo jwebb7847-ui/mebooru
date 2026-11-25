@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/lookup"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 type SyncResult struct {

@@ -20,8 +20,8 @@ import (
 	"github.com/monbooru/monloader/internal/shared/desktop"
 	"github.com/monbooru/monloader/internal/shared/fsx"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 // A managed install only shadows the bundled binary, the fallback a revert

@@ -1,6 +1,6 @@
 package config
 
-import "github.com/monbooru/monbooru/internal/shared/contract"
+import "github.com/jwebb7847-ui/mebooru/shared/contract"
 
 // PristineBundledPair is a second guard, in addition to the launcher's proof
 // that both configuration files were created during this launch. Never use

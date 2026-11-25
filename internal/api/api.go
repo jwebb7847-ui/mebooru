@@ -10,10 +10,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/jobs"
 	"github.com/monbooru/monbooru/internal/library"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 // ResolverFunc resolves an empty name to the active gallery.

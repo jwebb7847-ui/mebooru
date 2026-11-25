@@ -7,7 +7,7 @@ import (
 
 	_ "embed"
 
-	"github.com/monbooru/monbooru/internal/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 )
 
 // Bootstrap runs every step on every boot, so each must be idempotent.

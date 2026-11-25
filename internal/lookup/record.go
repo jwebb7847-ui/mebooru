@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/db"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 type Row struct {

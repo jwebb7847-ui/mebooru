@@ -4,10 +4,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/shared/apitoken"
 	"github.com/monbooru/monloader/internal/shared/bundlepair"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 func freshBundleConfig() *config.Config {
@@ -70,12 +70,12 @@ func TestBundledPairPersistAndRollback(t *testing.T) {
 func TestBundledPairRejectsNonlocalOrExistingConfiguration(t *testing.T) {
 	cases := map[string]func(*config.Config){
 		"remote library": func(c *config.Config) { c.Monbooru.APIURL = "https://example.invalid" },
-		"remote web": func(c *config.Config) { c.Monbooru.WebURL = "https://example.invalid" },
-		"external bind": func(c *config.Config) { c.Server.BindAddress = "0.0.0.0:8456" },
-		"paused": func(c *config.Config) { c.Monbooru.Paused = true },
-		"credential": func(c *config.Config) { c.Monbooru.APIToken = "existing" },
-		"PTR enabled": func(c *config.Config) { c.PTR.Enabled = true },
-		"manual token": func(c *config.Config) { c.Auth.Tokens = append(c.Auth.Tokens, apitoken.Token{}) },
+		"remote web":     func(c *config.Config) { c.Monbooru.WebURL = "https://example.invalid" },
+		"external bind":  func(c *config.Config) { c.Server.BindAddress = "0.0.0.0:8456" },
+		"paused":         func(c *config.Config) { c.Monbooru.Paused = true },
+		"credential":     func(c *config.Config) { c.Monbooru.APIToken = "existing" },
+		"PTR enabled":    func(c *config.Config) { c.PTR.Enabled = true },
+		"manual token":   func(c *config.Config) { c.Auth.Tokens = append(c.Auth.Tokens, apitoken.Token{}) },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

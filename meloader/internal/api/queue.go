@@ -9,9 +9,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/queue"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 const maxWaitSeconds = 60

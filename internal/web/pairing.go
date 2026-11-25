@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/api"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/monloader"
@@ -15,8 +17,6 @@ import (
 	"github.com/monbooru/monbooru/internal/plugins"
 	"github.com/monbooru/monbooru/internal/shared/apitoken"
 	"github.com/monbooru/monbooru/internal/shared/bundlepair"
-	"github.com/monbooru/monbooru/internal/shared/contract"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 	"github.com/monbooru/monbooru/internal/shared/pairing"
 	"github.com/monbooru/monbooru/internal/shared/session"
 )
@@ -247,7 +247,7 @@ func (s *Server) PersistBundledPair(secrets bundlepair.Secrets) error {
 	tok.PeerURL = loaderURL
 	req := peer.Req{
 		Request: pairing.Request{App: contract.AppMonloader, Source: "127.0.0.1", Scopes: scopes},
-		URL: loaderURL, PeerToken: secrets.Loader,
+		URL:     loaderURL, PeerToken: secrets.Loader,
 	}
 	return s.withConfig(func(c *config.Config) error {
 		if !c.PristineBundledPair() {

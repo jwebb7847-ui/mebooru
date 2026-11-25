@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/counts"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 	"github.com/monbooru/monbooru/internal/tagger"
 )
 

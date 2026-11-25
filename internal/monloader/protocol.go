@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/lookup"
 	"github.com/monbooru/monbooru/internal/peer"
-	"github.com/monbooru/monbooru/internal/shared/contract"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // monloaderRoutes is every monloader route this package calls, as

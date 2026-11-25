@@ -22,9 +22,9 @@ import (
 	"golang.org/x/image/draw"
 	"golang.org/x/image/webp"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/shared/fsx"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 const thumbMaxDim = 300

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monloader/internal/kwdict"
-	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
 const (

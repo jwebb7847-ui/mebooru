@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/relations"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 type relationsResponse struct {

@@ -6,11 +6,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/contrib"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/ptr"
 	"github.com/monbooru/monloader/internal/queue"
-	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 type ContribSender interface {

@@ -15,10 +15,10 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/jobs"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 type Watcher struct {

@@ -126,3 +126,7 @@ allowed for literal loopback addresses.
 ## Acknowledgements
 
 See [monbooru's acknowledgements](https://github.com/monbooru/monbooru#acknowledgements).
+
+## Consolidated source builds
+
+Build this imported module from the Mebooru checkout; its shared module is at `../shared`. For its Docker image, run `docker build -f meloader/docker/Dockerfile -t meloader-local .` from the repository root. The original standalone Meloader repository and release/AUR metadata are historical fallback paths; new consolidated release packaging is deferred. See the root `MEBOORU.md`.

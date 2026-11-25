@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/gallery"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // PhashStored must follow every phash write so a built tree stays in step

@@ -16,11 +16,11 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/models"
 	"github.com/monbooru/monbooru/internal/shared/apitoken"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 	"github.com/monbooru/monbooru/internal/shared/fsx"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 	"github.com/monbooru/monbooru/internal/shared/pairing"
 )
 

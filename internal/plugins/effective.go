@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
-	"github.com/monbooru/monbooru/internal/shared/contract"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // The launch line stays off PluginConfig and out of monbooru.toml, so a

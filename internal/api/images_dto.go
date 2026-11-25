@@ -10,11 +10,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/library"
 	"github.com/monbooru/monbooru/internal/markup"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/contract"
 )
 
 const (

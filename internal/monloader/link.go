@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/jobs"
 	"github.com/monbooru/monbooru/internal/lookup"
 	"github.com/monbooru/monbooru/internal/peer"
-	"github.com/monbooru/monbooru/internal/shared/contract"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 // LinkConfig is what the link reads of the live config, on every call.

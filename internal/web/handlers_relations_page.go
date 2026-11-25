@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/library"
 	"github.com/monbooru/monbooru/internal/relations"
-	"github.com/monbooru/monbooru/internal/shared/logx"
 )
 
 func (s *Server) findPairsDistance() int {

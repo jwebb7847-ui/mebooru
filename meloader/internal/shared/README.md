@@ -3,8 +3,7 @@
 Packages monbooru and monloader both carry at `internal/shared/` in each tree:
 
 - `desktop` - the per-OS layer: the `-desktop` profile's paths, single instance, menu entry and tray, and what headless code needs from the OS too (disk usage, console hiding, the Host guard).
-- `logx` - the leveled stdlib logger.
-- `contract` - the contract the two apps exchange over `/api/v1`.
+- `logx` and `contract` now live in the repository-root `shared/` Go module, used by both applications.
 - `session` - the browser sessions, their CSRF tokens, the session cookie, and the login gate.
 - `pairing` - the pending pairing requests a peer polls, the pairing routes.
 - `apitoken` - the named bearer tokens that open `/api/v1`.
