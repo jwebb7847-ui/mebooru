@@ -1,0 +1,45 @@
+name: Validate Go
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-validation-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Unit tests, race detector, vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned Go
+        run: ./packaging/install-go.sh 1.27.4 7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840
+
+      # Do not enable -tags live here: those tests reach real external sites.
+      - name: Unit tests with race detector
+        run: go test -race ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Run strict download regression with pinned gallery-dl
+        run: |
+          source packaging/pins.env
+          venv="$RUNNER_TEMP/meloader-strict-gallery-dl"
+          python3 -m venv "$venv"
+          "$venv/bin/python3" -m pip install --disable-pip-version-check "gallery-dl==$GDL_VERSION"
+          test "$("$venv/bin/gallery-dl" --version)" = "$GDL_VERSION"
+          MELOADER_STRICT_TEST_GDL="$venv/bin/gallery-dl" \
+            go test -race -count=1 -timeout=3m -v \
+              -run '^TestStrictBlacklistGalleryDLMediaBoundary$' ./internal/pipeline

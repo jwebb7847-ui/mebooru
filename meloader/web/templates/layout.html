@@ -1,0 +1,69 @@
+{{define "doc_head"}}<!DOCTYPE html>
+<html lang="en" data-app="monloader">
+<head>
+{{template "webui/head" .}}
+  <script src="/static/shared/htmx.min.js" defer></script>
+  <script src="/static/shared/base.js" defer></script>
+  <script src="/static/main.js" defer></script>
+</head>
+<body{{if .LoaderEmbedded}} class="loader-embedded"{{end}}{{with .CanonicalURL}} data-canonical-url="{{.}}"{{end}}>
+{{end}}
+
+{{define "topbar"}}
+  <div id="topbar">
+    {{if not .LoaderEmbedded}}
+    <a href="/" id="logo" data-chord="g g"><img src="{{.BooruLogo}}" alt="" class="topbar-logo"><span>{{wordmark .BooruName}}</span></a>
+    <nav id="nav">
+      <a data-chord="g q" href="/queue" class="nav-queue{{if eq .ActiveNav "queue"}} active{{end}}">Queue</a>
+      <a data-chord="g w" href="/watches" class="nav-watches{{if eq .ActiveNav "watches"}} active{{end}}">Watched</a>
+      <a data-chord="g p" href="/ptr" title="Public Tag Repository: an offline copy of Hydrus's shared tags" class="nav-ptr{{if eq .ActiveNav "ptr"}} active{{end}}">PTR</a>
+      <a data-chord="g s" href="/settings" class="nav-settings{{if eq .ActiveNav "settings"}} active{{end}}">Settings</a>
+      {{template "webui/pair_notice" .PairNotice}}
+    </nav>
+    {{end}}
+    <div id="topbar-right">
+      {{template "pause_toggle" .}}
+      {{if .AuthEnabled}}
+      <form method="POST" action="/logout" style="display:inline">
+        <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+        <button type="submit" class="topbar-action">[logout]</button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+  <div id="page-notice" class="degraded-banner" data-login-url="/login" hidden></div>
+{{end}}
+
+{{define "footer"}}
+  <footer id="footer">
+    <div id="footer-left"></div>
+    <div id="footer-right">{{template "webui/peer_light" .MonbooruLight}}{{if .MonbooruPaired}} &middot; {{end}}<span class="footer-wide"><a href="{{.RepoURL}}" target="_blank" rel="noopener">Meloader{{if .Build}} ({{.Build}}){{end}}</a> {{.Version}}{{if .GalleryDLVersion}} &middot; <a href="https://github.com/mikf/gallery-dl" target="_blank" rel="noopener">gallery-dl</a> {{.GalleryDLVersion}}{{end}} &middot; <a href="#" id="footer-shortcuts" onclick="openShortcutSheet();return false">shortcuts</a> &middot; </span><a href="{{.DocURL}}" target="_blank" rel="noopener">help</a><span class="footer-wide"> &middot; <a href="/api/v1/docs" target="_blank" rel="noopener">API</a></span></div>
+  </footer>
+{{end}}
+
+{{define "doc_foot"}}
+{{template "webui/confirm_dialog"}}
+<dialog id="shortcuts-help">
+  <h3 class="dlg-title">Keyboard Shortcuts{{template "webui/dialog_x"}}</h3>
+  <div class="shortcuts-help-grid">
+    <section data-surface="anywhere">
+      <h4>Anywhere</h4>
+      <ul>
+        <li><kbd>?</kbd><span>Toggle this overlay</span></li>
+        <li data-when=".add-bar input[name=url]"><kbd>s</kbd><kbd>/</kbd><span>Focus the URL box</span></li>
+        <li><kbd>Esc</kbd><span>Close dialog &middot; leave a field</span></li>
+        <li data-when="#logo"><kbd>g</kbd><kbd>g</kbd><span>Home</span></li>
+        <li><kbd>g</kbd><kbd>q</kbd><span>Queue</span></li>
+        <li><kbd>g</kbd><kbd>w</kbd><span>Watched</span></li>
+        <li><kbd>g</kbd><kbd>p</kbd><span>PTR</span></li>
+        <li><kbd>g</kbd><kbd>s</kbd><span>Settings</span></li>
+      </ul>
+    </section>
+  </div>
+  <div class="dialog-actions">
+    <button type="button" onclick="document.getElementById('shortcuts-help').close()">Close</button>
+  </div>
+</dialog>
+</body>
+</html>
+{{end}}

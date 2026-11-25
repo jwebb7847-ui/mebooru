@@ -1,0 +1,115 @@
+# Loader integration
+
+Mebooru supplies the Loader navigation and its gallery switcher. The Queue, Watches, PTR, and Settings panels run on Meloader's browser origin. Meloader retains the queue, archive, credentials, scheduler and download policy. The frames use Meloader's own login and CSRF protections. Meloader permits framing from the origin of its configured Mebooru Web URL. The Mebooru page uses the separate Web URL from **Settings → Plugins** and does not expose the pairing token to the frame.
+
+Queue displays all galleries and pins a new import to the gallery displayed in its form. The existing bulk controls and strict verification still apply. A queue result with a hash and gallery opens that gallery. Watches created from Loader start in manual mode. Their routing still follows Meloader's source and default gallery settings. Existing watch intervals continue to work in Meloader.
+
+## Local regression
+
+Both Go race suites and `go vet` passed. The Meloader suite included the opt-in gallery-dl 1.32.19 strict transfer test. A separate loopback run used both candidate binaries, real gallery storage in two temporary folders, gallery-dl 1.32.19, and synthetic e621 metadata and PNGs. It exercised the rendered pages and their form endpoints.
+
+| Check | Observed result |
+| --- | --- |
+| One search capped at 200 with strict verification | 180 created, 20 blacklisted, zero failed. The media server received 180 requests, all for allowed posts. |
+| Switch from `Audit_A` to `Audit_B` during import | The job and all 180 files stayed in `Audit_A`. A result link opened `Audit_A` from `Audit_B`. |
+| Replay the same search for five previously archived posts targeting `Audit_B` | All five skipped, with zero new media requests. The current archive can suppress a second-gallery import. The existing **Force download** control is available for an intentional replay. |
+| Watches, PTR and Settings | Manual watch creation and **Check now** worked. PTR rendered with the index disabled. Meloader saved strict blacklist settings through its existing endpoint. |
+
+The bulk run first observed an image file at about 2.8 seconds and completion at 4.2 seconds. These are loopback fixture timings. Browser execution and live-source timing are part of the Mac check.
+
+## Mac acceptance
+
+Use the paired audit configuration in the [local runbook](local-audit.md). Launch both candidate revisions and leave both terminals running. Mebooru's browser-facing Meloader Web URL should be `http://127.0.0.1:8456`. Meloader's browser-facing Mebooru Web URL should be `http://127.0.0.1:8455`. Open Mebooru with the same scheme, hostname, and port configured in Meloader.
+
+1. **Browser — Mebooru.** Open **Loader**, select `Audit_A`, and check that Queue says **To Audit_A**. Open **Watches**, **PTR**, and **Settings → Meloader**. Verify that the panels load and the existing strict blacklist setting is enabled. If Meloader uses password login, sign in on its own origin.
+2. **Browser — Mebooru.** Use one safe-rated search on a supported strict-mode booru, preferably a search with enough previously unfetched posts to give a timing sample. Select **up to 200**, confirm the destination, and submit it from Loader. Record time to first visible import, time to completion, and counts for created, archive skips, blacklisted and failed. Use the job's explicit gallery to verify its files and result links.
+3. **Browser — Mebooru.** Switch galleries while the job runs and confirm the queued destination stays fixed. Verify the expected unavailable state with Meloader stopped after completion. Use existing watch rows or a bounded manual check for Watches. Keep scheduled audit watches inactive.
+
+## Live Mac bulk result
+
+On 2026-11-14, the operator ran one strict Derpibooru search through Loader with Mebooru PR #1 at `74a1794`, Meloader PR #12 at `ed0bb36`, and gallery-dl 1.32.19. The operator reported using a VPN. Job 31 succeeded with 195 created and five skipped out of 200 posts. The gallery switch left the job in `Audit_A`. Opening an imported item from `Audit_B` switched to `Audit_A`, and the image rendered with source and tag metadata.
+
+| Stage | Measured result |
+| --- | --- |
+| Resolve | 6.888 seconds. The extractor resolved 201 records to detect more results and capped the job at 200. |
+| Strict taxonomy verification | 261.652 seconds summed over 200 successful enrichments. There were 210 taxonomy HTTP attempts, with 182 HTTP 200s and 28 HTTP 429s. Logged HTTP attempts took 28.485 seconds in total. The rest of the enrichment time was predominantly retry waits. |
+| Media phase | About 4 minutes 12 seconds between the last preflight taxonomy log and the first upload-side enrichment log. This interval includes gallery-dl setup, transfer pacing, and file transfers. The log has no separate timing for those steps. |
+| Import | About 10 seconds from the first upload-side enrichment log to completion. All 195 taxonomy enrichments in this phase used cached evidence without further taxonomy HTTP requests. |
+| Whole job | 8 minutes 51.258 seconds in the server log. The operator estimated 8 minutes 45 seconds and first noticed a downloaded row around minute five. |
+
+The first download is gated on strict verification of the window. The timing identifies cold taxonomy request volume as the first optimization target. Evaluate batching distinct tag IDs across posts within the existing request limit while preserving post-level verification and retry behavior. The VPN speed test measured a different server and cannot isolate the Derpibooru media route or rate limits.
+
+## Cross-post taxonomy batching
+
+Strict Derpibooru acquisition now deduplicates uncached tag lookups across the current window and requests up to 50 distinct IDs per call. Every post still checks its own source identity, rating, taxonomy, aliases and blacklist before gallery-dl may request media. An omitted record uses the existing exact lookup. Contradictory evidence and exhausted retries withhold the affected posts.
+
+The gallery-dl 1.32.19 loopback regression used the same 200 posts and simulated 10 ms of latency per taxonomy request. Cross-post batching reduced taxonomy calls from 200 to five. Time to the first media request was about 3.69 seconds for the per-post path and 1.39 seconds for the batched path in one run. Both paths produced 197 creates, one blacklist skip and two failures. The alias-blocked post, the post with unverified taxonomy, and the post whose tags changed between listing and download made zero media requests. The taxonomy parity test also verified zero requests with a warm cache. These timings are fixture results. Live Derpibooru and VPN timing still varies with rate limits and media transfer.
+
+## Strict download timing
+
+Meloader logs strict acquisition timing at `info` with a queue job ID on each stage. Times are wall-clock measurements. A window that rejects every post stops after `strict-preflight`.
+
+| Stage | What the log measures |
+| --- | --- |
+| `resolve` | Initial source listing. The count can include the one extra record used to detect another page. |
+| `strict-preflight` | Rule loading, source evidence and taxonomy verification, and blacklist decisions across the capped window. `approved` counts posts eligible for the transfer pass. The transfer can still skip archived posts and withhold posts whose evidence changed. |
+| `strict-transfer` | Manifest generation, pinned gallery-dl version check, filter probes, the gallery-dl download run, and final evidence comparison. `download_process` includes re-listing, pacing, retries, transfer, and subprocess output handling. `first_file` is elapsed from the start of that run to its first completed file with a readable sidecar. It is `none` for an archive-only window. |
+| `strict-ingest` | Processing the download results, including local metadata handling, mapping, and Mebooru uploads. `transfer_rows` includes archive skips reported by gallery-dl. |
+| `total` | Worker time for the complete job, including stages outside the strict path measurements. |
+
+Transfer `file_bytes` counts the final sizes of newly landed, evidence-verified files, excluding archive skips. A nonzero `size_errors` makes that count partial. The configured `sleep` and `sleep_request` values are in seconds. `extractor_default` means the managed config leaves that value to gallery-dl. The measurements do not isolate HTTP transfer time, the first media request, or time spent asleep. Keep the VPN and pacing settings consistent with the earlier live run, and compare the stage durations alongside the number of new files and their total bytes.
+
+For strict Derpibooru jobs, `strict-preflight` also reports the number of taxonomy HTTP attempts, 429 responses, and retries, along with cumulative HTTP time to response headers, time waiting for the resolver's request slot, and time spent in retry waits. Each `taxonomy-retry` line appears before the wait, with the same queue job ID, HTTP status, planned delay, and whether the source supplied a valid `Retry-After`. A preflight interrupted during this work reports `complete=false`, `canceled=true`, and partial counts. These counters cover requests made by the resolver for this preflight, and exclude gallery-dl and ingest.
+
+In the 200-post loopback regression, the batched path recovered from one 429 and logged six taxonomy attempts, one 429, and one retry. It still created 197 images. The blacklisted post, the post with unverified taxonomy, and the post whose tags changed each made zero media requests.
+
+Strict Derpibooru queue items distinguish **taxonomy rate limited** after a final HTTP 429, **taxonomy source unavailable** after a final 5xx, and **taxonomy unverified** when source evidence cannot be verified. The detail shows the final HTTP status and attempt count for exhausted retries. The item remains failed and withheld before transfer. A loopback case checks that a post whose alias lookup exhausts five attempts and a post missing alias evidence receive distinct failure codes and make zero media requests.
+
+The **Validate Go** workflow runs the strict media-boundary regression with the gallery-dl version in `packaging/pins.env`. Dependency installation uses PyPI. The fixture exercises the actual gallery-dl filter and downloader against local HTTP servers with synthetic source metadata. It verifies outcomes, media-request counts, and retry diagnostics. Logged timings are evidence for review. CI assertions do not impose a throughput target.
+
+**Browser — Mebooru.** Use the previous safe Derpibooru job in `Audit_A` and click **Get next 200** once. Keep strict blacklist verification enabled. The current search can shift as posts are added, so record any archive skips. Collect the completed queue counts and the timing lines for the new job ID. A continuation measures a new window under the current cache conditions.
+
+## Live Mac timing and archive replay
+
+The operator ran Meloader PR #14 at `61d9b62` against `Audit_A` on 2026-11-14. The logs separate the 09:32 canceled continuation from the completed 09:33 replay. The next search at 09:42 and its continuation at 09:43 were separate jobs shown together in the queue.
+
+| Job | Resolve | Strict preflight | gallery-dl run | Ingest | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 32, canceled continuation | 6.607 s | 23.679 s | 12.182 s before cancellation | — | 42.902 s |
+| 33, completed replay | 6.560 s | 164 ms | 4m 17.228 s | 10.927 s | 4m 35.275 s |
+| 34, ordinary resubmission | 6.605 s | 19 ms | 7.132 s | 37 ms | 14.194 s |
+| 35, next 200 | 6.565 s | 17 ms | 4m 32.000 s | 11.919 s | 4m 50.903 s |
+
+Job 32 made 22 taxonomy HTTP attempts, including two 429s, and warmed the cache for the continuation. Job 33 made one taxonomy request. The supplied logs for jobs 34 and 35 show zero taxonomy HTTP attempts. Job 33 landed 200 files (241,898,223 bytes) and job 35 landed 190 files (290,138,314 bytes). Configured `sleep` and `sleep_request` were both one second. The live runs point to the gallery-dl phase as the dominant cost with a warm cache. The timings cover different windows and file sizes.
+
+The operator deleted the replayed images before job 34. The ordinary resubmission had 195 archive skips, four blacklist skips and one new transfer. Job 35 had nine archive skips and one blacklist skip. The grouped 400-post row showed 190 created, one duplicate, 204 other skips and five blacklisted. A result opened successfully in `Audit_A`.
+
+The download archive records fetch history separately from the gallery. Deleting an image in Mebooru leaves that history intact. **Force download** explicitly retries all windows in the selected queue series, bypasses the download archive for the retry, and evaluates the current blacklist. To restore only the first window after continuing a search, submit it as a new job with **up to 200** and use **Force download** on that new row. The loopback regression verifies that this archive bypass fetches an allowed archived post and makes zero media requests for blocked or unverifiable posts.
+
+On 2026-11-14, the operator confirmed that the Mac review build at `21f262f` displayed **skipped by download archive**, showed the retry scope and blacklist behavior in the **Force download** confirmation, and left the completed job untouched on **Cancel**.
+
+## Live Derpibooru pacing comparison
+
+The 20-post Mac comparison used the same ID-bounded search and destination, `Audit_A`, with strict blacklist verification enabled. Both ordinary submissions skipped all 20 through the archive. The two forced runs each fetched 20 files totaling 37,474,737 bytes, with source-request pacing held at 1.0 s.
+
+| Forced run | File delay | gallery-dl run | First completed file | Strict preflight | Total | Gallery result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 36 | 1.0 s | 26.767 s | 2.865 s | 1 ms | 28.940 s | 20 created |
+| 37 | 0.5 s | 23.543 s | 2.182 s | 1 ms | 25.280 s | 20 duplicates |
+
+The lower delay saved 3.224 s in the gallery-dl phase, about 12% in this pair. This phase includes source re-listing, pacing, and transfer. The live pair gives no breakdown of those costs and no estimate for a 200-file window. Both live runs approved all 20 posts. In the pinned gallery-dl loopback check, both delays requested the same 20 allowed files and made zero media requests for the blacklisted, unverified, and changed posts.
+
+Keep the 1.0 s default and close this pacing experiment. Revisit bulk throughput when a representative workload shows a specific bottleneck worth addressing.
+
+## Paired-app interruption and retry
+
+On 2026-11-14, the Linux loopback check used Meloader `2010577`, Mebooru `630e439`, and gallery-dl 1.32.19. A fixed e621-shaped search supplied ten posts and eight valid PNG files. With strict blacklist verification enabled, the Loader form queued the search for a fresh `Audit_A` gallery. A local proxy forwarded the first three ingest requests and held the fourth. At that point the archive contained all eight allowed downloads and Mebooru had committed three image rows. The test killed Meloader while the fourth upload was held and restarted it with the same SQLite queue and archive.
+
+| Phase | Observed result |
+| --- | --- |
+| Restart | The job showed **interrupted** and offered **Retry**. No media request ran automatically. |
+| Explicit **Retry** | Same job ID and gallery. Eight media requests, zero archive skips, five created, three duplicates, two blacklisted, and zero failures. |
+| Final gallery | Eight unique image rows with matching SHA-256 values, eight image files, eight thumbnails, and eight gallery-scoped queue links. The original three rows retained their IDs and hashes. `Audit_B` stayed empty. |
+| Strict blacklist | The two blocked posts made zero media requests across both attempts. |
+
+The fixture held the source listing fixed. The retry re-resolves a live search, so changes to that listing can change which posts the window contains. The [recovery runbook](local-audit.md#recover-an-interrupted-import) covers the operator steps.

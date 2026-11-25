@@ -1,0 +1,197 @@
+package web
+
+import (
+	"context"
+	"errors"
+	"net"
+	"net/http"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/monbooru/monloader/internal/config"
+	"github.com/monbooru/monloader/internal/shared/apitoken"
+	"github.com/monbooru/monloader/internal/shared/contract"
+	"github.com/monbooru/monloader/internal/shared/logx"
+	"github.com/monbooru/monloader/internal/shared/pairing"
+)
+
+type outboundPair struct {
+	requestID string
+	token     apitoken.Token
+}
+
+func (s *Server) setPairAttempt(p *outboundPair) {
+	s.pairMu.Lock()
+	s.pairAttempt = p
+	s.pairMu.Unlock()
+}
+
+func (s *Server) getPairAttempt() *outboundPair {
+	s.pairMu.Lock()
+	defer s.pairMu.Unlock()
+	return s.pairAttempt
+}
+
+func (s *Server) clearPairAttempt() {
+	s.pairMu.Lock()
+	s.pairAttempt = nil
+	s.pairMu.Unlock()
+}
+
+// Compare-and-clear, so two concurrent polls cannot both commit one approval.
+func (s *Server) takePairAttempt(att *outboundPair) bool {
+	s.pairMu.Lock()
+	defer s.pairMu.Unlock()
+	if s.pairAttempt != att {
+		return false
+	}
+	s.pairAttempt = nil
+	return true
+}
+
+func (s *Server) hasPairedToken(peer string) bool {
+	return slices.ContainsFunc(s.cfg.Current().Auth.Tokens, func(t apitoken.Token) bool { return t.Paired == peer })
+}
+
+func (s *Server) monbooruPairData(r *http.Request, msg string) map[string]any {
+	return map[string]any{
+		"Paired":  s.hasPairedToken(contract.AppMonbooru),
+		"Waiting": s.getPairAttempt() != nil,
+		"Message": msg,
+	}
+}
+
+// The bound port, not base_url, which may name a proxy or a stale port:
+// monbooru swaps in the host the request came from and keeps this port.
+func pairSelfURL(cfg *config.Config) string {
+	if _, port, err := net.SplitHostPort(strings.TrimSpace(cfg.Server.BindAddress)); err == nil && port != "" {
+		return "http://localhost:" + port
+	}
+	return cfg.Server.BaseURL
+}
+
+func (s *Server) monbooruPairConnect(w http.ResponseWriter, r *http.Request) {
+	if err := s.startMonbooruPairing(r.Context()); err != nil {
+		s.render(w, "monbooru_pair", s.monbooruPairData(r, err.Error()))
+		return
+	}
+	s.render(w, "monbooru_pair", s.monbooruPairData(r, ""))
+}
+
+func (s *Server) startMonbooruPairing(ctx context.Context) error {
+	cfg := s.cfg.Current()
+	if strings.TrimSpace(cfg.Monbooru.APIURL) == "" {
+		return errors.New("set the Mebooru API URL first")
+	}
+	peerSecret := apitoken.NewSecret()
+	tok := apitoken.FromSecret(contract.AppMonbooru+" (paired)", peerSecret, config.AllScopes)
+	tok.Paired = contract.AppMonbooru
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	requestID, err := s.client.PairRequest(reqCtx, peerSecret, pairSelfURL(cfg), Version, []string{config.ScopeRead, config.ScopeWrite})
+	if err != nil {
+		return errors.New("Could not reach Mebooru: " + err.Error())
+	}
+	s.setPairAttempt(&outboundPair{requestID: requestID, token: tok})
+	logx.Infof("pairing: requested pairing with Mebooru")
+	return nil
+}
+
+func (s *Server) monbooruPairPoll(w http.ResponseWriter, r *http.Request) {
+	att := s.getPairAttempt()
+	if att == nil {
+		// The footer light may have committed it since the last poll.
+		s.render(w, "monbooru_pair", s.monbooruPairData(r, ""))
+		s.renderAuthTokensOOB(w)
+		s.renderDefaultGalleryOOB(w, r)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	msg, committed := s.claimMonbooruPair(ctx, att)
+	s.render(w, "monbooru_pair", s.monbooruPairData(r, msg))
+	if committed {
+		s.renderAuthTokensOOB(w)
+		s.renderDefaultGalleryOOB(w, r)
+	}
+}
+
+func (s *Server) claimMonbooruPair(ctx context.Context, att *outboundPair) (msg string, committed bool) {
+	status, token, err := s.client.PairStatus(ctx, att.requestID)
+	if err != nil {
+		// Transient (monbooru briefly unreachable); keep waiting.
+		return "", false
+	}
+	switch status {
+	case string(pairing.Approved):
+		if token == "" {
+			return "", false
+		}
+		if !s.takePairAttempt(att) {
+			return "", false
+		}
+		tok := att.token
+		if err := s.cfg.Update(func(c *config.Config) error {
+			// Replaces the old pair only now, so a denied or abandoned
+			// attempt leaves the working pairing untouched.
+			c.Auth.Tokens = slices.DeleteFunc(c.Auth.Tokens, func(t apitoken.Token) bool { return t.Paired == contract.AppMonbooru })
+			c.Auth.Tokens = append(c.Auth.Tokens, tok)
+			c.Monbooru.APIToken = token
+			// A hold on the old link would leave the new one refusing
+			// everything as not configured.
+			c.Monbooru.Paused = false
+			return nil
+		}); err != nil {
+			s.setPairAttempt(att) // restore so a later poll retries
+			return "Could not save: " + err.Error(), false
+		}
+		logx.Infof("pairing: connected to Mebooru")
+		return "", true
+	case string(pairing.Denied):
+		s.takePairAttempt(att)
+		logx.Infof("pairing: Mebooru denied the request")
+		return "Request denied in Mebooru.", false
+	case "not_found":
+		s.takePairAttempt(att)
+		logx.Infof("pairing: Mebooru no longer has the request")
+		return "Mebooru no longer has this request - connect again.", false
+	}
+	return "", false
+}
+
+// Nothing is committed on either side yet; monbooru's pending request
+// ages out on its own.
+func (s *Server) monbooruPairCancel(w http.ResponseWriter, r *http.Request) {
+	s.clearPairAttempt()
+	logx.Infof("pairing: canceled the pending Mebooru attempt")
+	s.render(w, "monbooru_pair", s.monbooruPairData(r, ""))
+}
+
+func (s *Server) monbooruPairRemove(w http.ResponseWriter, r *http.Request) {
+	peerToken := s.cfg.Current().Monbooru.APIToken
+	if err := s.removePairingLocal(contract.AppMonbooru); err != nil {
+		logx.Errorf("pairing: remove failed: %v", err)
+		s.render(w, "monbooru_pair", s.monbooruPairData(r, "Could not save: "+err.Error()))
+		return
+	}
+	s.clearPairAttempt()
+	msg := ""
+	if err := s.notifyMonbooruTeardown(peerToken); err != nil {
+		logx.Errorf("pairing: could not notify Mebooru of teardown: %v", err)
+		msg = "Removed here, but could not reach Mebooru. Remove the pairing there too."
+	}
+	logx.Infof("pairing: removed Mebooru pairing")
+	s.render(w, "monbooru_pair", s.monbooruPairData(r, msg))
+	s.renderAuthTokensOOB(w)
+	s.renderDefaultGalleryOOB(w, r)
+}
+
+func (s *Server) notifyMonbooruTeardown(token string) error {
+	if token == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	return s.client.PairTeardown(ctx, token)
+}

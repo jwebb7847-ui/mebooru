@@ -1,0 +1,46 @@
+package api
+
+import (
+	"net/http"
+
+	"github.com/monbooru/monloader/internal/contrib"
+	"github.com/monbooru/monloader/internal/outcome"
+
+	"github.com/monbooru/monloader/internal/shared/contract"
+)
+
+// The error payload's code values: clients branch on them and the OpenAPI
+// text quotes them, so never respell one.
+const (
+	errInvalidRequest = contract.CodeInvalidRequest
+	errNotFound       = contrib.CodeNotFound
+	errConflict       = "conflict"
+	errNamespaceReq   = contract.CodeNamespaceRequired
+
+	errMonbooruUnconfigured = "monbooru_unconfigured"
+	errMonbooruPaused       = "monbooru_paused"
+	errBudgetExhausted      = "budget_exhausted"
+	errAlreadyRunning       = "already_running"
+	errAccountExists        = "account_exists"
+	errPTRVelocity          = "ptr_velocity"
+	errPTRError             = "ptr_error"
+
+	// Shared with the item codes: a lookup or a contribution send refused
+	// up front and one that fails mid-job report the same string.
+	errPTRUnavailable = outcome.ErrCodePTRUnavailable
+	errPTRSyncing     = outcome.ErrCodePTRSyncing
+
+	errInternal   = contrib.CodeInternal
+	errSaveFailed = "save_failed"
+)
+
+// ErrAlreadyPaired refuses a pairing request from an app that holds a token.
+const ErrAlreadyPaired = "already_paired"
+
+// ErrSetupRequired is answered by the web first-run gate, in front of every
+// route here.
+const ErrSetupRequired = contract.CodeSetupRequired
+
+func NotFound(w http.ResponseWriter) {
+	contract.WriteError(w, http.StatusNotFound, errNotFound, "not found")
+}

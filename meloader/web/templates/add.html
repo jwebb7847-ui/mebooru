@@ -1,0 +1,31 @@
+{{define "add"}}{{template "doc_head" .}}
+<div id="page-notice" class="degraded-banner" data-login-url="/login" hidden></div>
+{{template "monbooru_banner" .}}
+{{template "queue_paused" .}}
+<main id="landing">
+  {{with index .Mascot .LandingFace}}<img src="{{.}}" alt="" class="mascot">{{else}}<img src="{{.BooruLogo}}" alt="" class="landing-logo">{{end}}
+  <h1>{{wordmark .BooruName}}</h1>
+  <form id="add-form" class="add-form" hx-post="/" hx-target="#add-flash" hx-swap="innerHTML">
+    <div class="add-row">
+      <div class="search-input-wrap">
+        <input id="add-input" type="text" name="url" autocomplete="off" data-peer-title=""{{if not .MonbooruConfigured}} disabled{{end}}
+               placeholder="Paste a post, pool, search or artist URL, or an MD5 hash" data-short-placeholder="Paste a URL or an MD5 hash">
+      </div>
+      <select name="items" aria-label="Posts to fetch" title="How many posts to fetch from a search. A pool or a manga gallery always comes whole.">{{template "items_options" .ItemChoices}}</select>
+      <button type="submit" data-peer-title=""{{if not .MonbooruConfigured}} disabled{{end}}>Download</button>
+    </div>
+  </form>
+  {{template "lookup_status" .}}
+  <div class="field-hint"><a href="https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md" target="_blank" rel="noopener">Supported sites</a></div>
+  <div id="add-flash" class="field-hint"></div>
+  <div class="links">
+    <a data-chord="g q" href="/queue">[queue]</a>
+    <a data-chord="g w" href="/watches">[watched]</a>
+    <a data-chord="g p" href="/ptr" title="Public Tag Repository: an offline copy of Hydrus's shared tags">[PTR]</a>
+    <a data-chord="g s" href="/settings">[settings]</a>
+    {{if .MonbooruWebURL}}<a href="{{.MonbooruWebURL}}">[Mebooru]</a>{{end}}
+  </div>
+  {{template "webui/pair_notice" .PairNotice}}
+</main>
+{{template "footer" .}}
+{{template "doc_foot" .}}{{end}}
