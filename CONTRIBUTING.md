@@ -1,5 +1,7 @@
 # Contributing
 
+**Current Mebooru development:** follow [MEBOORU.md — Development workflow](MEBOORU.md#development-workflow). Use milestone-level draft PRs targeting `mebooru-foundation`, reviewed commits and final full verification; do not follow the upstream `dev`/squash/two-repository instructions below. The remainder of this file preserves upstream contributor guidance for reference.
+
 This file covers monbooru and its companion repos. Start from what you want to do and follow the arrows.
 
 AI-generated contributions that their author has obviously not reviewed or put effort into are closed without review.

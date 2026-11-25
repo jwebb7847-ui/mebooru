@@ -6,9 +6,9 @@ Paste a URL from a booru, a gallery, [any site gallery-dl supports](https://gith
 
 Meloader never touches your files directly: everything goes through Mebooru's API. It can add images and tags and, for an upgrade Mebooru asks for, swap in a better file.
 
-**[Current cross-repo handoff](docs/project/handoff.md)** · **[Mebooru handoff](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/project/handoff.md)** · **[Roadmap](ROADMAP.md)** · **[Install](#install)** · **[Fork releases](https://github.com/jwebb7847-ui/meloader/releases)** · **[Changelog](CHANGELOG.md)**
+**[Current project north star](../MEBOORU.md)** · **[Development workflow](../MEBOORU.md#development-workflow)** · **[Historical roadmap](ROADMAP.md)** · **[Install](#install)** · **[Fork releases](https://github.com/jwebb7847-ui/meloader/releases)** · **[Changelog](CHANGELOG.md)**
 
-For fork development, start with the [project handoff](docs/project/handoff.md), [roadmap](ROADMAP.md), and [local audit runbook](docs/validation/local-audit.md).
+For consolidated development, start with the [root north star](../MEBOORU.md). The [old handoff](docs/project/handoff.md), [roadmap](ROADMAP.md), and [local audit runbook](docs/validation/local-audit.md) preserve historical two-repository evidence, not current workflow.
 
 <table>
   <tr>

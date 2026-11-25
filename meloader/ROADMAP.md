@@ -1,6 +1,6 @@
 # Meloader / Mebooru project roadmap
 
-> Working architecture and development plan, maintained for this fork.
+> **Historical snapshot — superseded.** The active roadmap and milestone-level merge/acceptance workflow are maintained exclusively in [MEBOORU.md](../MEBOORU.md). Preserve the November 24 plan below as earlier evidence; do not implement its old branch or PR instructions.
 > Last reviewed 2026-11-24. [Project handoff](docs/project/handoff.md) · [Mebooru handoff](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/docs/project/handoff.md) · [Mac audit runbook](docs/validation/local-audit.md)
 
 ## North star
