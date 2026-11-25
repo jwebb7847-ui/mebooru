@@ -253,6 +253,7 @@ func TestPendingCustodyRecoversBeforeCustodianStartup(t *testing.T){
 	defer cancel()
 	dir:=t.TempDir()
 	cmd:=custodyFixtureCommand("library-pending",dir,"")
+	cmd.Stdout=nil // this fixture uses StdoutPipe rather than inherited witness
 	in,err:=cmd.StdinPipe()
 	if err!=nil{t.Fatal(err)}
 	defer in.Close()
