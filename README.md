@@ -8,7 +8,7 @@ Your own private, lightweight and fast booru: a tag-based image gallery, in the 
 
 Mebooru is a fork of [Monbooru](https://github.com/monbooru/monbooru), based on the audited v1.24.0 release. It preserves Monbooru's lightweight, local-first architecture while developing a distinct interface, workflow, privacy model, and optional AI-assisted organization features.
 
-For fork development and current acceptance status, see [MEBOORU.md](MEBOORU.md), the [dated handoff](docs/project/handoff.md), and the [documentation index](docs/README.md).
+For project direction, chapter roadmap, current milestone and development decisions, start with [MEBOORU.md](MEBOORU.md), our single project north star. The [documentation index](docs/README.md) points to technical and historical evidence.
 
 Designed for organizing your local media collection: images, videos, animated GIFs and manga archives. Tag it by hand or auto-tag it locally with ONNX models (WD14, JoyTag...), then search it by tag. Generation metadata from AI image tools (A1111/Forge, ComfyUI) is read too. Mebooru itself never touches the internet; online features (downloading from boorus, reverse image lookup) live in [Meloader](https://github.com/jwebb7847-ui/meloader), the forked companion (originally Monloader).
 
