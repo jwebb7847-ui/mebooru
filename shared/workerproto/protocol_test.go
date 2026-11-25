@@ -40,6 +40,7 @@ func TestNetworkPolicyExamples(t *testing.T) {
 		{Health, Local}, {QueueList, Local}, {QueueEnqueue, Mixed},
 		{WatchCheck, Mixed}, {Lookup, Mixed}, {PTRLookup, Mixed},
 		{PTRContribute, Online}, {SiteTest, Online}, {RuntimeInstall, Online},
+		{StageAllocate, Local}, {StageAbandon, Local},
 		{ImportMedia, Local}, {ImageThumbnail, Local}, {SetOffline, Local},
 	} {
 		rule, ok := RuleFor(tc.op)
