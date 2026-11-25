@@ -8,9 +8,9 @@ import (
 	"sync"
 
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/webui"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/registry"
-	"github.com/monbooru/monbooru/internal/shared/webui"
 )
 
 const builtinLightDir = registry.LightThemeDir

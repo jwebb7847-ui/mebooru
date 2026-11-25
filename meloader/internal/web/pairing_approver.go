@@ -10,9 +10,9 @@ import (
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/pairing"
 	"github.com/jwebb7847-ui/mebooru/shared/session"
+	"github.com/jwebb7847-ui/mebooru/shared/webui"
 	"github.com/monbooru/monloader/internal/api"
 	"github.com/monbooru/monloader/internal/config"
-	"github.com/monbooru/monloader/internal/shared/webui"
 )
 
 const appMonsender = "monsender"

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
-	"github.com/monbooru/monbooru/internal/shared/webui"
+	"github.com/jwebb7847-ui/mebooru/shared/webui"
 )
 
 // The connection a probe leaves a peer in; "" is a cold cache.
