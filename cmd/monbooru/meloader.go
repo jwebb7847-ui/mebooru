@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/bundlepair"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
-	"github.com/monbooru/monbooru/internal/shared/bundlepair"
 	"github.com/monbooru/monbooru/internal/shared/desktop"
 )
 

@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/library"
 	"github.com/monbooru/monbooru/internal/search"
-	"github.com/monbooru/monbooru/internal/shared/session"
 	"github.com/monbooru/monbooru/internal/tags"
 )
 

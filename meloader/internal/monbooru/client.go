@@ -21,9 +21,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/pairing"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/outcome"
-	"github.com/monbooru/monloader/internal/shared/pairing"
 )
 
 type PostFields = contract.PostFields

@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monbooru/internal/library"
-	"github.com/monbooru/monbooru/internal/shared/session"
 	"github.com/monbooru/monbooru/internal/tags"
 )
 

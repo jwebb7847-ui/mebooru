@@ -11,10 +11,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jwebb7847-ui/mebooru/shared/apitoken"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/pairing"
 	"github.com/monbooru/monbooru/internal/config"
-	"github.com/monbooru/monbooru/internal/shared/apitoken"
-	"github.com/monbooru/monbooru/internal/shared/pairing"
 )
 
 type Req struct {
