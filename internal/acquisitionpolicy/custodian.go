@@ -11,6 +11,7 @@ import (
 )
 
 const custodyActivate byte = 1
+const custodyReady byte = 2
 const custodyStartupTimeout = 10*time.Second
 const custodyStopTimeout = 15*time.Second
 
@@ -59,6 +60,19 @@ func verifyCustodyFence(root *os.Root,generation string,states ...byte) (byte,er
 // custodian with a parent-owned CommandContext that kills it on cancel.
 // No receipt on unconfirmed cleanup. No WAN, listener or automatic replay.
 func RunCustodian(ctx context.Context,profileDir,generation string,parentLife *os.File,start CustodyStarter) error {
+	return runCustodian(ctx,profileDir,generation,parentLife,nil,start)
+}
+
+// RunCustodianReady sends one byte on a dedicated readiness channel
+// after verifying the generation/root and before waiting for activation.
+// The trusted launcher must not arm before receiving this marker. No
+// application log or worker output belongs on this channel.
+func RunCustodianReady(ctx context.Context,profileDir,generation string,parentLife *os.File,ready io.Writer,start CustodyStarter) error {
+	if ready==nil{return ErrCustodyActivation}
+	return runCustodian(ctx,profileDir,generation,parentLife,ready,start)
+}
+
+func runCustodian(ctx context.Context,profileDir,generation string,parentLife *os.File,ready io.Writer,start CustodyStarter) error {
 	if parentLife==nil{return ErrCustodyActivation}
 	defer parentLife.Close()
 	if ctx==nil||start==nil||!filepath.IsAbs(profileDir)||!validGeneration(generation){return ErrCustodyActivation}
@@ -85,6 +99,10 @@ func RunCustodian(ctx context.Context,profileDir,generation string,parentLife *o
 		case <-finished:
 		}
 	}()
+	if ready!=nil{
+		n,err:=ready.Write([]byte{custodyReady})
+		if n!=1||err!=nil{return errors.Join(ErrCustodyActivation,err,finish())}
+	}
 	var one [1]byte
 	n,err:=io.ReadFull(parentLife,one[:])
 	if err!=nil||n!=1||one[0]!=custodyActivate||lifetime.Err()!=nil{
