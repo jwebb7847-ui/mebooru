@@ -1,5 +1,7 @@
 # Packaging
 
+**Historical standalone packaging reference.** Current source lives inside Mebooru and requires `../shared`. The nested workflows and original-repo AUR metadata are not supported consolidated release paths. See [root packaging status](../../packaging/README.md#consolidated-build-path-status). Do not publish these artifacts before release acceptance.
+
 | Path | Artifact |
 |---|---|
 | `icons/` | `monloader.ico` for Windows shortcuts and the tray, plus the PNG sizes the Flatpak installs into hicolor |

@@ -118,7 +118,7 @@ New environment settings can use `MEBOORU_`, such as `MEBOORU_SERVER_BIND_ADDRES
 
 ### Docker
 
-The inherited [Compose example](docker/docker-compose.yml) pulls upstream images by default. To run the forks, build both images from their fork checkouts and use those image tags in the Compose file. Keep the service names and volume paths when updating an existing deployment.
+The inherited [Compose example](docker/docker-compose.yml) and Quadlet files pull upstream images by default; they are historical deployment examples, not accepted Mebooru configurations. Build both local images from the consolidated repository root with `docker build -f docker/Dockerfile -t mebooru-local .` and `docker build -f meloader/docker/Dockerfile -t meloader-local .`. CI verifies the build stages only; complete image runtime, GPU, container network isolation and deployment acceptance remain deferred. Do not run the upstream examples unchanged expecting this fork, or use real media/config paths in an unverified deployment. See [packaging status](packaging/README.md).
 
 ### Current installation status
 

@@ -1,5 +1,8 @@
 .PHONY: build build-tray lint test test-live coverage
 
+# Keep independent module selection even when invoked directly under a parent workspace.
+export GOWORK := off
+
 LDFLAGS := -ldflags="$(shell . ./packaging/release-env.sh && echo "$$LDFLAGS")"
 
 build:
