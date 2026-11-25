@@ -1,4 +1,7 @@
-.PHONY: build build-tagger build-tray lint test test-race test-tagger coverage coverage-tagger
+.PHONY: build build-all test-all test-race-all vet-all build-tagger build-tray lint test test-race test-tagger coverage coverage-tagger
+
+# Keep module dependency graphs independent, including when a parent go.work exists.
+export GOWORK := off
 
 LDFLAGS := -ldflags="$(shell . ./packaging/release-env.sh && printf '%s' "$$LDFLAGS")"
 
@@ -32,3 +35,17 @@ coverage:
 coverage-tagger:
 	$(TAGGER_ENV) go test -tags tagger -timeout 30m -coverpkg=./... -coverprofile=coverage-tagger.out $(shell go list ./... | grep -v '/cmd/')
 	go tool cover -html=coverage-tagger.out -o coverage-tagger.html
+
+# One checkout, two independently built modules.
+build-all: build
+	$(MAKE) -C meloader build
+
+test-all: test
+	cd meloader && go test -timeout 30m ./...
+
+test-race-all: test-race
+	cd meloader && go test -race -timeout 30m ./...
+
+vet-all:
+	go vet ./...
+	cd meloader && go vet ./...

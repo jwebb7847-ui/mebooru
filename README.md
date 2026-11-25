@@ -55,17 +55,16 @@ Designed for organizing your local media collection: images, videos, animated GI
 
 Mebooru is developed on Apple Silicon macOS. The [native verification workflow](https://github.com/jwebb7847-ui/mebooru/actions/workflows/native.yml) builds and runs Mebooru and Meloader on Linux (x86_64, arm64), Windows (x86_64), and macOS (Intel, Apple Silicon). Once started, Mebooru is available at `http://localhost:8455`.
 
-Build from the `mebooru-foundation` branch with `go build -o mebooru ./cmd/monbooru`. The command directory and default config name retain their historical spelling.
+Build from the `mebooru-foundation` branch with `make build-all` for both executables, or `go build -o mebooru ./cmd/monbooru` for the library alone. The two modules retain independent dependency graphs; `make test-all`, `make test-race-all` and `make vet-all` cover both. The command directory and default config name retain their historical spelling.
 
 ### Open Mebooru with Meloader
 
 For the macOS app, build from the Mebooru checkout with
-`sh packaging/build-macos-app.sh /path/to/meloader`, then open
+`sh packaging/build-macos-app.sh`, then open
 `dist/Mebooru.app` in Finder. The app starts its bundled Meloader in the
 background. Both use the existing per-user configs in
 `~/Library/Application Support` unless you supply an explicit config.
-On first use, request pairing from [Meloader Settings](http://127.0.0.1:8456/settings#pairing)
-and approve it in **Mebooru → Settings → Plugins**. The Finder bundle launches the companion, **but first-use auto-pairing is not yet implemented**. Exit the app to stop the process it launched; if a web Quit control is missing, identify the listening process before using a terminal TERM signal. See the [Mac runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md).
+Eligible fresh standard profiles automatically pair the bundled companion. Existing, paused, revoked or partially reset profiles retain their decisions. If manual recovery is needed, request pairing from [Meloader Settings](http://127.0.0.1:8456/settings#pairing) and approve it in **Mebooru → Settings → Plugins**. Exit the app to stop the process it launched; if a web Quit control is missing, identify the listening process before using a terminal TERM signal. See the [Mac runbook](https://github.com/jwebb7847-ui/meloader/blob/main/docs/validation/local-audit.md).
 
 The local build uses an ad-hoc signature. For downloads, a public macOS
 release needs signing and notarization. The bundle includes both app
@@ -87,7 +86,7 @@ Rebuild thumbnails** to recover previews for existing videos. Choose
 **Static thumbnails** or **Animated WebP on hover** under **Settings →
 General → Video thumbnails**.
 
-On macOS and Linux, build [Meloader](https://github.com/jwebb7847-ui/meloader) from its repository and pair it with Mebooru once. To start
+On macOS and Linux, build the imported companion from `meloader/` (or run `make build-all` from the repository root to build both). Standalone launches still use explicit pairing. To start
 your existing Meloader configuration when Mebooru opens, set these paths
 in Mebooru's config:
 

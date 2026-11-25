@@ -1,6 +1,6 @@
 # Mebooru — project north star
 
-**Updated:** 2026-11-25. **Active milestone:** II.2 — freeze the working baseline.
+**Updated:** 2026-11-25. **Active milestone:** II.4 candidate — unify build and verification (II.3 import PR pending merge).
 **Authority:** this file is the single maintained source of truth for product direction, architectural decisions, chapter roadmap, current milestone and outstanding work. Update it at each accepted milestone. Other documents are historical evidence, technical references or runbooks, not independent roadmaps. Start here on every new project chat; verify live GitHub refs before editing.
 
 ## Product vision and approved boundaries
@@ -23,9 +23,9 @@ Status vocabulary: **Complete** = verified accepted work; **Active** = current m
 | --- | --- | --- |
 | I — Establish the foundation | Complete | Library, acquisition, metadata, safety, integrated Loader, automatic pairing, detail regression and visual cleanup accepted. See evidence below. |
 | II.1 — Repository reconnaissance | Complete (design review) | Inventory both exact trees, shared divergence, dependency versions, contracts, state and packaging. No new builds/tests run in this review. |
-| II.2 — Freeze the baseline | Active | Preserve exact pre-consolidation refs in both repos, verify rollback branches/tags, retain known-good app and establish data backup plan. Do not start import until rollback references are confirmed. |
-| II.3 — Import Meloader | Planned | Non-squashed subtree or equivalent history-preserving merge into `meloader/` on a feature branch. Verify imported tree identity and original commits reachable. No functional source changes. |
-| II.4 — Unify build and verification | Planned | One checkout builds both existing executables. Retain both Go modules and dependency versions, root CI covers both modules and paired smoke, race/vet, strict transfer and security scanning. Test fresh and copied existing profiles. |
+| II.2 — Freeze the baseline | Complete | Preserve exact pre-consolidation refs in both repos, verify rollback branches/tags, retain known-good app and establish data backup plan. Do not start import until rollback references are confirmed. |
+| II.3 — Import Meloader | Active (verified import, PR #19 open at preparation) | Non-squashed subtree or equivalent history-preserving merge into `meloader/` on a feature branch. Verify imported tree identity and original commits reachable. No functional source changes. |
+| II.4 — Unify build and verification | Active (candidate; acceptance pending) | One checkout builds both existing executables. Retain both Go modules and dependency versions, root CI covers both modules and paired smoke, race/vet, strict transfer and security scanning. Test fresh and copied existing profiles. |
 | II.5 — Reconcile shared infrastructure | Planned | Compare shared files individually; preserve stronger safeguards and tests. Decide common module/package layout only after II.4 parity. Avoid hidden dependency upgrades. |
 | II.6 — Formalize worker interface | Planned | Define library/worker operations, permissions, compatibility, lifecycle, failure recovery and private communication. Current HTTP contract is transitional; exact IPC/sandbox design requires review. |
 | III — Unify the experience | Planned | Native Mebooru Loader views and settings (remove embedded companion settings), internal service management, hybrid lifecycle, explicit offline mode, worker recovery, graceful Quit. No separate first-party plugin management for users. |
@@ -33,7 +33,7 @@ Status vocabulary: **Complete** = verified accepted work; **Active** = current m
 | V — Advanced acquisition | Planned | Deterministic recurring character/source queries, durable checkpoints, gallery selection, multi-source watches, pause/cancel/retry, ordinary direct-view downloads. |
 | VI — Product refinement | Planned | Remaining usability and compatibility inventory, final security, performance, platform packaging and release acceptance as appropriate for personal use. |
 
-**Next action:** preserve the accepted Mac app to complete II.2, then import the exact tagged Meloader source and ancestry into an isolated feature branch for II.3. II.4 remains a separate build/CI gate. Do not combine import, module deduplication, UI redesign and storage changes in a single PR.
+**Next action:** review and merge II.3 with a merge commit, then accept II.4 separately after consolidated CI and isolated Mac testing. Before any real-profile test, complete runtime data backup and path isolation. Do not use squash/rebase for the import. Do not combine import, module deduplication, UI redesign and storage changes in a single PR.
 
 ## Chapter II — migration baseline and evidence
 
@@ -44,7 +44,7 @@ Working branches: Mebooru `mebooru-foundation` (not upstream-derived `main`); Me
 | Mebooru | `ef7d0ad0ab235c7d4662353e6fec87e47cd83866` | [rollback/pre-consolidation](https://github.com/jwebb7847-ui/mebooru/tree/rollback/pre-consolidation) | `baseline/pre-consolidation` (verified) |
 | Meloader | `10542e66537430d21cc295449103bb2832e0693a` | [rollback/pre-consolidation](https://github.com/jwebb7847-ui/meloader/tree/rollback/pre-consolidation) | `baseline/pre-consolidation` (verified) |
 
-Both rollback branches were created and read back at the exact SHAs on November 25. Branches/tags are not intrinsically immutable; do not move or delete these refs. The operator created both lightweight tags through authenticated Git on November 25; independent GitHub readback confirms both tags point to the exact commits above. Local mirror backups and self-contained Git bundles were created and verified by the operator: Mebooru 6,393 objects / 40 refs; Meloader 3,210 objects / 57 refs. Stored under the project backups/pre-consolidation.5M193N directory. Keep them private; do not mirror-push these backups. Known-good executable preservation remains to be confirmed. Before any real-profile test, make a consistent runtime data backup and isolate copied media paths. No runtime data has been copied or modified in this milestone. Keep both original repositories and the known-good app through migration; no requirement to retain redundant repos forever after acceptance. The verified local Git bundles provide independent backup. The app and its user data are not backed up by Git.
+Both rollback branches were created and read back at the exact SHAs on November 25. Branches/tags are not intrinsically immutable; do not move or delete these refs. The operator created both lightweight tags through authenticated Git on November 25; independent GitHub readback confirms both tags point to the exact commits above. Local mirror backups and self-contained Git bundles were created and verified by the operator: Mebooru 6,393 objects / 40 refs; Meloader 3,210 objects / 57 refs. Stored under the project backups/pre-consolidation.5M193N directory. Keep them private; do not mirror-push these backups. Operator verified the accepted signed app copied to the baseline backup's accepted-app/Mebooru.app; both executables compare byte-for-byte and codesign verification passed. II.2 source and app recovery complete; runtime data backup remains a separate pre-test gate. Before any real-profile test, make a consistent runtime data backup and isolate copied media paths. No runtime data has been copied or modified in this milestone. Keep both original repositories and the known-good app through migration; no requirement to retain redundant repos forever after acceptance. The verified local Git bundles provide independent backup. The app and its user data are not backed up by Git.
 
 ### Reconnaissance findings (II.1)
 
@@ -55,6 +55,8 @@ Both rollback branches were created and read back at the exact SHAs on November 
 - Watches already support persistent URL, interval, item limits, history, retries and blacklist outcomes; current Watch record lacks its own destination gallery. gallery-dl already has managed installation/checksum machinery, but strict.go enforces 1.32.19 exactly. Existing managed revert removes managed runtime, not a transactional version rollback.
 
 ### II.3–II.4 implementation guardrails and acceptance
+
+On November 25 the operator imported Meloader on `consolidation/import-meloader` at `dc3e419cabd69064cfac01cefc674048c837e37d`. Independent GitHub tree and commit inspection confirmed exactly two original parents, unchanged Mebooru root and byte-identical Meloader tree `ad65075c852dcff551073e323aed93bfa22f862f` (378 files). [PR #19](https://github.com/jwebb7847-ui/mebooru/pull/19) is the pure import; retain its ancestry using a merge commit. II.4 candidate changes only root build, CI and docs, not either Go module or worker behavior. The original release workflows are retained as historical/platform-specific build paths; unified installers remain Chapter VI. No new test results claimed until actual CI and Mac acceptance.
 
 Keep Mebooru at repo root and import Meloader as `meloader/` with its own module, assets and package paths. Do not overlay roots or squash away the imported history. Verify Git tree equality for imported source and reachability of both original commits; preserve rollback refs and accepted executable. Consolidate root CI explicitly: nested .github workflows do not execute automatically. Replace external companion checkout with nested path; adapt build scripts, cache keys, version stamps and root security scanning without lowering test coverage. Keep both binaries and current APIs; no user-data migration in the initial consolidation.
 
