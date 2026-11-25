@@ -1,5 +1,7 @@
 # Local audit runbook
 
+> **Historical runbook.** Reproduce the dated tests below only at their specified revisions. For current consolidated builds and milestone testing use [MEBOORU.md](../../../MEBOORU.md#development-workflow) and the [root build instructions](../../../README.md). Do not use the old separate-clone commands for current candidates.
+
 Updated with the operator's Apple Silicon Finder acceptance through **2026-11-24**. The original November 14 source-based Audit_A procedure is retained below as **historical, intentionally isolated state**. Verify current listeners, checkout SHAs and config files before use.
 
 ## Current Finder build and smoke test (2026-11-24)
