@@ -27,7 +27,9 @@ type ManagedPeer interface {
 // request/startup context. A nil peer on error MUST mean there is no
 // owned child left to clean up. If cleanup is unconfirmed, return the
 // peer and error together so replacement remains blocked.
-type Starter func(startup,lifetime context.Context)(ManagedPeer,error)
+// generation identifies the already-persisted worker fence. The production
+// starter must give it only to its trusted cleanup custodian.
+type Starter func(startup,lifetime context.Context,generation string)(ManagedPeer,error)
 
 type LifecycleOptions struct {
 	IdleAfter time.Duration
@@ -121,7 +123,7 @@ func(m *Manager)ensure(ctx context.Context)error{
 	fence,err:=m.lock.BeginWorker()
 	if err!=nil{return err}
 	m.fence=fence
-	peer,err:=m.start(ctx,m.lifetime)
+	peer,err:=m.start(ctx,m.lifetime,fence.Generation())
 	m.peer=peer
 	if err!=nil||peer==nil{
 		if err==nil{

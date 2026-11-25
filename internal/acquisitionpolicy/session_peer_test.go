@@ -54,7 +54,7 @@ func fixtureStarter(t *testing.T,mode string,started *int)Starter{
 	t.Helper()
 	exe,err:=os.Executable()
 	if err!=nil{t.Fatal(err)}
-	return func(start,lifetime context.Context)(ManagedPeer,error){
+	return func(start,lifetime context.Context,_ string)(ManagedPeer,error){
 		(*started)++
 		// Test-only direct child: there are deliberately no descendants.
 		// Production must substitute contained process cleanup.

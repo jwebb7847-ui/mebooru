@@ -18,7 +18,7 @@ func TestManagerRefusesUnrecoveredProfile(t *testing.T) {
 	store := openTestStore(t,dir)
 	policy, err := New(store)
 	if err != nil { t.Fatal(err) }
-	m,err := NewManager(context.Background(),l,policy,func(_, _ context.Context)(ManagedPeer,error){
+	m,err := NewManager(context.Background(),l,policy,func(_, _ context.Context,_ string)(ManagedPeer,error){
 		t.Fatal("unexpected launch")
 		return nil,errors.New("unexpected launch")
 	},LifecycleOptions{})
@@ -32,12 +32,11 @@ func TestManagerFencesBeforeStartupAndClearsAfterConfirmedStop(t *testing.T) {
 	var dir string
 	var m *Manager
 	starts := 0
-	manager,_,profile := newTestManager(t,func(_, _ context.Context)(ManagedPeer,error){
+	manager,_,profile := newTestManager(t,func(_, _ context.Context,generation string)(ManagedPeer,error){
 		starts++
 		// Inspect the already-owned descriptor, not a separate Windows handle.
-		var body [2]byte
-		n,err := m.lock.file.ReadAt(body[:],1)
-		if err != nil || n!=2 || body != [2]byte{fenceVersion,fenceDirty} { t.Fatalf("not fenced before launch: %v %v",body,err) }
+		record,err := m.lock.readFence()
+		if err != nil || record.version!=custodyFenceVersion || record.state!=fenceDirty || record.generationID()!=generation { t.Fatalf("not fenced before launch: %v %v",record,err) }
 		return p,nil
 	})
 	m=manager
@@ -52,13 +51,13 @@ func TestManagerFencesBeforeStartupAndClearsAfterConfirmedStop(t *testing.T) {
 	if err:=m.Shutdown(ctx);err!=nil{t.Fatal(err)}
 	if starts!=1{t.Fatal("unexpected restart")}
 	body,err:=os.ReadFile(filepath.Join(dir,lockFile))
-	if err!=nil||string(body)!=string([]byte{0,fenceVersion,fenceClean}){t.Fatalf("clean record: %v %v",body,err)}
+	if err!=nil||len(body)!=3+generationSize||body[0]!=0||body[1]!=custodyFenceVersion||body[2]!=fenceClean{t.Fatalf("clean record: %v %v",body,err)}
 }
 
 func TestManagerClearsNoChildStartupFailure(t *testing.T){
 	ctx:=context.Background()
 	startErr:=errors.New("verified no child")
-	m,now,_:=newTestManager(t,func(_, _ context.Context)(ManagedPeer,error){return nil,startErr})
+	m,now,_:=newTestManager(t,func(_, _ context.Context,_ string)(ManagedPeer,error){return nil,startErr})
 	if _,err:=m.Acquire(ctx);!errors.Is(err,startErr){t.Fatal(err)}
 	if m.fence!=nil{t.Fatal("no-child failure retained fence")}
 	*now=now.Add(2*time.Second)
