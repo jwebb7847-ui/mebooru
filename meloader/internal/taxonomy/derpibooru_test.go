@@ -1,0 +1,1503 @@
+package taxonomy
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/monbooru/monloader/internal/config"
+	"github.com/monbooru/monloader/internal/mapping"
+)
+
+// Test records stand in for the tag API, which emits an empty array when
+// a tag has no incoming aliases.
+func (r tagSearchResponse) MarshalJSON() ([]byte, error) {
+	type response tagSearchResponse
+	r.Tags = slices.Clone(r.Tags)
+	for i := range r.Tags {
+		if r.Tags[i].Aliases == nil {
+			r.Tags[i].Aliases = []string{}
+		}
+	}
+	return json.Marshal(response(r))
+}
+
+func TestDerpibooruFilingAndBlacklistCompatibility(t *testing.T) {
+	records := []tagRecord{
+		{ID: 1, Name: "safe", Category: tagCategory{value: "rating"}},
+		{ID: 2, Name: "oc:milky way", Namespace: "oc", NameInNamespace: "milky way", Category: tagCategory{value: "oc"}},
+		{ID: 3, Name: "milky way", Category: tagCategory{value: "character"}},
+		{ID: 4, Name: "oc", Category: tagCategory{value: "oc"}},
+		{ID: 5, Name: "oc only", Category: tagCategory{value: "oc"}},
+		{ID: 6, Name: "parent:rainbow dash", Namespace: "parent", Category: tagCategory{uncategorized: true}},
+		{ID: 7, Name: "colorist:ironhades", Namespace: "colorist", Category: tagCategory{value: "origin"}},
+		{ID: 8, Name: "fanfic:the bridge", Namespace: "fanfic", Category: tagCategory{value: "content-fanmade"}},
+		{ID: 9, Name: "series:springshadowdrop's diary", Namespace: "series", Category: tagCategory{value: "content-fanmade"}},
+		{ID: 10, Name: "creator:example", Category: tagCategory{uncategorized: true}},
+		{ID: 11, Name: "species:example", Namespace: "species", Category: tagCategory{uncategorized: true}},
+		{ID: 12, Name: "violence", Category: tagCategory{uncategorized: true}},
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_ = json.NewEncoder(w).Encode(tagSearchResponse{Tags: records})
+	}))
+	defer server.Close()
+	cache := filepath.Join(t.TempDir(), "tags.json")
+	resolver, err := newDerpibooru(cache, server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Tags.Blacklist = []string{"character:milky_way violence"}
+	provider := config.NewProvider(cfg)
+	mapper, err := mapping.New(provider, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := map[string]any{"category": "derpibooru", "id": "42",
+		"tags":    []string{"safe", "oc:milky way", "milky way", "oc", "oc only", "parent:rainbow dash", "colorist:ironhades", "fanfic:the bridge", "series:springshadowdrop's diary", "creator:example", "species:example", "violence"},
+		"tag_ids": []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+	}
+	if err := resolver.Enrich(t.Context(), raw); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"character:milky_way", "character:oc:milky_way", "creator:example", "general:species:example",
+		"meta:colorist:ironhades", "meta:fanfic:the_bridge", "meta:oc", "meta:oc_only", "meta:series:springshadowdrop's_diary",
+		"parent:rainbow_dash", "rating:general", "violence"}
+	if got := mapper.Map(raw).Tags; !reflect.DeepEqual(got, want) {
+		t.Fatalf("tags = %v, want %v", got, want)
+	}
+	warm, err := newDerpibooru(cache, server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		rule    string
+		blocked bool
+	}{
+		{"character:milky_way violence", true},
+		{"milky_way violence", true},
+		{"character:oc:milky_way violence", true},
+		{"character:milky* violence", true},
+		{"-character:milky_way violence", false},
+		{"character:rainbow_dash violence", false},
+	} {
+		t.Run(tc.rule, func(t *testing.T) {
+			if err := provider.Update(func(cfg *config.Config) error {
+				cfg.Tags.Blacklist = []string{tc.rule}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			// Exclude the same-named ordinary character so an old rule can
+			// match only through the OC compatibility spelling.
+			source := map[string]any{"category": "derpibooru", "tags": []string{"safe", "oc:milky way", "parent:rainbow dash", "violence"},
+				"tag_ids": []int{1, 2, 6, 12}}
+			meta := map[string]any{"category": "derpibooru", "tags": source["tags"], "tag_ids": source["tag_ids"]}
+			if err := warm.Enrich(t.Context(), meta); err != nil {
+				t.Fatal(err)
+			}
+			rules, err := mapper.StrictBlacklist("derpibooru")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, normal := mapper.Blacklisted(meta)
+			strict := rules.Match(source, meta) != ""
+			trace := mapper.Trace(meta)
+			if normal != tc.blocked || strict != tc.blocked || (trace.Skipped != "") != tc.blocked {
+				t.Fatalf("blacklist outcome: standard=%t strict=%t trace=%q, want blocked=%t", normal, strict, trace.Skipped, tc.blocked)
+			}
+			if trace.Rows[0].Listed != "oc:milky way" || trace.Rows[0].Sent != "character:oc:milky_way" {
+				t.Fatalf("trace lost the source or filed spelling: %+v", trace.Rows[0])
+			}
+		})
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("expected one cold batch and no warm requests, got %d", got)
+	}
+	profile, ok := mapper.Lookup("derpibooru")
+	if !ok {
+		t.Fatal("missing Derpibooru profile")
+	}
+	profile.TagRules = map[string]string{"character:milky_way": ""}
+	if err := mapper.SaveUserProfile("derpibooru", profile); err != nil {
+		t.Fatal(err)
+	}
+	if got := mapper.Map(raw).Tags; slices.Contains(got, "character:oc:milky_way") {
+		t.Fatalf("legacy tag suppression no longer applies: %v", got)
+	}
+	if err := resolver.Enrich(t.Context(), raw); err != nil {
+		t.Fatalf("repeated enrichment: %v", err)
+	}
+}
+
+func TestDerpibooruEnrich(t *testing.T) {
+	records := map[string]tagRecord{
+		"safe": {
+			ID:              1,
+			Name:            "safe",
+			Category:        tagCategory{value: "rating"},
+			NameInNamespace: "safe",
+		},
+		"rainbow dash": {
+			ID:              2,
+			Name:            "rainbow dash",
+			Category:        tagCategory{value: "character"},
+			NameInNamespace: "rainbow dash",
+		},
+		"pony": {
+			ID:              3,
+			Name:            "pony",
+			Category:        tagCategory{value: "species"},
+			NameInNamespace: "pony",
+		},
+		"artist:test": {
+			ID:              4,
+			Name:            "artist:test",
+			Category:        tagCategory{value: "origin"},
+			Namespace:       "artist",
+			NameInNamespace: "test",
+		},
+		"equestria at war mod": {
+			ID:              5,
+			Name:            "equestria at war mod",
+			Category:        tagCategory{value: "content-fanmade"},
+			NameInNamespace: "equestria at war mod",
+		},
+		"wings": {
+			ID:              6,
+			Name:            "wings",
+			Category:        tagCategory{uncategorized: true},
+			NameInNamespace: "wings",
+		},
+		"my little pony": {
+			ID:              7,
+			Name:            "my little pony",
+			Category:        tagCategory{value: "origin"},
+			NameInNamespace: "my little pony",
+		},
+	}
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			name := r.URL.Query().Get("q")
+
+			rec, ok := records[name]
+			if !ok {
+				http.Error(
+					w,
+					"unknown test tag",
+					http.StatusNotFound,
+				)
+				return
+			}
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{rec},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	cachePath := filepath.Join(
+		t.TempDir(),
+		"derpibooru.json",
+	)
+
+	resolver, err := newDerpibooru(
+		cachePath,
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"safe",
+			"rainbow dash",
+			"pony",
+			"artist:test",
+			"equestria at war mod",
+			"wings",
+			"my little pony",
+		},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	assertTags(
+		t,
+		meta["tags"],
+		[]string{
+			"safe",
+			"character:rainbow dash",
+			"species:pony",
+			"artist:test",
+			"meta:equestria at war mod",
+			"wings",
+			"meta:my little pony",
+		},
+	)
+
+	/*
+		A fresh resolver must be able to reproduce the result using only
+		the persistent cache.
+	*/
+	server.Close()
+
+	cached, err := newDerpibooru(
+		cachePath,
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta2 := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"safe",
+			"rainbow dash",
+			"pony",
+			"artist:test",
+			"equestria at war mod",
+			"wings",
+			"my little pony",
+		},
+	}
+
+	if err := cached.Enrich(
+		context.Background(),
+		meta2,
+	); err != nil {
+		t.Fatalf(
+			"cached enrichment tried the network: %v",
+			err,
+		)
+	}
+
+	if !reflect.DeepEqual(meta, meta2) {
+		t.Fatalf(
+			"cached result differs:\nfirst: %#v\ncached: %#v",
+			meta,
+			meta2,
+		)
+	}
+}
+
+func TestDerpibooruOtherSiteIsUntouched(t *testing.T) {
+	resolver, err := newDerpibooru(
+		"",
+		"http://127.0.0.1:1",
+		http.DefaultClient,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "danbooru",
+		"tags":     []any{"safe", "pony"},
+	}
+
+	before := map[string]any{
+		"category": "danbooru",
+		"tags":     []any{"safe", "pony"},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(meta, before) {
+		t.Fatalf(
+			"non-Derpibooru metadata changed: %#v",
+			meta,
+		)
+	}
+}
+
+func assertTags(
+	t *testing.T,
+	got any,
+	want []string,
+) {
+	t.Helper()
+
+	actual, ok := got.([]string)
+	if !ok {
+		t.Fatalf(
+			"tags have type %T; want []string",
+			got,
+		)
+	}
+
+	if !reflect.DeepEqual(actual, want) {
+		t.Fatalf(
+			"tags = %#v, want %#v",
+			actual,
+			want,
+		)
+	}
+}
+
+func TestDerpibooruTargetSemantics(t *testing.T) {
+	tests := []struct {
+		name       string
+		rec        tagRecord
+		source     string
+		wantTarget string
+		wantName   string
+		wantRating bool
+	}{
+		{
+			name: "artist namespace overrides origin category",
+			rec: tagRecord{
+				Category:        tagCategory{value: "origin"},
+				Namespace:       "artist",
+				NameInNamespace: "redruin01",
+			},
+			source:     "artist:redruin01",
+			wantTarget: "artist",
+			wantName:   "redruin01",
+		},
+		{
+			name: "named oc namespace is a character",
+			rec: tagRecord{
+				Category:        tagCategory{value: "oc"},
+				Namespace:       "oc",
+				NameInNamespace: "anon",
+			},
+			source:     "oc:anon",
+			wantTarget: "character",
+			wantName:   "oc:anon",
+		},
+		{
+			name: "generic oc tag is metadata",
+			rec: tagRecord{
+				Category:        tagCategory{value: "oc"},
+				NameInNamespace: "oc",
+			},
+			source:     "oc",
+			wantTarget: "meta",
+			wantName:   "oc",
+		},
+		{
+			name: "canonical character category",
+			rec: tagRecord{
+				Category:        tagCategory{value: "character"},
+				NameInNamespace: "rainbow dash",
+			},
+			source:     "rainbow dash",
+			wantTarget: "character",
+			wantName:   "rainbow dash",
+		},
+		{
+			name: "species category",
+			rec: tagRecord{
+				Category:        tagCategory{value: "species"},
+				NameInNamespace: "pegasus",
+			},
+			source:     "pegasus",
+			wantTarget: "species",
+			wantName:   "pegasus",
+		},
+		{
+			name: "origin category is metadata",
+			rec: tagRecord{
+				Category:        tagCategory{value: "origin"},
+				NameInNamespace: "screencap",
+			},
+			source:     "screencap",
+			wantTarget: "meta",
+			wantName:   "screencap",
+		},
+		{
+			name: "fanfic namespace retains source spelling",
+			rec: tagRecord{
+				Category:        tagCategory{value: "content-fanmade"},
+				Namespace:       "fanfic",
+				NameInNamespace: "excuses",
+			},
+			source:     "fanfic:excuses",
+			wantTarget: "meta",
+			wantName:   "fanfic:excuses",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target, name, rating := derpibooruTarget(tt.rec, tt.source)
+
+			if target != tt.wantTarget ||
+				name != tt.wantName ||
+				rating != tt.wantRating {
+				t.Fatalf(
+					"derpibooruTarget() = (%q, %q, %v), want (%q, %q, %v)",
+					target,
+					name,
+					rating,
+					tt.wantTarget,
+					tt.wantName,
+					tt.wantRating,
+				)
+			}
+		})
+	}
+}
+
+func TestDerpibooruEnrichSerializesCacheMisses(t *testing.T) {
+	var active atomic.Int32
+	var maxActive atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			n := active.Add(1)
+
+			for {
+				old := maxActive.Load()
+
+				if n <= old ||
+					maxActive.CompareAndSwap(old, n) {
+					break
+				}
+			}
+
+			defer active.Add(-1)
+
+			time.Sleep(20 * time.Millisecond)
+
+			name := r.URL.Query().Get("q")
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{
+						{
+							ID:              1,
+							Category:        tagCategory{uncategorized: true},
+							Name:            name,
+							NameInNamespace: name,
+						},
+					},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"one",
+			"two",
+			"three",
+			"four",
+		},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := maxActive.Load(); got != 1 {
+		t.Fatalf(
+			"maximum concurrent requests = %d; want 1",
+			got,
+		)
+	}
+}
+
+func TestDerpibooruRetries429(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			if calls.Add(1) == 1 {
+				w.Header().Set("Retry-After", "0")
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
+
+			name := r.URL.Query().Get("q")
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{
+						{
+							ID:              1,
+							Category:        tagCategory{uncategorized: true},
+							Name:            name,
+							NameInNamespace: name,
+						},
+					},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"rainbow dash",
+		},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf(
+			"request count = %d; want 2",
+			got,
+		)
+	}
+}
+
+func TestDerpibooruWarmPreloadsWithoutMutation(t *testing.T) {
+	var calls atomic.Int32
+
+	records := map[string]tagRecord{
+		"rainbow dash": {
+			ID:              1,
+			Name:            "rainbow dash",
+			Category:        tagCategory{value: "character"},
+			NameInNamespace: "rainbow dash",
+		},
+		"pony": {
+			ID:              2,
+			Name:            "pony",
+			Category:        tagCategory{value: "species"},
+			NameInNamespace: "pony",
+		},
+	}
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			calls.Add(1)
+
+			name := r.URL.Query().Get("q")
+			rec, ok := records[name]
+
+			if !ok {
+				http.Error(w, "unexpected tag", http.StatusBadRequest)
+				return
+			}
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{rec},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"rainbow dash",
+			"pony",
+		},
+	}
+
+	before := fmt.Sprint(meta["tags"])
+
+	if err := resolver.Warm(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := fmt.Sprint(meta["tags"]); got != before {
+		t.Fatalf(
+			"Warm mutated tags: got %s, want %s",
+			got,
+			before,
+		)
+	}
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf(
+			"Warm request count = %d; want 2",
+			got,
+		)
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf(
+			"Enrich made new requests after Warm: calls = %d, want 2",
+			got,
+		)
+	}
+
+	assertTags(
+		t,
+		meta["tags"],
+		[]string{
+			"character:rainbow dash",
+			"species:pony",
+		},
+	)
+}
+
+func TestDerpibooruEnrichBatchesTagIDs(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			calls.Add(1)
+
+			got := r.URL.Query().Get("q")
+			want := "id:101 || id:102 || id:103"
+
+			if got != want {
+				http.Error(
+					w,
+					"unexpected query: "+got,
+					http.StatusBadRequest,
+				)
+				return
+			}
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{
+						{
+							ID:              103,
+							Name:            "pony",
+							Category:        tagCategory{value: "species"},
+							NameInNamespace: "pony",
+						},
+						{
+							ID:              101,
+							Name:            "cute",
+							Category:        tagCategory{uncategorized: true},
+							NameInNamespace: "cute",
+						},
+						{
+							ID:              102,
+							Name:            "rainbow dash",
+							Category:        tagCategory{value: "character"},
+							NameInNamespace: "rainbow dash",
+						},
+					},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"cute",
+			"rainbow dash",
+			"pony",
+		},
+		"tag_ids": []any{
+			float64(101),
+			float64(102),
+			float64(103),
+		},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf(
+			"request count = %d; want 1 batch request",
+			got,
+		)
+	}
+
+	assertTags(
+		t,
+		meta["tags"],
+		[]string{
+			"cute",
+			"character:rainbow dash",
+			"species:pony",
+		},
+	)
+}
+
+func TestDerpibooruIncompleteBatchFallsBack(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			calls.Add(1)
+
+			switch q := r.URL.Query().Get("q"); {
+			case strings.Contains(q, "id:101"):
+				// Deliberately omit "cute" so the exact-name fallback
+				// must resolve only the missing record.
+				_ = json.NewEncoder(w).Encode(
+					tagSearchResponse{
+						Tags: []tagRecord{
+							{
+								ID:              102,
+								Name:            "rainbow dash",
+								Category:        tagCategory{value: "character"},
+								NameInNamespace: "rainbow dash",
+							},
+							{
+								ID:              103,
+								Name:            "pony",
+								Category:        tagCategory{value: "species"},
+								NameInNamespace: "pony",
+							},
+						},
+					},
+				)
+
+			case q == "cute":
+				_ = json.NewEncoder(w).Encode(
+					tagSearchResponse{
+						Tags: []tagRecord{
+							{
+								ID:              101,
+								Name:            "cute",
+								Category:        tagCategory{uncategorized: true},
+								NameInNamespace: "cute",
+							},
+						},
+					},
+				)
+
+			default:
+				http.Error(
+					w,
+					"unexpected query: "+q,
+					http.StatusBadRequest,
+				)
+			}
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"cute",
+			"rainbow dash",
+			"pony",
+		},
+		"tag_ids": []any{
+			float64(101),
+			float64(102),
+			float64(103),
+		},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf(
+			"request count = %d; want 2 (one batch + one fallback)",
+			got,
+		)
+	}
+
+	assertTags(
+		t,
+		meta["tags"],
+		[]string{
+			"cute",
+			"character:rainbow dash",
+			"species:pony",
+		},
+	)
+}
+
+func TestDerpibooruBatchChunksOverFiftyIDs(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			call := calls.Add(1)
+
+			q := r.URL.Query().Get("q")
+			terms := strings.Split(q, " || ")
+
+			switch call {
+			case 1:
+				if len(terms) != 50 {
+					t.Errorf(
+						"first batch size = %d; want 50",
+						len(terms),
+					)
+				}
+
+			case 2:
+				if len(terms) != 5 {
+					t.Errorf(
+						"second batch size = %d; want 5",
+						len(terms),
+					)
+				}
+
+			default:
+				t.Errorf(
+					"unexpected extra request %d",
+					call,
+				)
+			}
+
+			records := make(
+				[]tagRecord,
+				0,
+				len(terms),
+			)
+
+			for _, term := range terms {
+				raw := strings.TrimPrefix(
+					strings.TrimSpace(term),
+					"id:",
+				)
+
+				id, err := strconv.Atoi(raw)
+				if err != nil {
+					http.Error(
+						w,
+						"bad id "+raw,
+						http.StatusBadRequest,
+					)
+					return
+				}
+
+				name := fmt.Sprintf(
+					"tag-%d",
+					id,
+				)
+
+				records = append(
+					records,
+					tagRecord{
+						ID:              int64(id),
+						Category:        tagCategory{uncategorized: true},
+						Name:            name,
+						NameInNamespace: name,
+					},
+				)
+			}
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: records,
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tags := make([]any, 55)
+	ids := make([]any, 55)
+
+	for i := range tags {
+		id := 1001 + i
+
+		tags[i] = fmt.Sprintf(
+			"tag-%d",
+			id,
+		)
+		ids[i] = float64(id)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags":     tags,
+		"tag_ids":  ids,
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf(
+			"request count = %d; want 2",
+			got,
+		)
+	}
+
+	if got := len(meta["tags"].([]string)); got != 55 {
+		t.Fatalf(
+			"final tag count = %d; want 55",
+			got,
+		)
+	}
+}
+
+func TestDerpibooruInvalidTagIDShapeFallsBack(t *testing.T) {
+	tests := []struct {
+		name   string
+		tagIDs any
+	}{
+		{
+			name: "misaligned",
+			tagIDs: []any{
+				float64(101),
+			},
+		},
+		{
+			name:   "malformed",
+			tagIDs: "not-an-array",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(
+			tt.name,
+			func(t *testing.T) {
+				var calls atomic.Int32
+
+				server := httptest.NewServer(
+					http.HandlerFunc(func(
+						w http.ResponseWriter,
+						r *http.Request,
+					) {
+						calls.Add(1)
+
+						name := r.URL.Query().Get("q")
+
+						var rec tagRecord
+
+						switch name {
+						case "rainbow dash":
+							rec = tagRecord{
+								ID:              1,
+								Name:            name,
+								Category:        tagCategory{value: "character"},
+								NameInNamespace: name,
+							}
+
+						case "pony":
+							rec = tagRecord{
+								ID:              2,
+								Name:            name,
+								Category:        tagCategory{value: "species"},
+								NameInNamespace: name,
+							}
+
+						default:
+							http.Error(
+								w,
+								"unexpected query: "+name,
+								http.StatusBadRequest,
+							)
+							return
+						}
+
+						_ = json.NewEncoder(w).Encode(
+							tagSearchResponse{
+								Tags: []tagRecord{rec},
+							},
+						)
+					}),
+				)
+				defer server.Close()
+
+				resolver, err := newDerpibooru(
+					"",
+					server.URL,
+					server.Client(),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				meta := map[string]any{
+					"category": "derpibooru",
+					"tags": []any{
+						"rainbow dash",
+						"pony",
+					},
+					"tag_ids": tt.tagIDs,
+				}
+
+				if err := resolver.Enrich(
+					context.Background(),
+					meta,
+				); err != nil {
+					t.Fatal(err)
+				}
+
+				if got := calls.Load(); got != 2 {
+					t.Fatalf(
+						"request count = %d; want 2 exact-name fallbacks",
+						got,
+					)
+				}
+
+				assertTags(
+					t,
+					meta["tags"],
+					[]string{
+						"character:rainbow dash",
+						"species:pony",
+					},
+				)
+			},
+		)
+	}
+}
+
+func TestDerpibooruCacheSurvivesResolverRestart(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			calls.Add(1)
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{
+						{
+							ID:              101,
+							Name:            "rainbow dash",
+							Category:        tagCategory{value: "character"},
+							NameInNamespace: "rainbow dash",
+						},
+						{
+							ID:              102,
+							Name:            "pony",
+							Category:        tagCategory{value: "species"},
+							NameInNamespace: "pony",
+						},
+					},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	cache := t.TempDir() + "/derpibooru.json"
+
+	first, err := newDerpibooru(
+		cache,
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newMeta := func() map[string]any {
+		return map[string]any{
+			"category": "derpibooru",
+			"tags": []any{
+				"rainbow dash",
+				"pony",
+			},
+			"tag_ids": []any{
+				float64(101),
+				float64(102),
+			},
+		}
+	}
+
+	if err := first.Enrich(
+		context.Background(),
+		newMeta(),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf(
+			"first resolver request count = %d; want 1",
+			got,
+		)
+	}
+
+	second, err := newDerpibooru(
+		cache,
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := newMeta()
+
+	if err := second.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf(
+			"restart caused another network request; calls = %d, want 1",
+			got,
+		)
+	}
+
+	assertTags(
+		t,
+		meta["tags"],
+		[]string{
+			"character:rainbow dash",
+			"species:pony",
+		},
+	)
+}
+
+func TestDerpibooruCorruptCacheIsQuarantinedAndRebuilt(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			calls.Add(1)
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{
+						{
+							ID:              101,
+							Name:            "rainbow dash",
+							Category:        tagCategory{value: "character"},
+							NameInNamespace: "rainbow dash",
+						},
+					},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	dir := t.TempDir()
+	cache := filepath.Join(
+		dir,
+		"derpibooru.json",
+	)
+
+	bad := []byte(`{"rainbow dash":`)
+
+	if err := os.WriteFile(
+		cache,
+		bad,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver, err := newDerpibooru(
+		cache,
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatalf(
+			"corrupt cache still exists at original path; stat err = %v",
+			err,
+		)
+	}
+
+	matches, err := filepath.Glob(
+		cache + ".corrupt-*",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(matches) != 1 {
+		t.Fatalf(
+			"quarantined cache count = %d; want 1: %v",
+			len(matches),
+			matches,
+		)
+	}
+
+	gotBad, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(gotBad, bad) {
+		t.Fatalf(
+			"quarantined contents changed: got %q want %q",
+			gotBad,
+			bad,
+		)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"rainbow dash",
+		},
+		"tag_ids": []any{
+			float64(101),
+		},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf(
+			"request count = %d; want 1",
+			got,
+		)
+	}
+
+	assertTags(
+		t,
+		meta["tags"],
+		[]string{
+			"character:rainbow dash",
+		},
+	)
+
+	raw, err := os.ReadFile(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var rebuilt map[string]tagRecord
+
+	if err := json.Unmarshal(
+		raw,
+		&rebuilt,
+	); err != nil {
+		t.Fatalf(
+			"rebuilt cache is invalid JSON: %v",
+			err,
+		)
+	}
+
+	if _, ok := rebuilt["rainbow dash"]; !ok {
+		t.Fatalf(
+			"rebuilt cache lacks rainbow dash: %#v",
+			rebuilt,
+		)
+	}
+}
+
+func TestDerpibooruCacheWriteFailurePreventsSuccessfulEnrichment(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			calls.Add(1)
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{
+						{
+							ID:              101,
+							Name:            "rainbow dash",
+							Category:        tagCategory{value: "character"},
+							NameInNamespace: "rainbow dash",
+						},
+					},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	// Start without persistence so construction itself succeeds.
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	/*
+		An existing directory cannot be replaced by the cache file.
+		This gives us a deterministic persistence failure without
+		depending on platform-specific permission behavior.
+	*/
+	resolver.cachePath = t.TempDir()
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"rainbow dash",
+		},
+		"tag_ids": []any{
+			float64(101),
+		},
+	}
+
+	before := fmt.Sprint(meta["tags"])
+
+	err = resolver.Enrich(
+		context.Background(),
+		meta,
+	)
+
+	if err == nil {
+		t.Fatal(
+			"Enrich succeeded despite taxonomy cache write failure",
+		)
+	}
+
+	if got := fmt.Sprint(meta["tags"]); got != before {
+		t.Fatalf(
+			"metadata mutated despite cache failure: got %s want %s",
+			got,
+			before,
+		)
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf(
+			"request count = %d; want 1",
+			got,
+		)
+	}
+}

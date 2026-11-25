@@ -1,0 +1,64 @@
+{{define "setup"}}
+<!DOCTYPE html>
+<html lang="en" data-app="monloader">
+<head>
+{{template "webui/head" .}}
+  <script src="/static/shared/htmx.min.js"></script>
+  <script src="/static/shared/base.js" defer></script>
+  <script src="/static/main.js" defer></script>
+</head>
+<body>
+<div id="setup-page"{{if .Mascot}} class="setup-drawn"{{end}}>
+  {{with .Mascot}}<img src="{{.}}" alt="" class="mascot">{{end}}
+  <div>
+  <div class="setup-head"><h1>{{wordmark .BooruName}}</h1><span class="setup-tag">setup</span></div>
+  {{if .Err}}<div class="flash flash-err">{{.Err}}</div>{{end}}
+
+  <form method="POST" action="/setup">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+
+    <h2>Connect to Mebooru</h2>
+    {{if .Found}}
+    <p>Found Mebooru{{if .FoundVersion}} {{.FoundVersion}}{{end}} at this address.</p>
+    {{else}}
+    <p class="field-hint">Start Mebooru and reload this page, or type its address if it is on another machine. You can also do this later in Settings.</p>
+    {{end}}
+    <div class="field">
+      <label for="setup-api-url">Mebooru API URL</label>
+      <input id="setup-api-url" type="text" name="api_url" value="{{.APIURL}}" placeholder="http://127.0.0.1:8455">
+    </div>
+    {{if and .Found (not .Paired)}}
+    <div class="field">
+      <label><input type="checkbox" name="pair" {{if .Pair}}checked{{end}}> Pair with Mebooru</label>
+      <p class="field-hint">Approve the request in Mebooru, under Settings > Plugins.</p>
+    </div>
+    {{end}}
+
+    <h2>Who can open {{.BooruName}}?</h2>
+    <div class="field">
+      <label><input type="radio" name="reach" value="local" {{if not .LAN}}checked{{end}}> Only this computer</label>
+      <p class="field-hint">Open it at http://localhost:{{.Port}}.</p>
+      <label><input type="radio" name="reach" value="lan" {{if .LAN}}checked{{end}}> Other devices on the LAN too</label>
+      <p class="field-hint">Another device on the same network opens it at this machine's address, port {{.Port}}. Takes effect when {{.BooruName}} restarts.</p>
+    </div>
+
+    {{$dk := .Integration}}
+    {{if $dk.Supported}}
+    <h2>Launching {{.BooruName}}</h2>
+    <div class="field">
+      {{if $dk.MenuSupported}}
+      <label><input type="checkbox" name="menu_entry" {{if .Menu}}checked{{end}}> Add {{.BooruName}} to the applications menu</label>
+      {{end}}
+      {{if $dk.AutostartSupported}}
+      <label><input type="checkbox" name="start_at_login" {{if .Autostart}}checked{{end}}> Start at login</label>
+      {{end}}
+    </div>
+    {{end}}
+
+    <div class="setup-actions"><button type="submit">Open {{.BooruName}}</button></div>
+  </form>
+  </div>
+</div>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,68 @@
+{{define "ptr_contrib"}}
+<section id="ptr-contrib-card" class="settings-section"{{if .NoAccount}} hidden{{end}}{{if .OOB}} hx-swap-oob="true"{{end}} hx-vals='{"page": {{.Page}}}'{{if .SendRunning}} hx-get="/internal/ptr-contrib" hx-trigger="every 2s [!confirmOpen()]" hx-target="#ptr-contrib" hx-swap="innerHTML"{{end}}>
+  <div class="settings-section-header"><h3>Contributions</h3></div>
+  {{if not .NoAccount}}
+  {{if .RetryErr}}<p class="flash-warn">{{.RetryErr}}</p>{{end}}
+  {{if .NotReady}}<p class="field-hint">The index is still catching up; contributions can be sent once it is fully synced.</p>{{end}}
+  {{if .SendRunning}}<p class="field-hint">A send job is running - progress is on the <a href="/queue">queue</a>.</p>{{end}}
+  {{with .Activity}}{{if .Weeks}}
+  <div class="ptr-activity">
+    <p class="ptr-activity-total">{{.Total}} contribution{{if ne .Total 1}}s{{end}} in the last year</p>
+    <div class="ptr-activity-scroll">
+      <div class="ptr-activity-months">{{range .Weeks}}<span>{{.Month}}</span>{{end}}</div>
+      <div class="ptr-activity-body">
+        <div class="ptr-activity-daylabels"><span></span><span>mon</span><span></span><span></span><span></span><span>fri</span><span></span></div>
+        <div class="ptr-activity-grid">{{range .Weeks}}{{range .Days}}<div class="ptr-day{{if .Level}} ptr-day-{{.Level}}{{end}}" title="{{.Title}}"></div>{{end}}{{end}}</div>
+      </div>
+    </div>
+    <div class="ptr-activity-legend">less <span class="ptr-day"></span><span class="ptr-day ptr-day-1"></span><span class="ptr-day ptr-day-2"></span><span class="ptr-day ptr-day-3"></span><span class="ptr-day ptr-day-4"></span> more</div>
+  </div>
+  {{end}}{{end}}
+  {{if .Unsent}}
+  <p>{{len .Unsent}} unsent{{if .HasFailed}} (last send failed){{end}}
+    {{if not .NotReady}}<button hx-post="/ptr/contrib/retry" hx-target="#ptr-contrib" hx-swap="innerHTML">Retry</button>{{end}}</p>
+  <table class="stats-table contrib-table stack-table">
+    <tbody>
+      {{range .Unsent}}
+      <tr>
+        <td class="stack-head">{{.Kind}}</td>
+        <td class="queue-url" data-label="Item">{{if .Link}}<a href="{{.Link}}" target="_blank" rel="noopener">{{.Label}}</a>{{else}}{{.Label}}{{end}}</td>
+        <td data-label="Origin">{{.Origin}}</td>
+        <td data-label="Status">{{if .Error}}<span class="o-failed" title="{{.Error}}">failed</span>{{end}}</td>
+        <td><button hx-post="/ptr/contrib/{{.ID}}/rescind" hx-target="#ptr-contrib" hx-swap="innerHTML"
+                    title="Delete: nothing was sent yet">x</button></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  {{if .History}}
+  <table class="stats-table contrib-table stack-table">
+    <thead><tr><th>Sent</th><th>Kind</th><th>Item</th><th>Outcome</th><th></th></tr></thead>
+    <tbody>
+      {{range .History}}
+      <tr>
+        <td class="ptr-sent stack-head">{{.Sent}}</td>
+        <td data-label="Kind">{{.Kind}}</td>
+        <td class="queue-url" data-label="Item">{{if .Link}}<a href="{{.Link}}" target="_blank" rel="noopener">{{.Label}}</a>{{else}}{{.Label}}{{end}}</td>
+        <td data-label="Outcome">{{.Outcome}}</td>
+        <td>{{if .Rescindable}}<button hx-post="/ptr/contrib/log/{{.ID}}/rescind" hx-target="#ptr-contrib" hx-swap="innerHTML"
+                hx-confirm="Ask the PTR janitors to remove this tag?"
+                title="They decide; it may stay.">Ask to remove</button>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{if gt .TotalPages 1}}
+  <div class="pagination">
+    {{if gt .Page 1}}<button hx-get="/internal/ptr-contrib" hx-vals='{"page": {{sub .Page 1}}}' hx-target="#ptr-contrib" hx-swap="innerHTML">&larr; Prev</button>{{end}}
+    <span class="current">Page {{.Page}} / {{.TotalPages}}</span>
+    {{if lt .Page .TotalPages}}<button hx-get="/internal/ptr-contrib" hx-vals='{"page": {{add .Page 1}}}' hx-target="#ptr-contrib" hx-swap="innerHTML">Next &rarr;</button>{{end}}
+  </div>
+  {{end}}
+  {{else}}{{if not .Unsent}}
+  <p class="field-hint">Send contributions from Mebooru's image and tags pages. They are listed here.</p>
+  {{end}}{{end}}
+  {{end}}
+</section>
+{{end}}

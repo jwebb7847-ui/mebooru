@@ -1,0 +1,26 @@
+# Built binary
+/monloader
+/monloader.exe
+
+/dist/
+/stage/
+/tools/
+/AppDir/
+/packaging/windows/payload/
+
+# Local config
+/monloader.toml
+
+# Runtime volumes
+/work/
+/config/
+cookies/
+*.sqlite
+
+# Test / coverage artifacts
+cover.out
+coverage.html
+coverage.out
+
+# IDE / editor
+.vscode/

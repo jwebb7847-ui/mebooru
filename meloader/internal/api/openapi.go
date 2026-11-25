@@ -1,0 +1,1211 @@
+package api
+
+import (
+	"cmp"
+	"encoding/json"
+	"html/template"
+	"net/http"
+	"strings"
+)
+
+type endpoint struct {
+	Method      string
+	Path        string
+	Summary     string
+	OperationID string
+	Description string
+	// NoAuth handlers skip the bearer gate, so they must set CORS themselves.
+	NoAuth bool
+	// ReadScope lets a read token call a POST that writes nothing.
+	ReadScope bool
+	Params    []param
+	Request   *reqBody
+	Responses []response
+	Handler   http.HandlerFunc
+}
+
+func (e endpoint) MethodLower() string { return strings.ToLower(e.Method) }
+
+func (e endpoint) Anchor() string { return e.MethodLower() + "-" + anchorize(e.Path) }
+
+type param struct {
+	Name, In, Description string
+	Required              bool
+	// Empty is a string.
+	Type string
+}
+
+type reqBody struct {
+	Required []string
+	Props    []prop
+	Optional bool
+}
+
+func (r reqBody) Fields() []prop { return flatten("", r.Props) }
+
+type response struct {
+	Status, Description string
+	Ref                 string
+	Props               []prop
+}
+
+func (r response) RefAnchor() string { return anchorize(r.Ref) }
+
+func (r response) Fields() []prop { return flatten("", r.Props) }
+
+type prop struct {
+	Name, Type, Description string
+	Format                  string
+	Ref                     string
+	Items                   *prop
+	Props                   []prop
+}
+
+type apiSchema struct {
+	Name  string
+	Props []prop
+}
+
+func (s apiSchema) Anchor() string { return anchorize(s.Name) }
+
+func (s apiSchema) Fields() []prop { return flatten("", s.Props) }
+
+// The HTML reference lists nested fields as dotted rows, an array's
+// element fields under name[].
+func flatten(prefix string, props []prop) []prop {
+	var out []prop
+	for _, p := range props {
+		name := prefix + p.Name
+		row := p
+		row.Name = name
+		if p.Ref != "" {
+			row.Type = p.Ref
+		}
+		if p.Items != nil {
+			row.Type = "array of " + cmp.Or(p.Items.Ref, p.Items.Type)
+		}
+		out = append(out, row)
+		out = append(out, flatten(name+".", p.Props)...)
+		if p.Items != nil {
+			out = append(out, flatten(name+"[].", p.Items.Props)...)
+		}
+	}
+	return out
+}
+
+func (h *Handler) endpoints() []endpoint {
+	eps := []endpoint{
+		{
+			Method: "GET", Path: "/health",
+			Summary: "Liveness and versions", OperationID: "health", NoAuth: true,
+			Responses: []response{
+				{Status: "200", Description: "Service status and versions", Ref: "Health"},
+			},
+			Handler: h.health,
+		},
+		{
+			Method: "POST", Path: "/api/v1/queue",
+			Summary: "Enqueue a URL", OperationID: "enqueue",
+			Params: []param{
+				{Name: "wait", In: "query", Type: "integer", Description: "Block up to N seconds (capped at 60) for the job to resolve and return it inline; otherwise 202 with a job id"},
+			},
+			Request: &reqBody{
+				Required: []string{"url"},
+				Props: []prop{
+					{Name: "url", Type: "string", Description: "A booru post, pool, tag-search, or artist URL gallery-dl supports; or \"md5:<32 hex>\" to find and import the post carrying that file hash via the lookup walk. Surrounding whitespace is trimmed, the scheme and host are lower-cased, and the md5: prefix is matched case-insensitively; a bare hash is not accepted here"},
+					{Name: "options", Type: "object", Props: []prop{
+						{Name: "gallery", Type: "string", Description: "Target Mebooru gallery; overrides the per-source default"},
+						{Name: "folder", Type: "string", Description: "Destination subfolder under the gallery; relative, no .. segment"},
+						{Name: "max_items", Type: "integer", Description: "Cap on posts fetched this run (--range 1-N); only lowers the cap, never above the server's max_items_per_job, and 0 keeps it. A pool is exempt and always fetched whole"},
+						{Name: "page_url", Type: "string", Description: "The page a direct-file send came from; a directlink job records it as the item's source link instead of the bare file URL"},
+						{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "Tags to add to every item this job pushes, on top of the ones mapped from the post. Normalized like any other tag (a category prefix is kept); duplicates are dropped. Max 64"},
+						{Name: "commentary", Type: "string", Description: "Commentary for every item this job pushes, used only where the post itself carries none - a direct file link, typically. Max 10000 characters"},
+						{Name: "source", Type: "string", Description: "Source label for every item this job pushes. Applied only where Meloader would otherwise stamp a bare host nothing claims (a direct link to a CDN); a site with a profile, a [[sites]] label, or a host_labels row keeps its own name. Max 200 characters"},
+						{Name: "via", Type: "string", Description: "Names the client that sent the URL; lands on Mebooru's image origin, and on the tagger of each tag only for a push carrying no source label - every booru push carries one, and Mebooru prefers it so each source owns a prunable slice. Blank keeps \"Meloader\". Max 200 characters, no whitespace or any of: \" ' < > [ ] \\"},
+					}},
+				},
+			},
+			Responses: []response{
+				{Status: "200", Description: "Resolved job (only when wait elapsed in time)", Ref: "Job"},
+				{Status: "202", Description: "Job accepted; poll GET /api/v1/queue/{id}", Ref: "EnqueueResponse"},
+				{Status: "400", Description: "Missing or non-http(s) url, a bad md5: hash, a folder that is absolute or climbs with .., negative max_items, non-http(s) page_url, or client metadata past its cap", Ref: "Error"},
+				{Status: "409", Description: "No Mebooru is configured (monbooru_unconfigured), or its link is paused from the footer light (monbooru_paused)", Ref: "Error"},
+			},
+			Handler: h.enqueue,
+		},
+		{
+			Method: "GET", Path: "/api/v1/queue",
+			Summary: "List jobs", OperationID: "listJobs",
+			Params: []param{
+				{Name: "status", In: "query", Description: "Filter by job status"},
+				{Name: "page", In: "query", Type: "integer", Description: "Page number (1-based)"},
+				{Name: "limit", In: "query", Type: "integer", Description: "Results per page (max 200)"},
+			},
+			Responses: []response{
+				{Status: "200", Description: "Paginated job list", Ref: "PaginatedJobs"},
+				{Status: "400", Description: "Unknown status filter", Ref: "Error"},
+			},
+			Handler: h.listJobs,
+		},
+		{
+			Method: "POST", Path: "/api/v1/queue/pause",
+			Summary: "Pause the queue", OperationID: "pauseQueue",
+			Description: "Hold the queue globally, for every kind of job. A job already running finishes; " +
+				"pending and newly submitted jobs wait until resume.",
+			Responses: []response{
+				{Status: "200", Description: "Queue paused", Ref: "PauseState"},
+			},
+			Handler: setPaused(h.queue.Pause, true),
+		},
+		{
+			Method: "POST", Path: "/api/v1/queue/resume",
+			Summary: "Resume the queue", OperationID: "resumeQueue",
+			Description: "Lift a pause so held jobs run. Nothing starts while a gallery-dl install holds the queue, which ends on its own.",
+			Responses: []response{
+				{Status: "200", Description: "Queue resumed", Ref: "PauseState"},
+			},
+			Handler: setPaused(h.queue.Resume, false),
+		},
+		{
+			Method: "GET", Path: "/api/v1/queue/{id}",
+			Summary: "Get a job", OperationID: "getJob",
+			Params: []param{{Name: "id", In: "path", Required: true, Type: "integer", Description: "Job id"}},
+			Responses: []response{
+				{Status: "200", Description: "The job with items and outcomes", Ref: "Job"},
+				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
+				{Status: "404", Description: "Job not found", Ref: "Error"},
+			},
+			Handler: h.getJob,
+		},
+		{
+			Method: "DELETE", Path: "/api/v1/queue/{id}",
+			Summary: "Cancel or remove a job's series", OperationID: "deleteJob",
+			Description: "Acts on the job's whole series, the search and its continuations, which share its root. " +
+				"While the job is queued or running, every window running with it is canceled and every window queued with it is removed, and the finished windows stay; " +
+				"once it has finished, the finished windows are removed, and a window still running is canceled and stays.",
+			Params: []param{{Name: "id", In: "path", Required: true, Type: "integer", Description: "Job id"}},
+			Responses: []response{
+				{Status: "204", Description: "The series' live windows canceled, or its finished windows removed"},
+				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
+				{Status: "404", Description: "Job not found", Ref: "Error"},
+			},
+			Handler: h.deleteJob,
+		},
+		{
+			Method: "POST", Path: "/api/v1/queue/{id}/retry",
+			Summary: "Retry a finished job", OperationID: "retryJob",
+			Params: []param{
+				{Name: "id", In: "path", Required: true, Type: "integer", Description: "Job id"},
+				{Name: "force", In: "query", Type: "integer", Description: "Set to 1 to re-run with the gallery-dl archive bypassed, re-downloading already-fetched posts"},
+			},
+			Responses: []response{
+				{Status: "202", Description: "Re-queued", Ref: "EnqueueResponse"},
+				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
+				{Status: "404", Description: "Job not found", Ref: "Error"},
+				{Status: "409", Description: "Job is not in a retryable state, no Mebooru is configured (monbooru_unconfigured), or its link is paused (monbooru_paused)", Ref: "Error"},
+			},
+			Handler: h.retryJob,
+		},
+		{
+			Method: "POST", Path: "/api/v1/queue/{id}/continue",
+			Summary: "Fetch the next window of a capped job", OperationID: "continueJob",
+			Params: []param{{Name: "id", In: "path", Required: true, Type: "integer", Description: "Job id"}},
+			Responses: []response{
+				{Status: "202", Description: "Follow-up job queued for the next window", Ref: "EnqueueResponse"},
+				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
+				{Status: "404", Description: "Job not found", Ref: "Error"},
+				{Status: "409", Description: "Job was not capped so there is no next window, no Mebooru is configured (monbooru_unconfigured), or its link is paused (monbooru_paused)", Ref: "Error"},
+			},
+			Handler: h.jobAction(h.queue.Continue),
+		},
+		{
+			Method: "POST", Path: "/api/v1/queue/{id}/continue-all",
+			Summary: "Fetch every remaining window of a capped job", OperationID: "continueAllJob",
+			Params: []param{{Name: "id", In: "path", Required: true, Type: "integer", Description: "Job id"}},
+			Responses: []response{
+				{Status: "202", Description: "First follow-up queued; the queue continues until the search runs short", Ref: "EnqueueResponse"},
+				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
+				{Status: "404", Description: "Job not found", Ref: "Error"},
+				{Status: "409", Description: "Job was not capped so there is no next window, no Mebooru is configured (monbooru_unconfigured), or its link is paused (monbooru_paused)", Ref: "Error"},
+			},
+			Handler: h.jobAction(h.queue.ContinueAll),
+		},
+		{
+			Method: "POST", Path: "/api/v1/metadata",
+			Summary: "Refetch a post's metadata and enrich a Mebooru image", OperationID: "refetchMetadata",
+			Description: "Re-read a post URL for its tags, commentary, and notes (no file download) " +
+				"and fold them into the Mebooru image it names. The queued job reports the enriched " +
+				"outcome, or failed with hash_mismatch when the source no longer serves the stored file.",
+			Request: &reqBody{
+				Required: []string{"image_id", "url"},
+				Props: []prop{
+					{Name: "image_id", Type: "integer", Description: "Mebooru image to enrich"},
+					{Name: "gallery", Type: "string", Description: "Gallery holding the image; empty uses Mebooru's active gallery"},
+					{Name: "url", Type: "string", Description: "Source post URL to re-read"},
+				},
+			},
+			Responses: []response{
+				{Status: "202", Description: "Refetch queued; poll GET /api/v1/queue/{id}", Ref: "EnqueueResponse"},
+				{Status: "400", Description: "Missing image_id, or a non-http(s) url", Ref: "Error"},
+			},
+			Handler: enqueueImageJob(h.queue.EnqueueMetadata),
+		},
+		{
+			Method: "POST", Path: "/api/v1/replace",
+			Summary: "Download a post's file and replace a Mebooru image's bytes", OperationID: "replaceFile",
+			Description: "Download the file the post URL serves and push it into the Mebooru image " +
+				"it names, replacing its bytes in place while the image's tags, sources, and relations " +
+				"survive. The queued job reports the replaced outcome, or failed with hash_mismatch " +
+				"(the download did not match the md5 the source claims), already_exists (Mebooru holds " +
+				"the original as another image), or wrong_type (the target is an archive or video row).",
+			Request: &reqBody{
+				Required: []string{"image_id", "url"},
+				Props: []prop{
+					{Name: "image_id", Type: "integer", Description: "Mebooru image whose file is replaced"},
+					{Name: "gallery", Type: "string", Description: "Gallery holding the image; empty uses Mebooru's active gallery"},
+					{Name: "url", Type: "string", Description: "Source post URL to download"},
+				},
+			},
+			Responses: []response{
+				{Status: "202", Description: "Replace queued; poll GET /api/v1/queue/{id}", Ref: "EnqueueResponse"},
+				{Status: "400", Description: "Missing image_id, or a non-http(s) url", Ref: "Error"},
+			},
+			Handler: enqueueImageJob(h.queue.EnqueueReplace),
+		},
+		{
+			Method: "POST", Path: "/api/v1/lookup",
+			Summary: "Find tags for a file hash and enrich a Mebooru image", OperationID: "lookupHash",
+			Description: "Look a file hash up - the booru backend walks the sites given a lookup order " +
+				"in settings using their md5 search, the ptr backend queries the local PTR index by " +
+				"sha256, the all backend runs both (skipping the PTR when it is disabled) - and fold " +
+				"the tags found into the Mebooru image it names. The queued job reports the enriched " +
+				"outcome, or failed with hash_not_found when no source knows the hash.",
+			Request: &reqBody{
+				Required: []string{"image_id", "backend"},
+				Props: []prop{
+					{Name: "image_id", Type: "integer", Description: "Mebooru image to enrich"},
+					{Name: "backend", Type: "string", Description: "\"booru\", \"ptr\", or \"all\""},
+					{Name: "md5", Type: "string", Description: "32-hex file md5, required by the booru and all backends"},
+					{Name: "sha256", Type: "string", Description: "64-hex file sha256, required by the ptr backend, and by the all backend while the ptr sync is enabled"},
+					{Name: "gallery", Type: "string", Description: "Gallery holding the image; empty uses Mebooru's active gallery"},
+					{Name: "background", Type: "boolean", Description: "Queue behind anything a person is waiting on, for bulk or unattended work (default false)"},
+					{Name: "budgeted", Type: "boolean", Description: "Count the job against the daily scheduled-lookup budget and refuse it when that is spent (default false)"},
+				},
+			},
+			Responses: []response{
+				{Status: "202", Description: "Lookup queued; poll GET /api/v1/queue/{id}", Ref: "EnqueueResponse"},
+				{Status: "400", Description: "Missing image_id, unknown backend, or a malformed hash", Ref: "Error"},
+				{Status: "409", Description: "The ptr backend is disabled or not fully synced", Ref: "Error"},
+				{Status: "429", Description: "Budgeted and today's scheduled-lookup budget is spent", Ref: "Error"},
+			},
+			Handler: h.lookup,
+		},
+		{
+			Method: "GET", Path: "/api/v1/lookup/status",
+			Summary: "Scheduled-lookup budget and chain readout", OperationID: "lookupStatus",
+			Description: "Report how much of today's scheduled-lookup budget is left, when it rolls " +
+				"over, and which sources the walk would query. " +
+				"A readout only: the 429 on an enqueue stays authoritative, so a caller must " +
+				"not keep its own count.",
+			Responses: []response{
+				{Status: "200", Description: "Budget and chain state", Ref: "LookupStatus"},
+			},
+			Handler: h.lookupStatus,
+		},
+		{
+			Method: "GET", Path: "/api/v1/ptr/status",
+			Summary: "PTR sync status and capability", OperationID: "ptrStatus",
+			Description: "Report whether the Hydrus PTR lookup backend is enabled and, when it is, its " +
+				"sync state, progress, and index counts. Always answers, so a caller's capability " +
+				"check is one unconditional GET; a run without the PTR built in reports disabled.",
+			Responses: []response{
+				{Status: "200", Description: "PTR status", Ref: "PTRStatus"},
+			},
+			Handler: h.ptrStatus,
+		},
+		{
+			Method: "POST", Path: "/api/v1/ptr/tags",
+			Summary: "Query the PTR alias / implication graph", OperationID: "ptrTags",
+			Description: "For each Mebooru-format tag, return the PTR's ideal spelling, the tags that alias " +
+				"to it, its implications, and the tags that imply it (direct children, at most 200), " +
+				"mapped back to Mebooru format. Batched so a caller can sweep its tag list page by page.",
+			Request: &reqBody{
+				Required: []string{"tags"},
+				Props: []prop{
+					{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "Mebooru-format tag names, at most 500"},
+				},
+			},
+			Responses: []response{
+				{Status: "200", Description: "Per-tag graph answers", Ref: "PTRTagResults"},
+				{Status: "400", Description: "Empty or over-long tag list", Ref: "Error"},
+				{Status: "409", Description: "The PTR index is not available or not fully synced", Ref: "Error"},
+				{Status: "500", Description: "The index could not be read", Ref: "Error"},
+			},
+			Handler: h.ptrTags,
+		},
+		{
+			Method: "GET", Path: "/api/v1/ptr/tags/search",
+			Summary: "Search the PTR's spellings", OperationID: "ptrTagSearch",
+			Description: "Find the spellings the index holds under a Mebooru-format prefix, folded to one " +
+				"row per sibling cluster with the size of each cluster's graph. The graph query answers " +
+				"about a name the caller already knows; this is how it finds out which name to ask " +
+				"about when the operator's own spelling is not the repository's.",
+			Params: []param{
+				{Name: "q", In: "query", Required: true, Description: "Mebooru-format prefix, `category:name` or bare for general"},
+				{Name: "limit", In: "query", Type: "integer", Description: "Clusters to return, 1..50 (default 20)"},
+				{Name: "mode", In: "query", Description: "`prefix` (default) seeks the range; `contains` walks the namespace instead and needs a category-qualified q, since a bare one has nothing to bound the scan. Anything else is refused"},
+			},
+			Responses: []response{
+				{Status: "200", Description: "Matching clusters, best first", Ref: "PTRTagSearch"},
+				{Status: "400", Description: "Empty q, a limit out of range, or contains with no namespace to bound it", Ref: "Error"},
+				{Status: "409", Description: "The PTR index is not available or not fully synced", Ref: "Error"},
+				{Status: "500", Description: "The index could not be read", Ref: "Error"},
+			},
+			Handler: h.ptrTagSearch,
+		},
+		{
+			Method: "POST", Path: "/api/v1/ptr/lookup",
+			Summary: "Look a batch of file hashes up in the PTR index", OperationID: "ptrLookup",
+			Description: "Return the tags the local index holds for each file sha256, in Mebooru form. " +
+				"Answers in process, so a whole-library sweep costs one call per batch instead of a " +
+				"queued job per image; a hash the index does not hold, or holds nothing usable for, is absent from the results.",
+			Request: &reqBody{
+				Required: []string{"images"},
+				Props: []prop{
+					{Name: "images", Type: "array", Items: &prop{Type: "object"}, Description: "At most 100 `{ image_id, sha256 }` pairs; the id names the image on the queue row the answer files, and is required on each entry like it is on the per-image lookup"},
+					{Name: "gallery", Type: "string", Description: "Gallery the images come from; recorded on that row"},
+					{Name: "scheduled", Type: "boolean", Description: "Set by Mebooru's nightly run, so the row reads as scheduled rather than bulk"},
+				},
+			},
+			Responses: []response{
+				{Status: "200", Description: "Tags per matched hash, plus the index cursor", Ref: "PTRLookupResults"},
+				{Status: "400", Description: "Empty or over-long image list, or a malformed hash", Ref: "Error"},
+				{Status: "409", Description: "The PTR index is not available or not fully synced", Ref: "Error"},
+				{Status: "500", Description: "The index could not be read", Ref: "Error"},
+			},
+			Handler: h.ptrLookup,
+		},
+		{
+			Method: "POST", Path: "/api/v1/ptr/account",
+			Summary: "Create the personal PTR contribution account", OperationID: "ptrAccountCreate",
+			Description: "Run the repository's open auto-creation once and store the resulting access " +
+				"key as the instance's personal account, shared by sync and uploads. Refused while a " +
+				"personal key is already set; replacing an account is a deliberate manual step " +
+				"(clear the key in settings first).",
+			Responses: []response{
+				{Status: "200", Description: "Account created and key stored", Props: []prop{
+					{Name: "created", Type: "boolean"},
+				}},
+				{Status: "409", Description: "PTR disabled, or a personal key already exists", Ref: "Error"},
+				{Status: "500", Description: "The key could not be saved (save_failed); the account exists, so back the key up from the ptr page", Ref: "Error"},
+				{Status: "502", Description: "The repository answered an error (ptr_error)", Ref: "Error"},
+				{Status: "503", Description: "The repository is not taking new accounts right now", Ref: "Error"},
+			},
+			Handler: h.ptrAccountCreate,
+		},
+		{
+			Method: "POST", Path: "/api/v1/ptr/contrib/preview", ReadScope: true,
+			Summary: "Preview a file's contribution diff", OperationID: "ptrContribPreview",
+			Description: "For one file's sha256 and its Mebooru-format tags, answer the two-way diff " +
+				"against the synced PTR copy: which tags a send would add (with the exact PTR spelling " +
+				"and a per-tag status of new, known, ineligible, filtered, or unsent) and which " +
+				"PTR-current tags the submitted list lacks (the removal-petition candidates; both " +
+				"sides compare on the display view, so alias spellings and implied tags never read " +
+				"as diffs). provisional is true while the index is still syncing, so the diff may " +
+				"overstate what is new.",
+			Request: &reqBody{
+				Required: []string{"sha256", "tags"},
+				Props: []prop{
+					{Name: "sha256", Type: "string", Description: "the file's sha256, 64 lowercase hex characters"},
+					{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "the file's storage tags in Mebooru form (non-implied, non-alias, rating excluded)"},
+					{Name: "implied", Type: "array", Items: &prop{Type: "string"}, Description: "the file's implied tags, context only: never offered as adds, but they suppress removal petitions like submitted tags do"},
+				},
+			},
+			Responses: []response{
+				{Status: "200", Description: "The two-way diff", Ref: "PTRContribPreview"},
+				{Status: "400", Description: "Malformed hash or body", Ref: "Error"},
+				{Status: "409", Description: "The PTR index is not available", Ref: "Error"},
+			},
+			Handler: h.ptrContribPreview,
+		},
+		{
+			Method: "POST", Path: "/api/v1/ptr/contrib/pair-preview", ReadScope: true,
+			Summary: "Resolve a relation pair's contribution direction", OperationID: "ptrContribPairPreview",
+			Description: "For a sibling (a=bad, b=good) or parent (a=child, b=parent) pair in Mebooru " +
+				"form, report the exact PTR spellings and which direction a contribution takes: suggest " +
+				"(absent from the PTR), petition (current on the PTR), pending (already in the ledger " +
+				"awaiting janitors), conflict (the PTR holds the reverse), covered (a sibling's spellings " +
+				"already resolve to one ideal, or a parent edge already holds), or ineligible.",
+			Request: &reqBody{
+				Required: []string{"kind", "a", "b"},
+				Props: []prop{
+					{Name: "kind", Type: "string", Description: "sibling or parent"},
+					{Name: "a", Type: "string", Description: "the alias (sibling) or carrying tag (parent), Mebooru form"},
+					{Name: "b", Type: "string", Description: "the canonical (sibling) or implied tag (parent), Mebooru form"},
+				},
+			},
+			Responses: []response{
+				{Status: "200", Description: "The pair's direction and PTR spellings", Ref: "PTRContribPairPreview"},
+				{Status: "400", Description: "Malformed body or kind", Ref: "Error"},
+				{Status: "409", Description: "The PTR index is not available", Ref: "Error"},
+			},
+			Handler: h.ptrContribPairPreview,
+		},
+		{
+			Method: "POST", Path: "/api/v1/ptr/contrib",
+			Summary: "Stage contributions and send them", OperationID: "ptrContribStage",
+			Description: "Stage items (tags in Mebooru form; Meloader maps and validates) and, by " +
+				"default, commit them in the same call as one queue send job. Per-item results report " +
+				"staged, duplicate, already_known, already_suggested, not_on_ptr, conflict, ineligible, " +
+				"or invalid_reason; one refused item never sinks the rest. A reason is required on every " +
+				"kind except mapping_add. With commit true the account is validated synchronously first.",
+			Request: &reqBody{
+				Required: []string{"items"},
+				Props: []prop{
+					{Name: "commit", Type: "boolean", Description: "send the accepted items now as one queue job (default true)"},
+					{Name: "origin", Type: "string", Description: "display provenance carried on the staged row while it is unsent, e.g. \"image 42\"; the committed ledger entry identifies the item by hash instead"},
+					{Name: "items", Type: "array", Items: &prop{Type: "object", Props: []prop{
+						{Name: "kind", Type: "string", Description: "mapping_add, mapping_petition, sibling, parent, sibling_petition, or parent_petition"},
+						{Name: "sha256", Type: "string", Description: "the file hash, for the mapping kinds"},
+						{Name: "tag", Type: "string", Description: "the tag in Mebooru form, for the mapping kinds"},
+						{Name: "bad", Type: "string", Description: "the alias name, for the sibling kinds"},
+						{Name: "good", Type: "string", Description: "the canonical name, for the sibling kinds"},
+						{Name: "child", Type: "string", Description: "the carrying tag, for the parent kinds"},
+						{Name: "parent", Type: "string", Description: "the implied tag, for the parent kinds"},
+						{Name: "reason", Type: "string", Description: "the janitor-facing reason; required on every kind except mapping_add"},
+					}}},
+				},
+			},
+			Responses: []response{
+				{Status: "200", Description: "Per-item results and no send job: nothing was accepted, or commit was false and the accepted items wait staged", Ref: "PTRContribResults"},
+				{Status: "202", Description: "Per-item results plus the send job id", Ref: "PTRContribResults"},
+				{Status: "400", Description: "Malformed body, or an empty items list", Ref: "Error"},
+				{Status: "409", Description: "ptr_unavailable, ptr_account_required, ptr_banned, or ptr_syncing", Ref: "Error"},
+			},
+			Handler: h.ptrContribStage,
+		},
+		{
+			Method: "GET", Path: "/api/v1/ptr/contrib",
+			Summary: "Contribution ledger", OperationID: "ptrContribLedger",
+			Description: "The unsent backlog (staged and failed items with errors), counts by kind and " +
+				"status, and the newest slice of the committed history with each row's janitor outcome.",
+			Responses: []response{
+				{Status: "200", Description: "Unsent items, counts, and history", Props: []prop{
+					{Name: "unsent", Type: "array", Description: "staged and failed items, oldest first", Items: &prop{Type: "object", Props: []prop{
+						{Name: "id", Type: "integer"},
+						{Name: "kind", Type: "string"},
+						{Name: "tag", Type: "string", Description: "the mapping tag, the sibling's bad or the parent's child"},
+						{Name: "tag2", Type: "string", Description: "the sibling's good or the parent's parent; absent otherwise"},
+						{Name: "sha256", Type: "string", Description: "the file hash, for the mapping kinds"},
+						{Name: "reason", Type: "string"},
+						{Name: "origin", Type: "string"},
+						{Name: "status", Type: "string", Description: "staged or failed; an item mid-send is left out"},
+						{Name: "error", Type: "string", Description: "why the last send failed; absent otherwise"},
+						{Name: "created_at", Type: "integer", Description: "unix seconds"},
+					}}},
+					{Name: "counts", Type: "object", Props: []prop{
+						{Name: "by_kind", Type: "object", Description: "unsent items per kind"},
+						{Name: "by_status", Type: "object", Description: "unsent items per status"},
+						{Name: "outcomes", Type: "object", Description: "the newest 100 history rows per janitor outcome, pending included"},
+					}},
+					{Name: "log", Type: "array", Description: "the newest 100 committed items", Items: &prop{Type: "object", Props: []prop{
+						{Name: "id", Type: "integer"},
+						{Name: "kind", Type: "string"},
+						{Name: "tag", Type: "string"},
+						{Name: "tag2", Type: "string"},
+						{Name: "sha256", Type: "string"},
+						{Name: "reason", Type: "string"},
+						{Name: "committed_at", Type: "integer", Description: "unix seconds"},
+						{Name: "outcome", Type: "string", Description: "applied, not_taken, approved, removed, or rescinded; absent while pending"},
+						{Name: "outcome_at", Type: "integer", Description: "unix seconds; absent while pending"},
+					}}},
+				}},
+				{Status: "409", Description: "The PTR index is not available", Ref: "Error"},
+				{Status: "500", Description: "The contribution store could not be read", Ref: "Error"},
+			},
+			Handler: h.ptrContribLedger,
+		},
+		{
+			Method: "DELETE", Path: "/api/v1/ptr/contrib/{id}",
+			Summary: "Rescind one unsent item", OperationID: "ptrContribRescind",
+			Description: "Delete one staged or failed item exactly - nothing ever left the machine.",
+			Params:      []param{{Name: "id", In: "path", Required: true, Type: "integer", Description: "Unsent item id"}},
+			Responses: []response{
+				{Status: "204", Description: "Rescinded"},
+				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
+				{Status: "404", Description: "No unsent item with that id", Ref: "Error"},
+				{Status: "409", Description: "The PTR index is not available", Ref: "Error"},
+				{Status: "500", Description: "The contribution store could not be written", Ref: "Error"},
+			},
+			Handler: h.ptrContribRescind,
+		},
+		{
+			Method: "DELETE", Path: "/api/v1/ptr/contrib",
+			Summary: "Rescind every unsent item", OperationID: "ptrContribRescindAll",
+			Responses: []response{
+				{Status: "200", Description: "Count of rescinded items", Props: []prop{
+					{Name: "rescinded", Type: "integer"},
+				}},
+				{Status: "409", Description: "The PTR index is not available", Ref: "Error"},
+				{Status: "500", Description: "The contribution store could not be written", Ref: "Error"},
+			},
+			Handler: h.ptrContribRescindAll,
+		},
+		{
+			Method: "POST", Path: "/api/v1/ptr/contrib/commit",
+			Summary: "Send the unsent backlog", OperationID: "ptrContribCommit",
+			Description: "Queue one send job over every staged and failed item - the retry path for " +
+				"failed leftovers. Refused while another send is queued or running.",
+			Responses: []response{
+				{Status: "202", Description: "The send job id", Ref: "EnqueueResponse"},
+				{Status: "409", Description: "ptr_unavailable, ptr_account_required, ptr_banned, ptr_syncing, or already_running", Ref: "Error"},
+			},
+			Handler: h.ptrContribCommit,
+		},
+		{
+			Method: "POST", Path: "/api/v1/ptr/contrib/log/{id}/rescind",
+			Summary: "Rescind a committed mapping add", OperationID: "ptrContribLogRescind",
+			Description: "Stage and send a removal petition for the same tag and hash with a fixed " +
+				"reason, and mark the ledger row rescinded. Committed suggestions and petitions cannot " +
+				"be withdrawn - the protocol reserves their resolution for janitors.",
+			Params: []param{{Name: "id", In: "path", Required: true, Type: "integer", Description: "Ledger row id"}},
+			Responses: []response{
+				{Status: "202", Description: "The send job id", Ref: "EnqueueResponse"},
+				{Status: "400", Description: "The id is not an integer", Ref: "Error"},
+				{Status: "404", Description: "No ledger row with that id", Ref: "Error"},
+				{Status: "409", Description: "not_rescindable, or an account refusal", Ref: "Error"},
+				{Status: "500", Description: "The contribution store could not be read", Ref: "Error"},
+			},
+			Handler: h.ptrContribLogRescind,
+		},
+		{
+			Method: "POST", Path: "/api/v1/galleries/rename",
+			Summary: "Follow a Mebooru gallery rename", OperationID: "galleryRename",
+			Description: "Called by Mebooru when one of its galleries is renamed: the default gallery " +
+				"and every site target naming the old name move to the new one. Downloads resolve " +
+				"their target when they start, so the ones still waiting follow too.",
+			Request: &reqBody{
+				Required: []string{"from", "to"},
+				Props: []prop{
+					{Name: "from", Type: "string", Description: "The gallery's old name"},
+					{Name: "to", Type: "string", Description: "Its new name"},
+				},
+			},
+			Responses: []response{
+				{Status: "200", Description: "Settings moved to the new name", Props: []prop{
+					{Name: "changed", Type: "integer", Description: "How many settings named the old gallery"},
+				}},
+				{Status: "400", Description: "A name is missing", Ref: "Error"},
+				{Status: "500", Description: "The settings could not be saved (save_failed)", Ref: "Error"},
+			},
+			Handler: h.galleryRename,
+		},
+		{
+			Method: "GET", Path: "/api/v1/sites",
+			Summary: "List supported sites", OperationID: "listSites",
+			Params: []param{{Name: "q", In: "query", Description: "Substring filter on category/subcategory"}},
+			Responses: []response{
+				{Status: "200", Description: "Supported sites (curated first)", Props: []prop{
+					{Name: "total", Type: "integer"},
+					{Name: "sites", Type: "array", Items: &prop{Ref: "Site"}},
+				}},
+			},
+			Handler: h.listSites,
+		},
+		{
+			Method: "GET", Path: "/api/v1/rules",
+			Summary: "What each site does with a tag", OperationID: "tagRules",
+			Description: "For a Mebooru tag, the tag rule, blacklist hit and category map of every configured or used site and the PTR, " +
+				"plus whether the global Rules keep its category: what Mebooru's tag page draws.",
+			Params: []param{
+				{Name: "tag", In: "query", Required: true, Description: "The tag's name, as Mebooru spells it"},
+				{Name: "category", In: "query", Description: "The tag's Mebooru category; general when absent"},
+			},
+			Responses: []response{
+				{Status: "200", Description: "One row per configured or used site, the PTR last", Ref: "TagRules"},
+				{Status: "400", Description: "tag is missing", Ref: "Error"},
+			},
+			Handler: h.tagRules,
+		},
+		{
+			Method: "POST", Path: "/api/v1/rules",
+			Summary: "What each site does with several tags", OperationID: "tagRulesBatch",
+			Description: "The GET answer for each name given, in order, read against one list of sites.",
+			Request: &reqBody{Props: []prop{
+				{Name: "names", Type: "array", Description: "1 to 50 tags", Items: &prop{Type: "object", Props: []prop{
+					{Name: "tag", Type: "string", Description: "The tag's name, as Mebooru spells it"},
+					{Name: "category", Type: "string", Description: "The tag's Mebooru category; general when absent"},
+				}}},
+			}},
+			Responses: []response{
+				{Status: "200", Description: "One answer per name", Props: []prop{
+					{Name: "results", Type: "array", Items: &prop{Ref: "TagRules"}},
+				}},
+				{Status: "400", Description: "No names, more than 50, a name without a tag, or a body that does not parse", Ref: "Error"},
+			},
+			Handler: h.tagRulesBatch,
+		},
+		{
+			Method: "POST", Path: "/api/v1/sites/{name}/test",
+			Summary: "Probe a site", OperationID: "testSite",
+			Params: []param{
+				{Name: "name", In: "path", Required: true, Description: "gallery-dl category"},
+				{Name: "url", In: "query", Description: "URL to probe; defaults to the site's example URL"},
+			},
+			Request: &reqBody{Optional: true, Props: []prop{
+				{Name: "url", Type: "string", Description: "URL to probe, when the query carries none"},
+			}},
+			Responses: []response{
+				{Status: "200", Description: "Probe result", Ref: "ProbeResult"},
+				{Status: "400", Description: "The supplied url is not http(s), or the body does not parse", Ref: "Error"},
+				{Status: "404", Description: "Unknown site and no url supplied", Ref: "Error"},
+			},
+			Handler: h.testSite,
+		},
+		{
+			Method: "POST", Path: "/api/v1/pair/request",
+			Summary: "Offer a pairing", OperationID: "pairRequest", NoAuth: true,
+			Description: "Step one of the handshake a client runs before it can call anything else. " +
+				"Nothing is issued here: the operator approves the request in Meloader's settings, " +
+				"after which the client claims its token from GET /api/v1/pair/status. Unauthenticated " +
+				"by design - it is how a client obtains a token.",
+			Request: &reqBody{
+				Required: []string{"app"},
+				Props: []prop{
+					{Name: "app", Type: "string", Description: "The client's name, shown to the operator: [A-Za-z0-9_-]{1,32}; \"monbooru\" is reserved for the dedicated pairing flow"},
+					{Name: "requested_scopes", Type: "array", Items: &prop{Type: "string"}, Description: "Scopes to ask for (read, write); an empty list grants read only"},
+				},
+			},
+			Responses: []response{
+				{Status: "200", Description: "Request registered, awaiting approval", Props: []prop{
+					{Name: "request_id", Type: "string", Description: "Poll GET /api/v1/pair/status with this id"},
+					{Name: "status", Type: "string", Description: "Always \"pending\""},
+				}},
+				{Status: "400", Description: "Missing app name, or the reserved name \"Mebooru\"", Ref: "Error"},
+				{Status: "409", Description: "Already paired with that app; remove the existing pairing first", Ref: "Error"},
+				{Status: "429", Description: "Too many pending pairing requests", Ref: "Error"},
+			},
+			Handler: h.host.Pair.Request,
+		},
+		{
+			Method: "GET", Path: "/api/v1/pair/status",
+			Summary: "Poll a pairing request", OperationID: "pairStatus", NoAuth: true,
+			Description: "Reports pending / denied / approved. The first poll after approval mints the " +
+				"client's token, returns the secret once and forgets the request, so a later poll gets 404; " +
+				"a poll racing the claim answers approved with no token.",
+			Params: []param{
+				{Name: "id", In: "query", Required: true, Description: "The request_id from POST /api/v1/pair/request"},
+			},
+			Responses: []response{
+				{Status: "200", Description: "Request state, with the token on the claiming poll", Props: []prop{
+					{Name: "status", Type: "string", Description: "pending, denied, or approved"},
+					{Name: "token", Type: "string", Description: "The bearer secret, present once, on the first poll after approval"},
+				}},
+				{Status: "404", Description: "Unknown pairing request", Ref: "Error"},
+				{Status: "500", Description: "The token could not be minted (mint_failed); the approval stands, so poll again", Ref: "Error"},
+			},
+			Handler: h.host.Pair.Status,
+		},
+		{
+			Method: "POST", Path: "/api/v1/pair/remove",
+			Summary: "Drop a pairing from the client side", OperationID: "pairRemove", NoAuth: true,
+			Description: "Authenticates with the paired token itself rather than the bearer gate, so one " +
+				"\"remove pairing\" tears down both ends. Meloader removes only locally and never calls back.",
+			Responses: []response{
+				{Status: "200", Description: "Pairing removed", Props: []prop{
+					{Name: "status", Type: "string", Description: "Always \"removed\""},
+				}},
+				{Status: "401", Description: "The Authorization header is missing or is not a pairing token", Ref: "Error"},
+				{Status: "500", Description: "The pairing could not be removed (remove_failed)", Ref: "Error"},
+			},
+			Handler: h.host.Pair.Teardown,
+		},
+		{
+			Method: "GET", Path: "/api/v1/openapi.json",
+			Summary: "This OpenAPI document", OperationID: "openapi", NoAuth: true,
+			Responses: []response{
+				{Status: "200", Description: "OpenAPI 3 spec"},
+			},
+			Handler: h.openAPIJSON,
+		},
+		{
+			Method: "GET", Path: "/api/v1/docs",
+			Summary: "HTML API reference", OperationID: "docs", NoAuth: true,
+			Responses: []response{
+				{Status: "200", Description: "HTML reference"},
+			},
+			Handler: h.openAPIDocs,
+		},
+	}
+	for i, e := range eps {
+		if e.NoAuth {
+			continue
+		}
+		if e.Request != nil {
+			eps[i].Responses = append(eps[i].Responses, response{Status: "413", Description: "JSON body exceeds 1 MiB", Ref: "Error"})
+		}
+		eps[i].Responses = append(eps[i].Responses,
+			response{Status: "401", Description: "unauthorized: no bearer token, or one that matches none", Ref: "Error"},
+			response{Status: "403", Description: "insufficient_scope: the token lacks the scope this operation needs", Ref: "Error"},
+			response{Status: "503", Description: "api_disabled: no API token exists yet", Ref: "Error"},
+		)
+	}
+	return eps
+}
+
+var apiSchemas = []apiSchema{
+	{Name: "Error", Props: []prop{
+		{Name: "error", Type: "string"},
+		{Name: "code", Type: "string"},
+	}},
+	{Name: "Summary", Props: []prop{
+		{Name: "created", Type: "integer"},
+		{Name: "duplicate", Type: "integer"},
+		{Name: "enriched", Type: "integer", Description: "Source refetches and hash lookups that merged tags into an image Mebooru already holds"},
+		{Name: "replaced", Type: "integer", Description: "In-place file replacements of an image Mebooru already holds"},
+		{Name: "skipped", Type: "integer", Description: "Posts the gallery-dl archive already had, files Mebooru cannot ingest, or posts a blacklist rule kept out"},
+		{Name: "archived", Type: "integer", Description: "The archive half of skipped: the posts a forced retry can fetch again"},
+		{Name: "blacklisted", Type: "integer", Description: "The rule half of skipped: posts a blacklist rule kept out, which a forced retry skips again"},
+		{Name: "failed", Type: "integer"},
+		{Name: "matched", Type: "integer", Description: "Hashes a batch PTR lookup answered with tags; true past the bound on the items the row keeps"},
+		{Name: "canceled", Type: "integer", Description: "Items aborted by a job cancel, kept out of failed"},
+		{Name: "total", Type: "integer"},
+	}},
+	{Name: "Item", Props: []prop{
+		{Name: "post_id", Type: "string"},
+		{Name: "num", Type: "integer", Description: "1-based pool page order"},
+		{Name: "url", Type: "string", Description: "canonical source post page"},
+		{Name: "status", Type: "string", Description: "pending, downloaded, uploaded, done, skipped, failed"},
+		{Name: "outcome", Type: "string", Description: "created, duplicate, enriched, matched, replaced, skipped_archive, skipped_unsupported, skipped_blacklist, failed"},
+		{Name: "monbooru_id", Type: "integer"},
+		{Name: "sha256", Type: "string"},
+		{Name: "tag_warnings", Type: "array", Items: &prop{Type: "string"}, Description: "Tags Mebooru rejected on the push, and rule targets that name a category it does not have; recorded, not fatal"},
+		{Name: "merge_note", Type: "string", Description: "What a duplicate or enrich merge folded into the existing image (e.g. \"+7 tags\"), or the rule behind skipped_blacklist and its list (\"global rule: guro\", \"danbooru rule: guro\")"},
+		{Name: "tags_sent", Type: "integer", Description: "How many tags the push or enrich sent, the rating counted"},
+		{Name: "held_tags", Type: "array", Items: &prop{Type: "string"}, Description: "What never reached the image, each with its reason: \"lowres (held by your rules)\", \"watermark (rejected by the gallery)\""},
+		{Name: "error_code", Type: "string"},
+		{Name: "error", Type: "string"},
+	}},
+	{Name: "Job", Props: []prop{
+		{Name: "id", Type: "integer"},
+		{Name: "url", Type: "string"},
+		{Name: "status", Type: "string", Description: "queued, running, succeeded, partial, failed, canceled, interrupted (was running when the process died; requeue to re-run)"},
+		{Name: "kind", Type: "string", Description: "download (the default, omitted), metadata (a source refetch that enriches an existing image), lookup (a hash lookup that enriches an existing image), hash_import (an md5 resolved to a post and imported), replace (a post's file downloaded and pushed over an existing image's bytes), contrib (a PTR contribution send), or ptr_lookup (a batch PTR hash lookup answered in process)"},
+		{Name: "image_id", Type: "integer", Description: "Mebooru image a metadata, lookup, or replace job targets"},
+		{Name: "backend", Type: "string", Description: "Lookup source (booru, ptr, or all) for a lookup job"},
+		{Name: "md5", Type: "string", Description: "File md5 a lookup or hash import is keyed on"},
+		{Name: "sha256", Type: "string", Description: "File sha256 a ptr lookup is keyed on"},
+		{Name: "page_url", Type: "string", Description: "Page a direct-file send came from; a directlink item records it as its source link"},
+		{Name: "tags", Type: "array", Items: &prop{Type: "string"}, Description: "Tags the submitting client attached, added to every item this job pushes"},
+		{Name: "commentary", Type: "string", Description: "Commentary the submitting client attached, used where the post carries none"},
+		{Name: "source", Type: "string", Description: "Source label the submitting client attached, applied where nothing claims the host"},
+		{Name: "via", Type: "string", Description: "Client that sent the URL; blank means Meloader stamped its own name"},
+		{Name: "site", Type: "string", Description: "gallery-dl category, set after resolve"},
+		{Name: "gallery", Type: "string", Description: "target Mebooru gallery"},
+		{Name: "folder", Type: "string", Description: "destination subfolder under the gallery; relative, no .. segment"},
+		{Name: "max_items", Type: "integer", Description: "per-job item cap supplied at enqueue"},
+		{Name: "force", Type: "boolean", Description: "Last/next run bypasses the gallery-dl archive (set by a forced retry)"},
+		{Name: "summary", Ref: "Summary"},
+		{Name: "note", Type: "string", Description: "The job's result line (a contribution send's commit summary); empty for other kinds"},
+		{Name: "capped", Type: "boolean", Description: "The resolve hit the per-job item cap, or the listing ended on the job's error_code, so more posts may remain"},
+		{Name: "cap", Type: "integer", Description: "The applied item cap when capped is true"},
+		{Name: "root", Type: "integer", Description: "Originating job of a continue-series; a capped search and its continuations share it. Self for a standalone job"},
+		{Name: "error_code", Type: "string"},
+		{Name: "error", Type: "string"},
+		{Name: "items", Type: "array", Items: &prop{Ref: "Item"}},
+		{Name: "created_at", Type: "string", Format: "date-time"},
+		{Name: "started_at", Type: "string", Format: "date-time"},
+		{Name: "finished_at", Type: "string", Format: "date-time"},
+	}},
+	{Name: "PaginatedJobs", Props: []prop{
+		{Name: "page", Type: "integer"},
+		{Name: "limit", Type: "integer"},
+		{Name: "total", Type: "integer"},
+		{Name: "paused", Type: "boolean", Description: "Whether the queue is holding new downloads (see the pause/resume endpoints)"},
+		{Name: "jobs", Type: "array", Items: &prop{Ref: "Job"}},
+	}},
+	{Name: "PauseState", Props: []prop{
+		{Name: "paused", Type: "boolean"},
+	}},
+	{Name: "Site", Props: []prop{
+		{Name: "category", Type: "string"},
+		{Name: "subcategory", Type: "string"},
+		{Name: "name", Type: "string", Description: "Display name from gallery-dl's supported-sites data"},
+		{Name: "example", Type: "string"},
+		{Name: "hosts", Type: "array", Items: &prop{Type: "string"}, Description: "The curated profile's host aliases (file CDNs, mirror instances); a registrable domain covers its subdomains"},
+		{Name: "kind", Type: "string", Description: "booru, manga, other"},
+		{Name: "curated", Type: "boolean", Description: "Has a mapping profile (shipped or user)"},
+		{Name: "configured", Type: "boolean", Description: "Carries user-set site data or a custom profile (the settings tables' visibility rule)"},
+		{Name: "custom_profile", Type: "boolean", Description: "A user profile file overrides the shipped mapping"},
+		{Name: "auth", Type: "string", Description: "none, api_optional, api_required, username_password, cookies, oauth"},
+	}},
+	{Name: "TagRules", Props: []prop{
+		{Name: "tag", Type: "string"},
+		{Name: "category", Type: "string"},
+		{Name: "category_kept", Type: "boolean", Description: "False when the global Rules drop the category after download"},
+		{Name: "sites", Type: "array", Items: &prop{Ref: "TagRule"}},
+	}},
+	{Name: "TagRule", Props: []prop{
+		{Name: "site", Type: "string"},
+		{Name: "kind", Type: "string", Description: "booru, manga, other; lookup for the PTR"},
+		{Name: "builtin", Type: "boolean", Description: "True for a site the history or a watch reached but the settings never set up: its rules are the built-in profile's"},
+		{Name: "rule", Type: "string", Description: "none, drop, rename, move: the site's tag rule on the name"},
+		{Name: "target", Type: "string", Description: "What a rename or move sends instead"},
+		{Name: "blacklist", Type: "string", Description: "global or site when a blacklist rule names the tag, before or after its rule; absent otherwise"},
+		{Name: "blacklist_line", Type: "string", Description: "The blacklist line that names the tag, as written; a line with other tags skips only the posts that also match them"},
+		{Name: "mapped_from", Type: "array", Items: &prop{Type: "string"}, Description: "The site's own categories a category map sends into this category"},
+		{Name: "renamed_from", Type: "array", Items: &prop{Type: "string"}, Description: "The names the site's tag rules turn into this tag"},
+		{Name: "kept", Type: "boolean", Description: "Whether the tag, as this site sends it after its rule, survives the global category drop"},
+	}},
+	{Name: "ProbeResult", Props: []prop{
+		{Name: "status", Type: "string", Description: "ok, auth_required, blocked, rate_limited, failed"},
+		{Name: "detail", Type: "string"},
+		{Name: "missing_credential", Type: "string", Description: "The credential the site requires and the config lacks (\"cookies\", \"api key\"); absent when nothing is missing"},
+	}},
+	{Name: "Health", Props: []prop{
+		{Name: "app", Type: "string", Description: "Always monloader, so a second launch can tell its own instance from another program on the port"},
+		{Name: "status", Type: "string"},
+		{Name: "version", Type: "string"},
+		{Name: "gallerydl_version", Type: "string"},
+		{Name: "api", Type: "integer", Description: "The /api/v1 contract's number; it moves when a path, field, status code or vocabulary word a peer reads changes"},
+		{Name: "min_peer_api", Type: "integer", Description: "The oldest Mebooru api this Meloader still drives"},
+	}},
+	{Name: "EnqueueResponse", Props: []prop{
+		{Name: "job_id", Type: "integer"},
+	}},
+	{Name: "PTRStatus", Props: []prop{
+		{Name: "enabled", Type: "boolean"},
+		{Name: "state", Type: "string", Description: "disabled, syncing, ready, paused, error"},
+		{Name: "progress", Type: "object", Props: []prop{
+			{Name: "update_index", Type: "integer", Description: "the update index being applied"},
+			{Name: "update_count", Type: "integer", Description: "total updates the server publishes"},
+			{Name: "blobs_done", Type: "integer", Description: "update blobs applied; over blobs_total this is the volume-weighted sync fraction (0 until the blob census is known)"},
+			{Name: "blobs_total", Type: "integer", Description: "update blobs the server publishes"},
+			{Name: "downloaded_bytes", Type: "integer", Description: "compressed bytes fetched this session"},
+			{Name: "download_rate", Type: "integer", Description: "average fetch rate in bytes per second over the pass's network time, while syncing"},
+			{Name: "process_rate", Type: "integer", Description: "rows replayed into the index per second of replay time, while syncing"},
+			{Name: "last_applied_at", Type: "integer", Description: "unix time the last update this process committed was applied (absent until one lands)"},
+		}},
+		{Name: "counts", Type: "object", Props: []prop{
+			{Name: "hashes", Type: "integer"},
+			{Name: "tags", Type: "integer"},
+			{Name: "mappings", Type: "integer"},
+			{Name: "siblings", Type: "integer"},
+			{Name: "parents", Type: "integer"},
+		}},
+		{Name: "disk_bytes", Type: "integer"},
+		{Name: "next_update_due", Type: "integer", Description: "unix time the next update is expected"},
+		{Name: "covered_through", Type: "integer", Description: "unix time the synced data reaches; absent until an update has been applied"},
+		{Name: "queryable", Type: "boolean", Description: "the lookup, tag and contribution reads answer: the index finished a full sync and is not replaying a backlog (holds while paused)"},
+		{Name: "error", Type: "string"},
+		{Name: "contrib", Type: "object", Description: "contribution gate; absent while the PTR is off", Props: []prop{
+			{Name: "account", Type: "boolean", Description: "a personal (non-public) access key is set; every contribution surface gates on this"},
+			{Name: "banned", Type: "boolean", Description: "the account is banned; contribution surfaces hide, sync stays allowed"},
+			{Name: "unsent", Type: "integer", Description: "staged or failed items awaiting a send"},
+			{Name: "failed", Type: "integer", Description: "items whose last send failed, kept for retry"},
+		}},
+	}},
+	{Name: "PTRTagResults", Props: []prop{
+		{Name: "results", Type: "object", Description: "map of the queried tag to its PTR ideal, aliases, implications, and implied_by (Mebooru form); known=false when the PTR does not have the tag"},
+	}},
+	{Name: "PTRTagSearch", Props: []prop{
+		{Name: "clusters", Type: "array", Items: &prop{Type: "object", Props: []prop{
+			{Name: "ideal", Type: "string", Description: "the cluster's preferred spelling in Mebooru form; the name to look up or pull under"},
+			{Name: "matched", Type: "array", Items: &prop{Type: "string"}, Description: "the spellings of this cluster the query matched, in Mebooru form"},
+			{Name: "aliases", Type: "integer", Description: "other spellings resolving to the ideal"},
+			{Name: "implications", Type: "integer", Description: "distinct tags the cluster implies"},
+			{Name: "implied_by", Type: "integer", Description: "distinct tags implying the cluster, capped at 200 like the graph answer"},
+		}}},
+		{Name: "truncated", Type: "boolean", Description: "a scan or the limit cut the answer short; narrow the query to see the rest"},
+	}},
+	{Name: "LookupStatus", Props: []prop{
+		{Name: "daily_budget", Type: "integer", Description: "images per day a scheduled lookup may cover; 0 refuses them all"},
+		{Name: "left_today", Type: "integer", Description: "budgeted lookups still acceptable before the next rollover"},
+		{Name: "resets_at", Type: "integer", Description: "unix time of the next local-midnight rollover"},
+		{Name: "chain", Type: "array", Items: &prop{Type: "string"}, Description: "the sources the booru walk would query, in order, leaving out any it would skip for a missing credential; empty means nothing is configured"},
+	}},
+	{Name: "PTRLookupResults", Props: []prop{
+		{Name: "index", Type: "integer", Description: "the index's applied-update cursor at answer time"},
+		{Name: "results", Type: "object", Description: "map of a matched sha256 to its Mebooru-format tags; a hash the index does not hold, or holds nothing usable for, is absent"},
+		{Name: "withheld_tags", Type: "object", Description: "map of a matched sha256 to the tags the PTR's row held back; they say nothing about whether the hash still lists them"},
+		{Name: "withheld_categories", Type: "array", Items: &prop{Type: "string"}, Description: "the categories Keep categories leaves out of every answer"},
+	}},
+	{Name: "PTRContribPreview", Props: []prop{
+		{Name: "provisional", Type: "boolean", Description: "the index is still syncing; the diff may overstate what is new"},
+		{Name: "to_add", Type: "array", Items: &prop{Type: "object", Props: []prop{
+			{Name: "tag", Type: "string", Description: "the submitted Mebooru-format tag"},
+			{Name: "ptr", Type: "string", Description: "the exact PTR spelling a send would use; empty when ineligible"},
+			{Name: "status", Type: "string", Description: "new, known, ineligible, filtered, or unsent"},
+			{Name: "note", Type: "string", Description: "why the tag is ineligible or filtered"},
+			{Name: "unknown_tag", Type: "boolean", Description: "on a new row, the PTR spelling is not a tag the index holds at all; absent otherwise"},
+		}}},
+		{Name: "ptr_only", Type: "array", Items: &prop{Type: "object", Props: []prop{
+			{Name: "tag", Type: "string", Description: "Mebooru form of a PTR-current tag the submitted list lacks"},
+			{Name: "ptr", Type: "string", Description: "the raw PTR spelling a removal petition would target"},
+			{Name: "petitionable", Type: "boolean", Description: "false when a removal for this tag and hash is already staged or awaiting janitor review"},
+		}}},
+	}},
+	{Name: "PTRContribPairPreview", Props: []prop{
+		{Name: "a_ptr", Type: "string", Description: "the PTR spelling of a"},
+		{Name: "b_ptr", Type: "string", Description: "the PTR spelling of b"},
+		{Name: "direction", Type: "string", Description: "suggest, petition, pending, conflict, covered, or ineligible"},
+		{Name: "note", Type: "string", Description: "why the pair is ineligible; absent otherwise"},
+		{Name: "provisional", Type: "boolean", Description: "the index is still syncing; the direction may be stale"},
+	}},
+	{Name: "PTRContribResults", Props: []prop{
+		{Name: "results", Type: "array", Items: &prop{Type: "object", Props: []prop{
+			{Name: "kind", Type: "string", Description: "the item's kind, in request order"},
+			{Name: "result", Type: "string", Description: "staged, or why the item was refused"},
+			{Name: "note", Type: "string", Description: "detail on a refusal; absent otherwise"},
+		}}},
+		{Name: "job_id", Type: "integer", Description: "the send job, when anything was accepted and commit was on"},
+	}},
+}
+
+// The server URL is the root, not /api/v1, so /health shares the document.
+func buildSpec(baseURL, version string, eps []endpoint) map[string]any {
+	paths := map[string]any{}
+	for _, e := range eps {
+		ops, _ := paths[e.Path].(map[string]any)
+		if ops == nil {
+			ops = map[string]any{}
+			paths[e.Path] = ops
+		}
+		ops[e.MethodLower()] = operationJSON(e)
+	}
+	schemas := map[string]any{}
+	for _, s := range apiSchemas {
+		schemas[s.Name] = objectJSON(nil, s.Props)
+	}
+	return map[string]any{
+		"openapi": "3.0.3",
+		"info": map[string]any{
+			"title": "Meloader API",
+			"description": "Queue booru URLs for download into Mebooru. Errors answer {error, code}; clients branch on code. " +
+				"Every authenticated operation can answer 401 unauthorized, 403 insufficient_scope, or 503 api_disabled; " +
+				"on a desktop install whose first-run setup is not finished, every /api/v1 path but this reference answers 409 setup_required.",
+			"version": version,
+		},
+		"servers": []map[string]any{
+			{"url": baseURL, "description": "This server"},
+		},
+		"components": map[string]any{
+			"securitySchemes": map[string]any{
+				"bearerAuth": map[string]any{
+					"type":         "http",
+					"scheme":       "bearer",
+					"bearerFormat": "token",
+					"description":  "Required on every endpoint except /health, /api/v1/openapi.json, /api/v1/docs, and the unauthenticated /api/v1/pair/* pairing bootstrap. Use a named, scoped token from Settings -> Authentication (read: queue/sites; write: enqueue/manage); the API is disabled until at least one token exists.",
+				},
+			},
+			"schemas": schemas,
+		},
+		"security": []map[string]any{
+			{"bearerAuth": []string{}},
+		},
+		"paths": paths,
+	}
+}
+
+func operationJSON(e endpoint) map[string]any {
+	op := map[string]any{
+		"summary":     e.Summary,
+		"operationId": e.OperationID,
+	}
+	if e.Description != "" {
+		op["description"] = e.Description
+	}
+	if e.NoAuth {
+		op["security"] = []map[string]any{}
+	}
+	if len(e.Params) > 0 {
+		params := make([]map[string]any, len(e.Params))
+		for i, p := range e.Params {
+			params[i] = map[string]any{
+				"name": p.Name, "in": p.In, "required": p.Required,
+				"description": p.Description, "schema": map[string]any{"type": cmp.Or(p.Type, "string")},
+			}
+		}
+		op["parameters"] = params
+	}
+	if e.Request != nil {
+		op["requestBody"] = map[string]any{
+			"required": !e.Request.Optional,
+			"content":  map[string]any{"application/json": map[string]any{"schema": objectJSON(e.Request.Required, e.Request.Props)}},
+		}
+	}
+	responses := map[string]any{}
+	for _, r := range e.Responses {
+		resp := map[string]any{"description": r.Description}
+		switch {
+		case r.Ref != "":
+			resp["content"] = map[string]any{"application/json": map[string]any{"schema": refJSON(r.Ref)}}
+		case len(r.Props) > 0:
+			resp["content"] = map[string]any{"application/json": map[string]any{"schema": objectJSON(nil, r.Props)}}
+		}
+		// Every route's shared refusals can land on a status it lists itself.
+		if prior, ok := responses[r.Status].(map[string]any); ok {
+			resp["description"] = prior["description"].(string) + "; or " + r.Description
+		}
+		responses[r.Status] = resp
+	}
+	op["responses"] = responses
+	return op
+}
+
+func objectJSON(required []string, props []prop) map[string]any {
+	properties := map[string]any{}
+	for _, p := range props {
+		properties[p.Name] = propJSON(p)
+	}
+	obj := map[string]any{"type": "object", "properties": properties}
+	if len(required) > 0 {
+		obj["required"] = required
+	}
+	return obj
+}
+
+func propJSON(p prop) map[string]any {
+	if p.Ref != "" {
+		return refJSON(p.Ref)
+	}
+	m := map[string]any{"type": p.Type}
+	if p.Description != "" {
+		m["description"] = p.Description
+	}
+	if p.Format != "" {
+		m["format"] = p.Format
+	}
+	if p.Items != nil {
+		m["items"] = propJSON(*p.Items)
+	}
+	if len(p.Props) > 0 {
+		m["properties"] = objectJSON(nil, p.Props)["properties"]
+	}
+	return m
+}
+
+func refJSON(name string) map[string]any {
+	return map[string]any{"$ref": "#/components/schemas/" + name}
+}
+
+var anchorReplacer = strings.NewReplacer("/", "-", "{", "", "}", "", ".", "-")
+
+func anchorize(s string) string {
+	return strings.Trim(anchorReplacer.Replace(strings.ToLower(s)), "-")
+}
+
+func (h *Handler) openAPIJSON(w http.ResponseWriter, r *http.Request) {
+	SetCORS(w, r)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(buildSpec(h.cfg.Current().Server.BaseURL, h.version, h.endpoints()))
+}
+
+type docsView struct {
+	Title        string
+	Version      string
+	BaseURL      string
+	APIProtected bool
+	Endpoints    []endpoint
+	Schemas      []apiSchema
+}
+
+func (h *Handler) openAPIDocs(w http.ResponseWriter, r *http.Request) {
+	SetCORS(w, r)
+	view := docsView{
+		Title:        "Meloader API",
+		Version:      h.version,
+		BaseURL:      h.cfg.Current().Server.BaseURL,
+		APIProtected: len(h.cfg.Current().Auth.Tokens) > 0,
+		Endpoints:    h.endpoints(),
+		Schemas:      apiSchemas,
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := docsTemplate.Execute(w, view); err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
+var docsTemplate = template.Must(template.New("api-docs").Parse(`<!DOCTYPE html>
+<html lang="en" data-app="monloader">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} - Docs</title>
+<style>
+ body { background:#0d0d0d; color:#c8c8c8; font-family:"JetBrains Mono","Fira Mono","Courier New",monospace; font-size:14px; line-height:1.5; padding:24px; max-width:1000px; margin:0 auto; }
+ h1 { font-size:20px; font-weight:bold; margin-bottom:4px; }
+ h2 { font-size:16px; color:#c8c8c8; border-bottom:1px solid #2a2a36; padding-bottom:4px; margin:24px 0 8px; }
+ h3 { font-size:13px; color:#8f8faa; margin:12px 0 4px; font-weight:normal; text-transform:uppercase; letter-spacing:0.5px; }
+ a { color:#8592e4; text-decoration:none; }
+ a:hover { text-decoration:underline; }
+ code { font-family:inherit; }
+ table { border-collapse:collapse; width:100%; margin:6px 0 10px; font-size:13px; }
+ th, td { border:1px solid #2a2a36; padding:4px 8px; text-align:left; vertical-align:top; }
+ th { color:#8f8faa; font-weight:normal; background:#16161c; }
+ .muted { color:#8f8faa; font-size:12px; }
+ .method { display:inline-block; padding:1px 6px; border:1px solid; font-weight:bold; margin-right:8px; font-size:12px; min-width:52px; text-align:center; }
+ .method-get    { color:#22aa44; border-color:#22aa44; }
+ .method-post   { color:#8592e4; border-color:#8592e4; }
+ .method-delete { color:#e75c5c; border-color:#e75c5c; }
+ .path { color:#c8c8c8; }
+ ul.toc { list-style:none; padding:0; margin:8px 0 20px; }
+ ul.toc li { padding:2px 0; }
+</style>
+</head>
+<body>
+ <p class="muted"><a href="/">&larr; Back</a></p>
+ <h1>{{.Title}}</h1>
+ <p class="muted">Version {{.Version}} &middot; base URL <code>{{.BaseURL}}</code></p>
+ {{if .APIProtected}}
+ <p style="color:#22aa44;border:1px solid #22aa44;padding:4px 8px;">An API token is configured: send <code>Authorization: Bearer &lt;token&gt;</code> (with a scope covering the method) on every endpoint except <code>/health</code>, <code>/api/v1/openapi.json</code>, <code>/api/v1/docs</code>, and the <code>/api/v1/pair/*</code> handshake below, which is unauthenticated by design - it is how a client obtains a token.</p>
+ {{else}}
+ <p style="color:#ffaa00;border:1px solid #ffaa00;padding:4px 8px;">No API token is configured, so the API is disabled (every authenticated endpoint returns <code>503 api_disabled</code>). Create one in Settings -&gt; Authentication.</p>
+ {{end}}
+ <p class="muted">Raw spec: <a href="/api/v1/openapi.json">openapi.json</a></p>
+
+ <h2>Endpoints</h2>
+ <ul class="toc">
+ {{range .Endpoints}}
+  <li><a href="#{{.Anchor}}"><span class="method method-{{.MethodLower}}">{{.Method}}</span><span class="path">{{.Path}}</span></a>{{if .Summary}} <span class="muted">- {{.Summary}}</span>{{end}}</li>
+ {{end}}
+ </ul>
+
+ {{range .Endpoints}}
+ <div class="endpoint">
+  <h2 id="{{.Anchor}}"><span class="method method-{{.MethodLower}}">{{.Method}}</span><span class="path">{{.Path}}</span></h2>
+  {{if .Summary}}<p>{{.Summary}}</p>{{end}}
+  {{if .Description}}<p class="muted">{{.Description}}</p>{{end}}
+  {{if .Params}}
+  <h3>Parameters</h3>
+  <table><thead><tr><th>Name</th><th>In</th><th>Required</th><th>Description</th></tr></thead><tbody>
+  {{range .Params}}<tr><td><code>{{.Name}}</code></td><td>{{.In}}</td><td>{{if .Required}}yes{{else}}no{{end}}</td><td>{{.Description}}</td></tr>{{end}}
+  </tbody></table>
+  {{end}}
+  {{if .Request}}
+  <h3>Request body</h3>
+   <p class="muted">Content-Type: <code>application/json</code></p>
+   {{if .Request.Required}}<p class="muted">Required: {{range .Request.Required}}<code>{{.}}</code> {{end}}</p>{{end}}
+   {{if .Request.Optional}}<p class="muted">The body is optional.</p>{{end}}
+   {{if .Request.Props}}<table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead><tbody>
+   {{range .Request.Fields}}<tr><td><code>{{.Name}}</code></td><td>{{.Type}}</td><td>{{.Description}}</td></tr>{{end}}
+   </tbody></table>{{end}}
+  {{end}}
+  {{if .Responses}}
+  <h3>Responses</h3>
+  <table><thead><tr><th>Status</th><th>Description</th><th>Schema</th></tr></thead><tbody>
+  {{range .Responses}}<tr><td><code>{{.Status}}</code></td><td>{{.Description}}</td><td>{{if .Ref}}<a href="#schema-{{.RefAnchor}}"><code>{{.Ref}}</code></a>{{else}}{{range .Fields}}<code>{{.Name}}</code> {{.Type}}{{with .Description}} - {{.}}{{end}}<br>{{end}}{{end}}</td></tr>{{end}}
+  </tbody></table>
+  {{end}}
+ </div>
+ {{end}}
+
+ <h2>Schemas</h2>
+ {{range .Schemas}}
+  <h3 id="schema-{{.Anchor}}" style="color:#c8c8c8;font-size:14px;text-transform:none;letter-spacing:0;margin-top:14px">{{.Name}}</h3>
+  {{if .Props}}<table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead><tbody>
+  {{range .Fields}}<tr><td><code>{{.Name}}</code></td><td>{{.Type}}</td><td>{{.Description}}</td></tr>{{end}}
+  </tbody></table>{{else}}<p class="muted">(no fields)</p>{{end}}
+ {{end}}
+</body>
+</html>`))

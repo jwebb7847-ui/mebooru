@@ -1,0 +1,34 @@
+{{define "watches"}}{{template "doc_head" .}}
+{{template "topbar" .}}
+{{template "monbooru_banner" .}}
+<div class="content-scroll">
+<main id="content" class="content-wide">
+  {{if .LoaderEmbedded}}<p class="field-hint">Watches use Meloader’s source and default gallery settings.</p>{{end}}
+  <form class="add-bar" hx-post="/watches" hx-target="#watch-flash" hx-swap="innerHTML"
+        hx-on::after-request="if (event.detail.xhr.getResponseHeader('HX-Retarget')) { this.reset(); document.getElementById('watch-flash').textContent = ''; }">
+    <div class="add-row">
+      <div class="search-input-wrap">
+        <input type="text" name="url" autocomplete="off"{{if .WatchStore}} data-peer-title=""{{end}}{{if not (and .WatchStore .MonbooruConfigured)}} disabled{{end}} placeholder="Paste a search URL to watch">
+      </div>
+      <select name="items" aria-label="Posts to fetch" title="How many posts each check fetches">{{template "items_options" .ItemChoices}}</select>
+      <select name="interval_hours" aria-label="Check every">{{range .Intervals}}<option value="{{.Hours}}"{{if eq .Hours $.DefaultWatchHours}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+      <button type="submit"{{if .WatchStore}} data-peer-title=""{{end}}{{if not (and .WatchStore .MonbooruConfigured)}} disabled{{end}}>Watch</button>
+    </div>
+  </form>
+  <div id="watch-flash" class="field-hint">{{if not .WatchStore}}<span class="flash-err">Watches can't be saved: Meloader's data folder is not writable.</span>{{end}}</div>
+  <div class="table-scroll">
+  <table class="data-table watch-table">
+    <thead>
+      <tr><th>Last check</th><th>URL</th><th>Site</th><th>Fetch</th><th>Schedule</th><th>Next</th><th></th></tr>
+    </thead>
+    <!-- A focused select pauses the poll, which would otherwise close it mid-pick. -->
+    <tbody id="watch-rows" hx-get="/internal/watch-rows" hx-trigger="load, every 2s [!pollHeld('#watch-rows') && document.activeElement.tagName !== 'SELECT']"
+           hx-target="#watch-rows" hx-swap="innerHTML">
+      {{template "watch_rows" .}}
+    </tbody>
+  </table>
+  </div>
+</main>
+</div>
+{{template "footer" .}}
+{{template "doc_foot" .}}{{end}}

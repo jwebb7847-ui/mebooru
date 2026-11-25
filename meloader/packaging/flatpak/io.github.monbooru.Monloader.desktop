@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Meloader
+Comment=Downloader for Mebooru
+Exec=monloader-run
+Icon=io.github.monbooru.Monloader
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=download;booru;gallery;tags;

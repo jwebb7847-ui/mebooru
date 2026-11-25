@@ -1,0 +1,57 @@
+{{define "queue"}}{{template "doc_head" .}}
+{{template "topbar" .}}
+{{template "monbooru_banner" .}}
+{{template "queue_paused" .}}
+<div class="content-scroll">
+<main id="content" class="content-wide">
+  <form class="add-bar" hx-post="{{if .LoaderGallery}}/loader/queue{{else}}/{{end}}" hx-target="#add-flash" hx-swap="innerHTML" hx-vals='js:{page: queuePageNum()}'
+        hx-on::after-request="if (event.detail.xhr.getResponseHeader('HX-Retarget')) { this.reset(); document.getElementById('add-flash').textContent = ''; }">
+    <div class="add-row">
+      <div class="search-input-wrap">
+        <input type="text" name="url" autocomplete="off" data-peer-title=""{{if not .MonbooruConfigured}} disabled{{end}} placeholder="Paste a post, pool, search or artist URL, or an MD5 hash" data-short-placeholder="Paste a URL or an MD5 hash">
+      </div>
+      <select name="items" aria-label="Posts to fetch" title="How many posts to fetch from a search. A pool or a manga gallery always comes whole.">{{template "items_options" .ItemChoices}}</select>
+      {{with .LoaderGallery}}<input type="hidden" name="gallery" value="{{.}}"><span class="loader-destination">To <strong>{{.}}</strong></span>{{end}}
+      <button type="submit" data-peer-title=""{{if not .MonbooruConfigured}} disabled{{end}}>Download</button>
+      {{template "queue_actions" .Actions}}
+    </div>
+  </form>
+  {{template "lookup_status" .}}
+  <div id="add-flash" class="field-hint"></div>
+  <div class="table-scroll">
+  <table class="data-table queue-table">
+    <thead>
+      <tr><th>Status</th><th>URL</th><th>Type</th><th>Site</th><th>Gallery</th><th>Summary</th><th></th></tr>
+    </thead>
+    <!-- The action buttons in the rows inherit the target and swap from
+         here (and the CSRF header from body), so each carries only its verb. -->
+    <tbody id="queue-rows" hx-get="/internal/queue-rows" hx-trigger="load, every 2s [!pollHeld('#queue-rows')], more-opened"
+           hx-target="#queue-rows" hx-swap="innerHTML" hx-vals='js:{page: queuePageNum(), more: expandedMoreRoots()}'>
+      {{template "queue_rows" .}}
+    </tbody>
+  </table>
+  </div>
+</main>
+</div>
+<dialog id="item-debug-dialog">
+  <div id="debug-log-body"></div>
+</dialog>
+<script>
+  // The poll's hx-vals reads the page from here, so it survives every
+  // swap; the URL mirrors it for a reload (the server clamps ?page=).
+  function queuePageNum() {
+    if (!window.__queuePage) {
+      window.__queuePage = parseInt(new URLSearchParams(location.search).get('page'), 10) || 1;
+    }
+    return window.__queuePage;
+  }
+  function queuePage(n) {
+    window.__queuePage = n;
+    var url = new URL(location);
+    if (n > 1) { url.searchParams.set('page', n); } else { url.searchParams.delete('page'); }
+    history.replaceState(null, '', url);
+    htmx.ajax('GET', '/internal/queue-rows', { target: '#queue-rows', swap: 'innerHTML', values: { page: n } });
+  }
+</script>
+{{template "footer" .}}
+{{template "doc_foot" .}}{{end}}
