@@ -56,7 +56,7 @@ func verifyCleanupReceipt(root *os.Root,generation string) error {
 	opened,err:=f.Stat()
 	if err!=nil{return err}
 	if !opened.Mode().IsRegular()||!os.SameFile(info,opened){return ErrInvalidCleanupReceipt}
-	body,err:=io.ReadAll(io.LimitReader(f,cleanupReceiptBytes+1))
+	body,err:=io.ReadAll(io.LimitReader(f,int64(cleanupReceiptBytes)+1))
 	if err!=nil{return err}
 	if string(body)!=cleanupReceiptPrefix+generation+"\n"{return ErrInvalidCleanupReceipt}
 	return nil
