@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 	"path/filepath"
 	"testing"
@@ -46,7 +47,7 @@ func TestProfileOwnerFixture(t *testing.T){
 	var one [1]byte
 	_,_=os.Stdin.Read(one[:])
 	// Intentionally bypass Close. The OS must release the lock.
-	_ = lock
+	runtime.KeepAlive(lock)
 	os.Exit(7)
 }
 
