@@ -11,7 +11,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
-	"github.com/monbooru/monloader/internal/shared/desktop"
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 )
 
 func runHealthcheck(argv []string) {

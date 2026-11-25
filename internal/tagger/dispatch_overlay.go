@@ -9,7 +9,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/monbooru/monbooru/internal/shared/fsx"
+	"github.com/jwebb7847-ui/mebooru/shared/fsx"
 )
 
 func MergedDispatchRules(modelPath, taggerName string) []DispatchEntry {

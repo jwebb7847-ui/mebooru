@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/monbooru/monbooru/internal/shared/fsx"
+	"github.com/jwebb7847-ui/mebooru/shared/fsx"
 )
 
 const maxGalleryBannerPickerEntries = 500

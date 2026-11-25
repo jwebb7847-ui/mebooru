@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/monbooru/monbooru/internal/shared/desktop"
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 )
 
 // sharedLibPath tries the executable's directory first so a bundled

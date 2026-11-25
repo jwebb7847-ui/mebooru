@@ -9,10 +9,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jwebb7847-ui/mebooru/shared/fsx"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/metadata"
 	"github.com/monbooru/monbooru/internal/models"
-	"github.com/monbooru/monbooru/internal/shared/fsx"
 )
 
 type CBZMember struct {

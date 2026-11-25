@@ -15,10 +15,10 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/jobs"
-	"github.com/monbooru/monbooru/internal/shared/desktop"
 	internalweb "github.com/monbooru/monbooru/internal/web"
 	"golang.org/x/crypto/bcrypt"
 )

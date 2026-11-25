@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monbooru/internal/api"
@@ -43,7 +44,6 @@ import (
 	"github.com/monbooru/monbooru/internal/registry"
 	"github.com/monbooru/monbooru/internal/schedule"
 	"github.com/monbooru/monbooru/internal/search"
-	"github.com/monbooru/monbooru/internal/shared/desktop"
 	"github.com/monbooru/monbooru/internal/shared/webui"
 	"github.com/monbooru/monbooru/internal/tagger"
 	"github.com/monbooru/monbooru/internal/tags"

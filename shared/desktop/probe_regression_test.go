@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -92,36 +93,73 @@ func TestProbeRejectsNonlocalAndInvalidAddresses(t *testing.T) {
 }
 
 func TestProbeLocalInterfaceAddresses(t *testing.T) {
-	addrs, err := net.InterfaceAddrs()
+	interfaces, err := net.Interfaces()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, addr := range addrs {
-		prefix, err := netip.ParsePrefix(addr.String())
-		if err != nil || !prefix.Addr().Is4() || prefix.Addr().IsLoopback() {
+	bound, verified := 0, 0
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
 			continue
 		}
-		ip := prefix.Addr()
-		if !localProbeIP(ip) {
-			t.Fatalf("local interface refused: %v", ip)
-		}
-		ln, err := net.Listen("tcp", net.JoinHostPort(ip.String(), "0"))
+		addrs, err := iface.Addrs()
 		if err != nil {
+			t.Logf("interface %s: cannot enumerate addresses: %v", iface.Name, err)
 			continue
 		}
-		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = fmt.Fprint(w, "{\"app\":\"fixture\"}")
-		}))
-		server.Listener.Close()
-		server.Listener = ln
-		server.Start()
-		defer server.Close()
-		if got, found := Probe(ln.Addr().String(), time.Second); !found || got.App != "fixture" {
-			t.Fatalf("local interface probe failed: %+v %v", got, found)
+		for _, addr := range addrs {
+			prefix, err := netip.ParsePrefix(addr.String())
+			if err != nil || !prefix.Addr().Is4() || prefix.Addr().IsLoopback() {
+				continue
+			}
+			ip := prefix.Addr()
+			if !localProbeIP(ip) {
+				t.Errorf("interface %s: assigned address refused by localProbeIP", iface.Name)
+				continue
+			}
+			ln, err := net.Listen("tcp", net.JoinHostPort(ip.String(), "0"))
+			if err != nil {
+				t.Logf("interface %s: listener unavailable: %v", iface.Name, err)
+				continue
+			}
+			bound++
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" || r.URL.RequestURI() != "/health" {
+					t.Errorf("unexpected health request: %s %s", r.Method, r.URL)
+				}
+				_, _ = fmt.Fprint(w, "{\"app\":\"fixture\"}")
+			}))
+			server.Listener.Close()
+			server.Listener = ln
+			server.Start()
+			// Independent TCP control: binding an address does not establish that
+			// the host can connect to it (VPN routes, firewall or OS permissions).
+			conn, err := net.DialTimeout("tcp", ln.Addr().String(), 3*time.Second)
+			if err != nil {
+				t.Logf("interface %s: direct TCP control failed: %v", iface.Name, err)
+				server.Close()
+				continue
+			}
+			conn.Close()
+			got, found := Probe(ln.Addr().String(), 3*time.Second)
+			server.Close()
+			if !found || got.App != "fixture" {
+				t.Errorf("interface %s: direct TCP control passed but Probe failed: %+v %v", iface.Name, got, found)
+				continue
+			}
+			verified++
+			t.Logf("interface %s: direct TCP and local health probe passed", iface.Name)
 		}
-		return
 	}
-	t.Skip("no bindable non-loopback IPv4 interface")
+	if bound == 0 {
+		if os.Getenv("MEBOORU_REQUIRE_LOCAL_PROBE") == "1" {
+			t.Fatal("no bindable non-loopback IPv4 interface; cannot complete requested local acceptance")
+		}
+		t.Skip("no bindable non-loopback IPv4 interface")
+	}
+	if verified == 0 {
+		t.Fatalf("no local interface health probe verified (%d bindable addresses); inspect direct TCP control results", bound)
+	}
 }
 
 func TestProbeIPv6Loopback(t *testing.T) {
@@ -144,7 +182,7 @@ func TestProbeIPv6Loopback(t *testing.T) {
 func TestLocalRequestAndForeignHostBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		name, host, remote, header, value string
-		want bool
+		want                              bool
 	}{
 		{"loopback", "localhost:8455", "127.0.0.1:321", "", "", true},
 		{"IPv6", "[::1]:8455", "[::1]:321", "", "", true},
@@ -168,7 +206,7 @@ func TestLocalRequestAndForeignHostBoundaries(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		host, path, bind, base string
-		want bool
+		want                   bool
 	}{
 		{"example.invalid", "/", "127.0.0.1:8455", "", true},
 		{"localhost:8455", "/", "127.0.0.1:8455", "", false},

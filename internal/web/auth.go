@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/monbooru/monbooru/internal/shared/desktop"
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 )
 
 const sessionCookie = "monbooru_session"

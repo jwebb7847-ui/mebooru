@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/monbooru/monbooru/internal/shared/fsx"
+	"github.com/jwebb7847-ui/mebooru/shared/fsx"
 )
 
 // ZipNamer compares names ignoring case: the zip is usually unpacked on a

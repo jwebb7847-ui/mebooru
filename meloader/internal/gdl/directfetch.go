@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/fsx"
 	"github.com/monbooru/monloader/internal/kwdict"
 	"github.com/monbooru/monloader/internal/outcome"
-	"github.com/monbooru/monloader/internal/shared/fsx"
 )
 
 // gallery-dl's directlink extractor needs a known media extension in the

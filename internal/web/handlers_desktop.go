@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monbooru/internal/config"
-	"github.com/monbooru/monbooru/internal/shared/desktop"
 	"github.com/monbooru/monbooru/internal/tagger"
 )
 

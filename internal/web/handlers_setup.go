@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/monbooru/monbooru/internal/config"
-	"github.com/monbooru/monbooru/internal/shared/desktop"
 )
 
 type setupData struct {

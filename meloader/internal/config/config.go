@@ -18,8 +18,8 @@ import (
 
 	"github.com/jwebb7847-ui/mebooru/shared/apitoken"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/fsx"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
-	"github.com/monbooru/monloader/internal/shared/fsx"
 )
 
 type Config struct {

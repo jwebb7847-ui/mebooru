@@ -16,6 +16,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/gdl"
@@ -24,7 +25,6 @@ import (
 	"github.com/monbooru/monloader/internal/pipeline"
 	"github.com/monbooru/monloader/internal/ptr"
 	"github.com/monbooru/monloader/internal/queue"
-	"github.com/monbooru/monloader/internal/shared/desktop"
 	"github.com/monbooru/monloader/internal/similarity"
 	"github.com/monbooru/monloader/internal/sitestate"
 	"github.com/monbooru/monloader/internal/taxonomy"
