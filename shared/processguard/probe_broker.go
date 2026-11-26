@@ -31,6 +31,8 @@ type probeBroker struct{
 	set *OperationSet
 	start ProbeStarter
 	version VersionProbeStarter
+	stream StreamProbeStarter
+	streams map[uint64]*streamProbe
 	next uint64
 	leases map[uint64]*OperationLease
 	sealed bool
@@ -61,6 +63,8 @@ func(b *probeBroker)handle(ctx context.Context,op workerproto.Operation,body jso
 		b.leases[b.next]=lease
 		out,_:=json.Marshal(workerproto.ProbeOperationRef{ID:b.next})
 		return out,nil
+	case workerproto.OperationStreamStart,workerproto.OperationStreamRead,workerproto.OperationStreamFinish,workerproto.OperationStreamStop:
+		return b.handleStream(ctx,op,body)
 	case workerproto.OperationVersionProbe:
 		if len(body)!=0{return fault("invalid")}
 		if b.version==nil{return fault("unsupported")}
@@ -144,13 +148,16 @@ func ServeProbeBroker(ctx context.Context,r io.ReadCloser,w io.WriteCloser,set *
 // Optional fixed local runtime starter is provided by trusted custody
 // startup only. It is never configured by the requester.
 func ServeProbeBrokerWithVersion(ctx context.Context,r io.ReadCloser,w io.WriteCloser,set *OperationSet,start ProbeStarter,version VersionProbeStarter)error{
+	return ServeProbeBrokerWithStream(ctx,r,w,set,start,version,nil)
+}
+func ServeProbeBrokerWithStream(ctx context.Context,r io.ReadCloser,w io.WriteCloser,set *OperationSet,start ProbeStarter,version VersionProbeStarter,stream StreamProbeStarter)error{
 	if set==nil||start==nil{
 		_ = r.Close();_ = w.Close()
 		return ErrOperationUnconfirmed
 	}
 	lifetime,revoke:=context.WithCancel(ctx)
 	defer revoke()
-	b:=&probeBroker{set:set,start:start,version:version,leases:make(map[uint64]*OperationLease),revoke:revoke}
+	b:=&probeBroker{set:set,start:start,version:version,stream:stream,streams:make(map[uint64]*streamProbe),leases:make(map[uint64]*OperationLease),revoke:revoke}
 	s,err:=workerproto.OpenSession(lifetime,r,w,workerproto.OperationCustodian,b.handle)
 	if err==nil{<-s.Done();s.Close()}
 	// Seal the underlying set first: a handler already waiting for its

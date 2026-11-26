@@ -82,6 +82,10 @@ const (
 	OperationProbeStart Operation = "custody.probe_start"
 	OperationProbeStop Operation = "custody.probe_stop"
 	OperationVersionProbe Operation = "custody.version_probe"
+	OperationStreamStart Operation = "custody.stream_probe_start"
+	OperationStreamRead Operation = "custody.stream_probe_read"
+	OperationStreamFinish Operation = "custody.stream_probe_finish"
+	OperationStreamStop Operation = "custody.stream_probe_stop"
 
 	Health Operation = "worker.health"
 	SetOffline Operation = "worker.set_offline"
@@ -161,6 +165,10 @@ var rules = map[Operation]Rule{
 	OperationProbeStart: {OperationRequester, Local},
 	OperationProbeStop: {OperationRequester, Local},
 	OperationVersionProbe: {OperationRequester, Local},
+	OperationStreamStart: {OperationRequester, Local},
+	OperationStreamRead: {OperationRequester, Local},
+	OperationStreamFinish: {OperationRequester, Local},
+	OperationStreamStop: {OperationRequester, Local},
 	Health: {Library, Local},
 	SetOffline: {Library, Local},
 	Shutdown: {Library, Local},
