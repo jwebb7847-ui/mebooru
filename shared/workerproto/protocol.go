@@ -90,6 +90,8 @@ const (
 	OperationStreamStop Operation = "custody.stream_probe_stop"
 	// Reserved typed metadata start; no broker handler is enabled yet.
 	OperationMetadataStart Operation = "custody.metadata_start"
+	// Reserved until a trusted transfer dispatcher exists.
+	OperationStrictTransferStart Operation = "custody.strict_transfer_start"
 
 	Health Operation = "worker.health"
 	SetOffline Operation = "worker.set_offline"
@@ -176,6 +178,7 @@ var rules = map[Operation]Rule{
 	OperationStreamFinish: {OperationRequester, Local},
 	OperationStreamStop: {OperationRequester, Local},
 	OperationMetadataStart: {OperationRequester, Online},
+	OperationStrictTransferStart: {OperationRequester, Online},
 	Health: {Library, Local},
 	SetOffline: {Library, Local},
 	Shutdown: {Library, Local},

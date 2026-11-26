@@ -46,7 +46,7 @@ func (t *Tool) ResolveStrict(ctx context.Context, url, rng string) (ResolveResul
 }
 
 func strictEvidenceField(key string) bool {
-	return key == "tags" || key == "tag_ids" || key == "rating" || strings.HasPrefix(key, "tags_")
+	return acquisitionplan.StrictEvidenceField(key)
 }
 
 func (item Item) HasStrictIdentity() bool {
