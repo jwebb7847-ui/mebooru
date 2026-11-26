@@ -12,6 +12,7 @@ import (
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/library"
+	"github.com/monbooru/monbooru/internal/tags"
 )
 
 func TestManagedCatalogHandlerActualGalleries(t *testing.T){
@@ -40,7 +41,7 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	h:=New(func()*config.Config{return cfg},nil,resolver,"test").WithGalleryLock(func()func(){mu.RLock();return mu.RUnlock})
 	ctx:=context.Background()
 	allowed:=func(_ context.Context,op workerproto.Operation,name string)bool{
-		return op==workerproto.GalleryList&&(name==""||name=="A")||op==workerproto.CategoryList&&name=="A"
+		return op==workerproto.GalleryList&&(name==""||name=="A")||(op==workerproto.CategoryList||op==workerproto.ResolveTags)&&name=="A"
 	}
 	serve:=h.ManagedCatalogHandler(allowed)
 	body,fault:=serve(ctx,workerproto.GalleryList,nil)
@@ -51,8 +52,39 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	if fault!=nil{t.Fatal(fault)}
 	cats,err:=workerproto.DecodeCategoryCatalog(body)
 	if err!=nil||len(cats.Names)!=1||cats.Names[0]!="custom_a"{t.Fatalf("categories: %+v %v",cats,err)}
+	// Real gallery rows: alias and implication lookup, missing name,
+	// invalid rating, repeated input. No new tag should be written.
+	catID,ok,err:=tags.CategoryIDByName(galleries[0].DB,"general")
+	if err!=nil||!ok{t.Fatalf("general category: %v %v",ok,err)}
+	canonical,err:=galleries[0].TagSvc.GetOrCreateTag("rainbow_dash",catID)
+	if err!=nil{t.Fatal(err)}
+	implied,err:=galleries[0].TagSvc.GetOrCreateTag("pony",catID)
+	if err!=nil{t.Fatal(err)}
+	if err:=galleries[0].TagSvc.RenameTagKeepAlias(canonical.ID,"rainbow_dash_canonical");err!=nil{t.Fatal(err)}
+	if _,err:=galleries[0].TagSvc.AddImplication(canonical.ID,implied.ID);err!=nil{t.Fatal(err)}
+	q:=workerproto.ResolveTagsRequest{Gallery:"A",Names:[]string{"rainbow_dash","rainbow_dash_canonical","never_created","rating:invalid","rainbow_dash"}}
+	request,err:=workerproto.EncodeResolveTagsRequest(q)
+	if err!=nil{t.Fatal(err)}
+	body,fault=serve(ctx,workerproto.ResolveTags,request)
+	if fault!=nil{t.Fatal(fault)}
+	resolved,err:=workerproto.DecodeResolveTagsResponse(body,q)
+	if err!=nil{t.Fatal(err)}
+	if resolved.Results[0].Status!="alias"||resolved.Results[0].ResolvesTo!="rainbow_dash_canonical"||
+		len(resolved.Results[0].Implies)!=1||resolved.Results[0].Implies[0]!="pony"||
+		resolved.Results[1].Status!="exists"||resolved.Results[2].Status!="new"||
+		resolved.Results[3].Status!="refused"||resolved.Results[4].Status!="alias"{
+		t.Fatalf("resolution: %+v",resolved)
+	}
+	if _,err:=galleries[0].TagSvc.FindTag("never_created",catID);err!=tags.ErrTagNotFound{t.Fatalf("read mutated tags: %v",err)}
+	// Permission revoked while acquiring gallery lifetime lock.
+	checks:=0
+	revoked:=h.ManagedCatalogHandler(func(context.Context,workerproto.Operation,string)bool{checks++;return checks==1})
+	if _,f:=revoked(ctx,workerproto.ResolveTags,request);f==nil||f.Code!="forbidden"{t.Fatal("revoked authority accepted")}
 	for _,tc:=range []struct{op workerproto.Operation;body string;code string}{
 		{workerproto.CategoryList,`{"gallery":"B"}`,"forbidden"},
+		{workerproto.ResolveTags,`{"gallery":"B","names":["rainbow_dash"]}`,"forbidden"},
+		{workerproto.ResolveTags,`{"gallery":"","names":["rainbow_dash"]}`,"invalid"},
+		{workerproto.ResolveTags,`{"gallery":"A","names":[null]}`,"invalid"},
 		{workerproto.CategoryList,`{"gallery":""}`,"invalid"},
 		{workerproto.CategoryList,`{"gallery":"A","path":"/x"}`,"invalid"},
 		{workerproto.GalleryList,`{}`,"invalid"},

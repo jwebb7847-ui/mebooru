@@ -49,3 +49,20 @@ func(c *ManagedCatalogClient)galleryCategories(ctx context.Context,name string)(
 func(c *ManagedCatalogClient)CustomCategories(ctx context.Context)([]string,bool,error){
 	return customCategories(ctx,c.ListGalleries,c.galleryCategories)
 }
+
+// ResolveTags uses the same read-only library behavior as the legacy HTTP
+// client, but requires an explicit gallery and verifies every returned row.
+func(c *ManagedCatalogClient)ResolveTags(ctx context.Context,gallery string,names []string)([]ResolvedTag,error){
+	q:=workerproto.ResolveTagsRequest{Gallery:gallery,Names:append([]string(nil),names...)}
+	body,err:=workerproto.EncodeResolveTagsRequest(q)
+	if err!=nil{return nil,err}
+	body,err=c.call(ctx,workerproto.ResolveTags,body)
+	if err!=nil{return nil,err}
+	out,err:=workerproto.DecodeResolveTagsResponse(body,q)
+	if err!=nil{return nil,err}
+	results:=make([]ResolvedTag,0,len(out.Results))
+	for _,r:=range out.Results{
+		results=append(results,ResolvedTag{Name:r.Name,Status:r.Status,ResolvesTo:r.ResolvesTo,Implies:r.Implies,Reason:r.Reason})
+	}
+	return results,nil
+}
