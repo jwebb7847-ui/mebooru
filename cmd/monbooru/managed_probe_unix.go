@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,14 +24,14 @@ func(p *probeGuard)Stop(ctx context.Context)error{
 	select{case <-p.g.Done():case <-t.C:case <-ctx.Done():}
 	return p.g.Stop(ctx)
 }
-func startManagedProbeWorker(r,w *os.File)(acquisitionpolicy.CustodyChild,error){
+func startManagedProbeWorker(r,w,br,bw *os.File)(acquisitionpolicy.CustodyChild,error){
 	self,err:=os.Executable()
 	if err!=nil{return nil,err}
 	self,err=filepath.EvalSymlinks(self)
 	if err!=nil{return nil,err}
 	cmd:=exec.Command(self,"internal-managed-guard-probe-v1")
 	cmd.Stdin,cmd.Stdout,cmd.Stderr=r,w,os.Stderr
-	g,err:=processguard.StartDormantGuard(cmd)
+	g,err:=processguard.StartDormantGuardWithBroker(cmd,br,bw)
 	if g==nil{return nil,err}
 	p:=&probeGuard{g:g}
 	if err!=nil{return p,err}
@@ -41,5 +42,39 @@ func runManagedGuardProbe()error{
 	if err!=nil{return err}
 	cmd:=exec.Command(path,"internal-managed-worker-probe-v1")
 	cmd.Stdin,cmd.Stdout,cmd.Stderr=os.Stdin,os.Stdout,os.Stderr
+	br,bw,err:=processguard.AdoptGuardBrokerPipes()
+	if err!=nil{return err}
+	defer br.Close();defer bw.Close()
+	return processguard.RunDormantGuardWithBroker(os.NewFile(3,"custody-liveness"),cmd,br,bw)
+}
+
+type probeOperationGuard struct{*processguard.DormantGuard;input io.WriteCloser}
+func(p *probeOperationGuard)Stop(ctx context.Context)error{
+	_ = p.input.Close()
+	t:=time.NewTimer(3*time.Second)
+	defer t.Stop()
+	select{case <-p.Done():case <-t.C:case <-ctx.Done():}
+	return p.DormantGuard.Stop(ctx)
+}
+func startOperationProbePlatform(w *os.File)(processguard.OperationChild,error){
+	cmd,err:=operationProbeCommand("internal-managed-operation-guard-probe-v1")
+	if err!=nil{return nil,err}
+	in,err:=cmd.StdinPipe()
+	if err!=nil{return nil,err}
+	cmd.Stdout,cmd.Stderr=w,os.Stderr
+	g,err:=processguard.StartDormantGuard(cmd)
+	if g==nil{_ = in.Close();return nil,err}
+	return &probeOperationGuard{DormantGuard:g,input:in},err
+}
+func runOperationProbeGuard()error{
+	cmd,err:=operationProbeCommand("internal-managed-operation-leaf-probe-v1")
+	if err!=nil{return err}
+	cmd.Stdin,cmd.Stdout,cmd.Stderr=os.Stdin,os.Stdout,os.Stderr
 	return processguard.RunDormantGuard(os.NewFile(3,"custody-liveness"),cmd)
+}
+func runOperationProbeLeaf()error{
+	done,err:=processguard.WatchGuard(os.NewFile(3,"guard-liveness"))
+	if err!=nil{return err}
+	go func(){<-done;os.Exit(3)}()
+	return operationProbeLeaf()
 }

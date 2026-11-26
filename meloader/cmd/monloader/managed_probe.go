@@ -13,8 +13,18 @@ func dispatchManagedProbe(args []string)bool{
 	if len(args)==0||args[0]!="internal-managed-worker-probe-v1"{return false}
 	ctx,cancel:=context.WithTimeout(context.Background(),45*time.Second)
 	defer cancel()
-	r,w,err:=managedProbeChannels(args[1:])
-	if err==nil{err=workerproto.ServeLifecycleProbe(ctx,r,w)}
+	r,w,br,bw,err:=managedProbeChannels(args[1:])
+	if err==nil{
+		defer r.Close();defer w.Close()
+		var broker *workerproto.Session
+		broker,err=workerproto.OpenSession(ctx,br,bw,workerproto.OperationRequester,nil)
+		if err==nil{
+			defer broker.Close()
+			go func(){<-broker.Done();cancel()}()
+			client,e:=workerproto.NewProbeClient(broker)
+			if e!=nil{err=e}else{err=workerproto.ServeLifecycleProbeWithBroker(ctx,r,w,client)}
+		}
+	}
 	if err!=nil{fmt.Fprintln(os.Stderr,"managed worker probe refused:",err);os.Exit(2)}
 	return true
 }

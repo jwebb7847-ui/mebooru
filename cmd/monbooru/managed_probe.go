@@ -27,6 +27,10 @@ func dispatchManagedProbe(args []string)bool{
 		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runManagedProbe()}
 	case "internal-managed-custody-probe-v1":
 		if len(args)!=4{err=processguard.ErrProbeExecutable}else{err=runManagedCustodyProbe(args[1],args[2],args[3])}
+	case "internal-managed-operation-guard-probe-v1":
+		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runOperationProbeGuard()}
+	case "internal-managed-operation-leaf-probe-v1":
+		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runOperationProbeLeaf()}
 	case "internal-managed-guard-probe-v1":
 		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runManagedGuardProbe()}
 	default:return false
@@ -86,8 +90,8 @@ func runManagedProbe()(result error){
 	check:=func(offline bool)error{
 		e,err:=p.Session().Call(ctx,workerproto.Health,nil)
 		if err!=nil{return err}
-		var h struct{Probe bool; Offline bool}
-		if e.Error!=nil||json.Unmarshal(e.Payload,&h)!=nil||!h.Probe||h.Offline!=offline||m.EffectiveOnline()==offline{return errors.New("probe health mismatch")}
+		var h struct{Probe bool; Offline bool; Operations int}
+		if e.Error!=nil||json.Unmarshal(e.Payload,&h)!=nil||!h.Probe||h.Offline!=offline||m.EffectiveOnline()==offline||(offline&&h.Operations!=0)||(!offline&&h.Operations!=1){return errors.New("probe health mismatch")}
 		return nil
 	}
 	if err:=check(true);err!=nil{return err}
@@ -103,6 +107,7 @@ func runManagedProbe()(result error){
 	if err:=m.Tick(ctx,false);err!=nil{return err}
 	if err:=m.Tick(ctx,true);err!=nil{return err}
 	if starts!=2{return errors.New("probe did not restart on demand")}
+	if err:=m.SetOffline(ctx,false);err!=nil{return err}
 	if err:=m.Shutdown(ctx);err!=nil{return err}
 	fmt.Println("PASS: managed executable probe (no acquisition)")
 	return nil
@@ -126,9 +131,19 @@ func runManagedCustodyProbe(dir,generation,token string)error{
 	defer cancel()
 	return acquisitionpolicy.RunCustodianReady(ctx,dir,generation,os.Stdin,os.Stdout,func(start context.Context)(acquisitionpolicy.CustodyChild,error){
 		if err:=start.Err();err!=nil{return nil,err}
-		child,err:=startManagedProbeWorker(r,w)
-		_ = r.Close()
-		_ = w.Close()
-		return child,err
+		set:=processguard.NewOperationSet(2)
+		br,bw,err:=os.Pipe()
+		if err!=nil{return nil,err}
+		rr,rw,err:=os.Pipe()
+		if err!=nil{_ = br.Close();_ = bw.Close();return nil,err}
+		primary,err:=startManagedProbeWorker(r,w,br,rw)
+		_ = r.Close();_ = w.Close();_ = br.Close();_ = rw.Close()
+		if primary==nil{_ = rr.Close();_ = bw.Close();return nil,err}
+		brokerCtx,stopBroker:=context.WithCancel(ctx)
+		done:=make(chan struct{})
+		owned:=&probeCustody{primary:primary,set:set,stopBroker:stopBroker,brokerDone:done,done:make(chan struct{})}
+		go func(){owned.brokerErr=processguard.ServeProbeBroker(brokerCtx,rr,bw,set,startOperationProbe);close(done)}()
+		go func(){select{case <-primary.Done():case <-done:};close(owned.done)}()
+		return owned,err
 	})
 }
