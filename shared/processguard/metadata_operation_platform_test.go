@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,13 +22,14 @@ import (
 type containedMetadataFixture struct{
 	OperationChild
 	reader *bufio.Reader
+	readMu sync.Mutex
 	pipe *os.File
 	payload string
 }
 func(c *containedMetadataFixture)ReadChunk(ctx context.Context)([]byte,bool,error){
 	type reply struct{line string;err error}
 	done:=make(chan reply,1)
-	go func(){line,err:=c.reader.ReadString('\n');done<-reply{line,err}}()
+	go func(){c.readMu.Lock();defer c.readMu.Unlock();line,err:=c.reader.ReadString('\n');done<-reply{line,err}}()
 	select{
 	case r:=<-done:
 		if r.err!=nil||r.line!="ready\n"{return nil,false,ErrMetadataOperation}
@@ -39,7 +41,7 @@ func(c *containedMetadataFixture)Result(context.Context)(int,[]byte,error){retur
 func(c *containedMetadataFixture)Stop(ctx context.Context)error{
 	if err:=c.OperationChild.Stop(ctx);err!=nil{return err}
 	done:=make(chan error,1)
-	go func(){_,err:=c.reader.ReadByte();done<-err}()
+	go func(){c.readMu.Lock();defer c.readMu.Unlock();_,err:=c.reader.ReadByte();done<-err}()
 	defer c.pipe.Close()
 	select{
 	case err:=<-done:if !errors.Is(err,io.EOF){return ErrOperationUnconfirmed};return nil

@@ -163,3 +163,58 @@ func TestMetadataOperationDrainSpansBothPhases(t *testing.T){
 	if _,err:=o.Run(ctx,q);err==nil{t.Fatal("old generation revived")}
 	if err:=set.SealAndStop(ctx);err!=nil{t.Fatal(err)}
 }
+
+func TestMetadataOperationResolveFailureNeverPublishes(t *testing.T){
+	for _,tc:=range []struct{name string; change func(*metadataChildFixture)}{
+		{"non JSON",func(c *metadataChildFixture){c.data="invalid"}},
+		{"wrong JSON root",func(c *metadataChildFixture){c.data="{}"}},
+		{"nonzero exit",func(c *metadataChildFixture){c.exit=1}},
+		{"read failure",func(c *metadataChildFixture){c.readErr=errors.New("secret")}},
+		{"cleanup uncertainty",func(c *metadataChildFixture){c.fail.Store(true)}},
+	}{
+		t.Run(tc.name,func(t *testing.T){
+			ctx:=context.Background()
+			q,r,c,id:=metadataGrant(t)
+			set:=NewOperationSet(1)
+			gate:=workerproto.NewDrainGate(ctx)
+			if err:=gate.Open();err!=nil{t.Fatal(err)}
+			first:=&metadataChildFixture{data:fixtureClassification}
+			second:=&metadataChildFixture{data:fixtureMetadata}
+			tc.change(second)
+			o,err:=NewMetadataOperation(set,gate,q,r,c,func(context.Context)(acquisitionplan.MetadataIdentity,error){return id,nil},
+				func(_ context.Context,kind workerproto.MetadataKind,_ []string)(StreamProbeChild,error){
+					if kind==workerproto.MetadataClassify{return first,nil}
+					if !first.stopped.Load(){t.Fatal("classification not cleaned")}
+					return second,nil
+				})
+			if err!=nil{t.Fatal(err)}
+			out,err:=o.Run(ctx,q)
+			if out!=nil||err==nil||strings.Contains(err.Error(),"secret")||!second.armed.Load(){t.Fatalf("resolve failure %q %v",out,err)}
+			if second.fail.Load(){
+				if !errors.Is(err,ErrOperationUnconfirmed)||!errors.Is(gate.Drain(ctx),workerproto.ErrDrainUnconfirmed){t.Fatal("lost cleanup uncertainty")}
+				second.fail.Store(false)
+			}else if !second.stopped.Load(){t.Fatal("resolve child not cleaned")}
+			if err:=set.SealAndStop(ctx);err!=nil{t.Fatal(err)}
+		})
+	}
+}
+
+func TestMetadataOperationCanceledBetweenStages(t *testing.T){
+	ctx,cancel:=context.WithCancel(context.Background())
+	defer cancel()
+	q,r,c,id:=metadataGrant(t)
+	set:=NewOperationSet(1)
+	gate:=workerproto.NewDrainGate(context.Background())
+	if err:=gate.Open();err!=nil{t.Fatal(err)}
+	child:=&metadataChildFixture{data:fixtureClassification}
+	observations,starts:=0,0
+	o,err:=NewMetadataOperation(set,gate,q,r,c,func(context.Context)(acquisitionplan.MetadataIdentity,error){
+		observations++
+		if observations==2{cancel()}
+		return id,nil
+	},func(context.Context,workerproto.MetadataKind,[]string)(StreamProbeChild,error){starts++;return child,nil})
+	if err!=nil{t.Fatal(err)}
+	if out,err:=o.Run(ctx,q);out!=nil||err==nil||starts!=1||!child.stopped.Load(){t.Fatalf("cancellation between phases: %q %v %d",out,err,starts)}
+	if err:=gate.Drain(context.Background());err!=nil{t.Fatal(err)}
+	if err:=set.SealAndStop(context.Background());err!=nil{t.Fatal(err)}
+}

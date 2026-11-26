@@ -105,7 +105,8 @@ func (o *MetadataOperation) current(ctx context.Context) bool {
 	return err==nil&&ctx.Err()==nil&&actual==o.identity
 }
 
-// Run consumes the grant even on denial. Trusted owner must create a
+// Run consumes a matching grant even on admission denial. A mismatched
+// request never acquires it. Trusted owner must create a
 // new grant after offline, cancellation, changed config or failed work.
 // Cancellation is checked before side effects and publication; Drain
 // waits for the entire operation's final cleanup. This is not atomic
