@@ -12,6 +12,15 @@ from pathlib import Path
 workspace = Path.cwd()
 env = dict(os.environ, CGO_ENABLED="0", GOTOOLCHAIN="local", GOWORK="off")
 suffix = ".exe" if os.name == "nt" else ""
+def verify_transfer_cancel(library, directory):
+    result = subprocess.run([str(library), "internal-managed-runtime-transfer-cancel-probe-v1"],
+                            stdin=subprocess.DEVNULL, capture_output=True,
+                            cwd=directory, env=env, timeout=60, text=True)
+    print(result.stdout, result.stderr, sep="")
+    assert result.returncode == 0, result.returncode
+    assert "PASS: contained gallery-dl active transfer cancellation" in result.stdout
+
+
 def verify_pinned_runtime(library, directory):
     # Opt-in development gate only. Acquires an isolated copy of the
     # already qualified PyPI runtime; no media requests or live-site tests.
@@ -55,6 +64,7 @@ def verify_pinned_runtime(library, directory):
             assert baseline
             assert ("PASS: brokered gallery-dl catalog stream: " + str(len(baseline)) + " " +
                     hashlib.sha256(baseline).hexdigest()) in broker.stdout
+            verify_transfer_cancel(library, directory)
             marker.write_text("0" * 64 + "\n", encoding="ascii", newline="\n")
             refused = subprocess.run([str(library), "internal-managed-runtime-version-probe-v1"],
                                      stdin=subprocess.DEVNULL, capture_output=True,
@@ -133,6 +143,7 @@ def verify_standalone_runtime(library, directory):
                 assert baseline
                 assert ("PASS: brokered gallery-dl catalog stream: " + str(len(baseline)) + " " +
                         hashlib.sha256(baseline).hexdigest()) in result.stdout
+        verify_transfer_cancel(library, directory)
         print("PASS: pinned standalone gallery-dl version through custody:", version)
     finally:
         marker.unlink(missing_ok=True)

@@ -23,6 +23,12 @@ func dispatchManagedProbe(args []string)bool{
 	if len(args)==0{return false}
 	var err error
 	switch args[0]{
+	case "internal-managed-runtime-transfer-cancel-probe-v1":
+		if len(args)!=1{err=errRuntimeProbe}else{err=runRuntimeTransferCancelProbe()}
+	case "internal-managed-runtime-transfer-guard-probe-v1":
+		if len(args)!=4{err=errRuntimeProbe}else{err=runRuntimeTransferGuard(args[1],args[2],args[3])}
+	case "internal-managed-runtime-transfer-leaf-probe-v1":
+		if len(args)!=4{err=errRuntimeProbe}else{err=runRuntimeTransferPlatformLeaf(args[1],args[2],args[3])}
 	case "internal-managed-runtime-broker-probe-v1":
 		if len(args)!=1{err=errRuntimeProbe}else{err=runRuntimeBrokerProbe()}
 	case "internal-managed-runtime-stream-guard-probe-v1":

@@ -67,3 +67,17 @@ func runRuntimeStreamPlatformLeaf(digest string)error{
 	if err:=processguard.AwaitJobActivation(os.Stdin);err!=nil{return err}
 	return runRuntimeStreamLeaf(digest)
 }
+
+func startRuntimeTransferPlatform(digest,dir,port string)(processguard.OperationChild,error){
+	cmd,err:=operationProbeCommand("internal-managed-runtime-transfer-leaf-probe-v1")
+	if err!=nil{return nil,err}
+	cmd.Args=append(cmd.Args,digest,dir,port)
+	job,err:=processguard.StartDormantJob(cmd)
+	if job==nil{return nil,err}
+	return job,err
+}
+func runRuntimeTransferGuard(string,string,string)error{return errRuntimeProbe}
+func runRuntimeTransferPlatformLeaf(digest,dir,port string)error{
+	if err:=processguard.AwaitJobActivation(os.Stdin);err!=nil{return err}
+	return runRuntimeTransferLeaf(digest,dir,port)
+}

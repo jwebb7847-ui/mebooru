@@ -128,3 +128,24 @@ func runRuntimeStreamPlatformLeaf(digest string)error{
 	go func(){<-done;os.Exit(3)}()
 	return runRuntimeStreamLeaf(digest)
 }
+
+func startRuntimeTransferPlatform(digest,dir,port string)(processguard.OperationChild,error){
+	cmd,err:=operationProbeCommand("internal-managed-runtime-transfer-guard-probe-v1")
+	if err!=nil{return nil,err}
+	cmd.Args=append(cmd.Args,digest,dir,port)
+	g,err:=processguard.StartDormantGuard(cmd)
+	if g==nil{return nil,err}
+	return g,err
+}
+func runRuntimeTransferGuard(digest,dir,port string)error{
+	cmd,err:=operationProbeCommand("internal-managed-runtime-transfer-leaf-probe-v1")
+	if err!=nil{return err}
+	cmd.Args=append(cmd.Args,digest,dir,port)
+	return processguard.RunDormantGuard(os.NewFile(3,"custody-liveness"),cmd)
+}
+func runRuntimeTransferPlatformLeaf(digest,dir,port string)error{
+	done,err:=processguard.WatchGuard(os.NewFile(3,"guard-liveness"))
+	if err!=nil{return err}
+	go func(){<-done;os.Exit(3)}()
+	return runRuntimeTransferLeaf(digest,dir,port)
+}
