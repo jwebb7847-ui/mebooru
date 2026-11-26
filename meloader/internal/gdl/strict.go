@@ -19,6 +19,12 @@ import (
 
 const strictMediaURLKey = "meloader_verified_media_url"
 
+// Qualification policy, independent of how the runtime is launched.
+// Expanding this list requires explicit source/predicate/transfer evidence.
+const strictQualifiedVersion = "1.32.19"
+
+func strictVersionQualified(version string)bool{return version==strictQualifiedVersion}
+
 // StrictSource limits the transfer guarantee to extractor paths covered by
 // the pinned gallery-dl predicate behavior. Other routes stop before resolve.
 func StrictSource(site, subcategory string) bool {
@@ -148,16 +154,16 @@ func (t *Tool) DownloadStrict(ctx context.Context, url, rng, workDir string, arc
 	// that would produce a file message without the gate.
 	bin := t.binary()
 	stage := time.Now()
-	version, err := runBinary(ctx, bin, "--version")
+	version, err := t.runWithBinary(ctx, bin, "--version")
 	timing.version = elapsed(stage)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	if err != nil || version.exitCode != 0 || strings.TrimSpace(string(version.stdout)) != "1.32.19" {
-		return nil, strictTransferError("strict blacklist requires gallery-dl 1.32.19")
+	if err != nil || version.exitCode != 0 || !strictVersionQualified(strings.TrimSpace(string(version.stdout))) {
+		return nil, strictTransferError("strict blacklist requires gallery-dl "+strictQualifiedVersion)
 	}
 	stage = time.Now()
-	err = verifyStrictGate(ctx, bin, workDir, gate)
+	err = verifyStrictGateWithRunner(ctx, bin, workDir, gate,t.runWithBinary)
 	timing.probe = elapsed(stage)
 	if err != nil {
 		return nil, err
@@ -205,6 +211,10 @@ func (t *Tool) DownloadStrict(ctx context.Context, url, rng, workDir string, arc
 }
 
 func verifyStrictGate(ctx context.Context, bin, workDir, gate string) error {
+	return verifyStrictGateWithRunner(ctx,bin,workDir,gate,runBinary)
+}
+
+func verifyStrictGateWithRunner(ctx context.Context,bin,workDir,gate string,run func(context.Context,string,...string)(runResult,error))error{
 	const probeURL = "https://example.invalid/meloader-filter-probe.jpg"
 	// A negative probe catches a missing predicate. A positive probe also
 	// catches a predicate whose evaluation errors are treated as false.
@@ -219,7 +229,7 @@ func verifyStrictGate(ctx context.Context, bin, workDir, gate string) error {
 		filter string
 		files  int
 	}{{gate, 0}, {strictGateExpression(path), 1}} {
-		res, err := runBinary(ctx, bin, "--config-ignore", "-j", "-o", values, "--filter", probe.filter, "--", probeURL)
+		res, err := run(ctx, bin, "--config-ignore", "-j", "-o", values, "--filter", probe.filter, "--", probeURL)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
