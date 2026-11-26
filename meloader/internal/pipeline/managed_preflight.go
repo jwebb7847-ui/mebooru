@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/jwebb7847-ui/mebooru/shared/processguard"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monloader/internal/mapping"
 )
@@ -52,7 +53,8 @@ type ManagedPreflightResult struct{
 
 // ManagedTransferApproval is deliberately local. It holds the owner
 // plan and original gate generation; the request only identifies it.
-// No executable, staging path or predicate is created in this increment.
+// The local coordinator constructs all arguments; requester input cannot
+// alter the approved list, predicate, runtime or destination.
 type ManagedTransferApproval struct{
 	preflight *ManagedPreflight
 	plan *acquisitionplan.StrictTransferPlan
@@ -60,7 +62,7 @@ type ManagedTransferApproval struct{
 }
 
 func(a *ManagedTransferApproval) Request()workerproto.TransferPlanRequest{
-	if a==nil{return workerproto.TransferPlanRequest{}}
+	if a==nil||a.plan==nil{return workerproto.TransferPlanRequest{}}
 	return a.plan.Request()
 }
 
@@ -70,7 +72,7 @@ func(a *ManagedTransferApproval) Request()workerproto.TransferPlanRequest{
 // changed policy cannot mint a transfer grant. Empty/all-blocked
 // windows do not create an approval. Legacy outcomes are untouched.
 func(p *ManagedPreflight) Run(caller context.Context,q workerproto.MetadataPlanRequest)(ManagedPreflightResult,error){
-	if p==nil||q!=p.window.grant||!p.used.CompareAndSwap(false,true){return ManagedPreflightResult{},ErrManagedPreflight}
+	if p==nil||p.window==nil||q!=p.window.grant||!p.used.CompareAndSwap(false,true){return ManagedPreflightResult{},ErrManagedPreflight}
 	w:=p.window
 	ctx,finish,err:=w.gate.AdmitBound(caller,w.generation)
 	if err!=nil{return ManagedPreflightResult{},err}
@@ -109,7 +111,7 @@ func(p *ManagedPreflight) Run(caller context.Context,q workerproto.MetadataPlanR
 // any cleanup uncertainty. No production caller exists; do not use
 // this as the only launch guard or release it on mere cancellation.
 func(a *ManagedTransferApproval) admit(caller context.Context,q workerproto.TransferPlanRequest)(context.Context,[]byte,func(error),error){
-	if a==nil||q!=a.Request()||!a.used.CompareAndSwap(false,true){return nil,nil,nil,ErrManagedPreflight}
+	if a==nil||a.plan==nil||a.preflight==nil||q!=a.Request()||!a.used.CompareAndSwap(false,true){return nil,nil,nil,ErrManagedPreflight}
 	p:=a.preflight
 	w:=p.window
 	ctx,finish,err:=w.gate.AdmitBound(caller,w.generation)
@@ -121,4 +123,15 @@ func(a *ManagedTransferApproval) admit(caller context.Context,q workerproto.Tran
 		return nil,nil,nil,ErrManagedPreflight
 	}
 	return ctx,manifest,finish,nil
+}
+
+// runTransferCandidate composes preflight's actual one-use grant with
+// the isolated contained coordinator. The trusted owner supplies the
+// operation set, disposable root and dormant runtime starter. These are
+// not worker-controlled values. No production dispatcher calls this.
+func(a *ManagedTransferApproval)runTransferCandidate(caller context.Context,q workerproto.TransferPlanRequest,
+	set *processguard.OperationSet,root string,start processguard.StrictTransferStarter)([]acquisitionplan.VerifiedTransferFile,error){
+	if a==nil||a.preflight==nil||a.plan==nil{return nil,ErrManagedPreflight}
+	p:=a.preflight
+	return processguard.RunStrictTransfer(caller,set,q,p.config,root,a.admit,p.current,start)
 }
