@@ -50,6 +50,11 @@ def verify_pinned_runtime(library, directory):
             print(broker.stdout, broker.stderr, sep="")
             assert broker.returncode == 0, broker.returncode
             assert "PASS: brokered gallery-dl version probe: " + version in broker.stdout
+            baseline = subprocess.check_output([str(candidate), "--config-ignore", "--list-extractors"],
+                                               cwd=directory, env=env, timeout=30)
+            assert baseline
+            assert ("PASS: brokered gallery-dl catalog stream: " + str(len(baseline)) + " " +
+                    hashlib.sha256(baseline).hexdigest()) in broker.stdout
             marker.write_text("0" * 64 + "\n", encoding="ascii", newline="\n")
             refused = subprocess.run([str(library), "internal-managed-runtime-version-probe-v1"],
                                      stdin=subprocess.DEVNULL, capture_output=True,
@@ -122,6 +127,12 @@ def verify_standalone_runtime(library, directory):
             print(result.stdout, result.stderr, sep="")
             assert result.returncode == 0, result.returncode
             assert "PASS: " + label + " gallery-dl version probe: " + version in result.stdout
+            if label == "brokered":
+                baseline = subprocess.check_output([str(candidate), "--config-ignore", "--list-extractors"],
+                                                   cwd=directory, env=env, timeout=30)
+                assert baseline
+                assert ("PASS: brokered gallery-dl catalog stream: " + str(len(baseline)) + " " +
+                        hashlib.sha256(baseline).hexdigest()) in result.stdout
         print("PASS: pinned standalone gallery-dl version through custody:", version)
     finally:
         marker.unlink(missing_ok=True)

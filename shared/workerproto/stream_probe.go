@@ -1,6 +1,9 @@
 package workerproto
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+)
 
 const (
 	StreamChunkLimit = 32 << 10

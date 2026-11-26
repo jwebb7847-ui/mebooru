@@ -17,3 +17,7 @@ func runOperationProbeLeaf()error{return processguard.ErrProbeExecutable}
 func startRuntimeVersionPlatform(*os.File,string)(processguard.OperationChild,error){return nil,errRuntimeProbe}
 func runRuntimeVersionGuard(string)error{return errRuntimeProbe}
 func runRuntimeVersionPlatformLeaf(string)error{return errRuntimeProbe}
+
+func startRuntimeStreamPlatform(*os.File,*os.File,string)(processguard.OperationChild,error){return nil,errRuntimeProbe}
+func runRuntimeStreamGuard(string)error{return errRuntimeProbe}
+func runRuntimeStreamPlatformLeaf(string)error{return errRuntimeProbe}

@@ -105,3 +105,26 @@ func runRuntimeVersionPlatformLeaf(digest string)error{
 	go func(){<-done;os.Exit(3)}()
 	return runRuntimeVersionLeaf(digest)
 }
+
+func startRuntimeStreamPlatform(w,status *os.File,digest string)(processguard.OperationChild,error){
+	cmd,err:=operationProbeCommand("internal-managed-runtime-stream-guard-probe-v1")
+	if err!=nil{return nil,err}
+	cmd.Args=append(cmd.Args,digest)
+	cmd.Stdout,cmd.Stderr=w,status
+	g,err:=processguard.StartDormantGuard(cmd)
+	if g==nil{return nil,err}
+	return g,err
+}
+func runRuntimeStreamGuard(digest string)error{
+	cmd,err:=operationProbeCommand("internal-managed-runtime-stream-leaf-probe-v1")
+	if err!=nil{return err}
+	cmd.Args=append(cmd.Args,digest)
+	cmd.Stdout,cmd.Stderr=os.Stdout,os.Stderr
+	return processguard.RunDormantGuard(os.NewFile(3,"custody-liveness"),cmd)
+}
+func runRuntimeStreamPlatformLeaf(digest string)error{
+	done,err:=processguard.WatchGuard(os.NewFile(3,"guard-liveness"))
+	if err!=nil{return err}
+	go func(){<-done;os.Exit(3)}()
+	return runRuntimeStreamLeaf(digest)
+}

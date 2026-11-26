@@ -25,6 +25,10 @@ func dispatchManagedProbe(args []string)bool{
 	switch args[0]{
 	case "internal-managed-runtime-broker-probe-v1":
 		if len(args)!=1{err=errRuntimeProbe}else{err=runRuntimeBrokerProbe()}
+	case "internal-managed-runtime-stream-guard-probe-v1":
+		if len(args)!=2{err=errRuntimeProbe}else{err=runRuntimeStreamGuard(args[1])}
+	case "internal-managed-runtime-stream-leaf-probe-v1":
+		if len(args)!=2{err=errRuntimeProbe}else{err=runRuntimeStreamPlatformLeaf(args[1])}
 	case "internal-managed-runtime-version-probe-v1":
 		if len(args)!=1{err=errRuntimeProbe}else{err=runRuntimeVersionProbe()}
 	case "internal-managed-runtime-version-guard-probe-v1":
@@ -145,10 +149,12 @@ func runManagedCustodyProbe(dir,generation,token string,holdCleanup,abortWorker,
 	if err:=validateManagedProbeDir(dir);err!=nil{return err}
 	if _,err:=processguard.ProbeSibling("monbooru","monloader");err!=nil{return err}
 	var version processguard.VersionProbeStarter
+	var stream processguard.StreamProbeStarter
 	if runtimeProbe{
 		digest,err:=runtimeProbeDigest()
 		if err!=nil{return err}
 		version=runtimeVersionStarter(digest)
+		stream=runtimeStreamStarter(digest)
 	}
 	r,w,err:=processguard.OpenInheritedPipes(token)
 	if err!=nil{return err}
@@ -175,7 +181,7 @@ func runManagedCustodyProbe(dir,generation,token string,holdCleanup,abortWorker,
 			// online transition) participates in the crash-test barrier.
 			startOperation=crashProbeStarter(dir)
 		}
-		go func(){owned.brokerErr=processguard.ServeProbeBrokerWithVersion(brokerCtx,rr,bw,set,startOperation,version);close(done)}()
+		go func(){owned.brokerErr=processguard.ServeProbeBrokerWithStream(brokerCtx,rr,bw,set,startOperation,version,stream);close(done)}()
 		go func(){select{case <-primary.Done():case <-done:};close(owned.done)}()
 		return owned,err
 	})

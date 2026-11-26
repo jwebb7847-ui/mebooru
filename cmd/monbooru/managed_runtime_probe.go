@@ -238,13 +238,23 @@ func runRuntimeBrokerProbe()(result error){
 		v,err:=workerproto.DecodeVersionProbeResult(e.Payload)
 		return v.Version,err
 	}
+	catalog:=func()(workerproto.CatalogProbeResult,error){
+		e,err:=p.Session().Call(ctx,workerproto.SiteCatalog,nil)
+		if err!=nil{return workerproto.CatalogProbeResult{},err}
+		if e.Error!=nil{return workerproto.CatalogProbeResult{},errors.New("catalog stream probe refused")}
+		return workerproto.DecodeCatalogProbeResult(e.Payload)
+	}
 	offlineVersion,err:=check()
+	if err!=nil{return err}
+	offlineCatalog,err:=catalog()
 	if err!=nil{return err}
 	if err:=checkCrashHealth(ctx,m,l,false);err!=nil{return err}
 	if err:=m.SetOffline(ctx,false);err!=nil{return err}
 	if err:=checkCrashHealth(ctx,m,l,true);err!=nil{return err}
 	onlineVersion,err:=check()
 	if err!=nil||onlineVersion!=offlineVersion{return errors.Join(errRuntimeProbe,err)}
+	onlineCatalog,err:=catalog()
+	if err!=nil||onlineCatalog!=offlineCatalog{return errors.Join(errRuntimeProbe,err)}
 	if err:=checkCrashHealth(ctx,m,l,true);err!=nil{return err}
 	if err:=m.SetOffline(ctx,true);err!=nil{return err}
 	if err:=checkCrashHealth(ctx,m,l,false);err!=nil{return err}
@@ -252,5 +262,6 @@ func runRuntimeBrokerProbe()(result error){
 	if err:=waitCrashReceipt(ctx,dir,*generation);err!=nil{return err}
 	safe=true
 	fmt.Println("PASS: brokered gallery-dl version probe:",offlineVersion)
+	fmt.Printf("PASS: brokered gallery-dl catalog stream: %d %s\n",offlineCatalog.Bytes,offlineCatalog.SHA256)
 	return nil
 }
