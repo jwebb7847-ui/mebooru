@@ -37,6 +37,7 @@ type WorkerFence struct {
 	lock *ProfileLock
 	generation string
 	armed bool // protected by lock.mu
+	custodyClaimed bool // one custodian attempt for this generation
 }
 
 func (f *WorkerFence) Generation() string { return f.generation }
@@ -127,12 +128,33 @@ func (l *ProfileLock) begin(state byte) (*WorkerFence, error) {
 // Arm must succeed before the library sends the custodian activation
 // byte. The custodian independently rechecks the exact armed generation.
 // A failed sync does not authorize activation even if the byte changed.
-func (f *WorkerFence) Arm() error {
+func (f *WorkerFence) Arm() error { return f.arm(false) }
+
+// claimCustody consumes the single trusted custody-launch capability even
+// if process startup fails. Retry requires confirmed no-child cleanup
+// and a new generation. Two custodians must never be able to publish
+// independent receipts for the same worker generation.
+func (f *WorkerFence) claimCustody() error {
 	if f==nil||f.lock==nil{return ErrStaleWorkerFence}
 	l:=f.lock
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.file==nil||l.activeFence!=f||f.armed{return ErrStaleWorkerFence}
+	if l.file==nil||l.activeFence!=f||f.armed||f.custodyClaimed{return ErrCustodyActivation}
+	record,err:=l.readFence()
+	if err!=nil{return err}
+	if record.version!=custodyFenceVersion||record.state!=fencePending||record.generationID()!=f.generation{return ErrWorkerRecoveryRequired}
+	f.custodyClaimed=true
+	return nil
+}
+
+// Direct Arm is only for isolated fixtures without a custody process.
+// Once a custody launch was claimed, only its owner may arm it.
+func (f *WorkerFence) arm(custody bool) error {
+	if f==nil||f.lock==nil{return ErrStaleWorkerFence}
+	l:=f.lock
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file==nil||l.activeFence!=f||f.armed||f.custodyClaimed!=custody{return ErrStaleWorkerFence}
 	record,err:=l.readFence()
 	if err!=nil{return err}
 	if record.version!=custodyFenceVersion||record.state!=fencePending||record.generationID()!=f.generation{return ErrWorkerRecoveryRequired}

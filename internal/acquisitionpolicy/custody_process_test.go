@@ -52,6 +52,13 @@ func TestLibraryCustodyProcessReadinessAndProof(t *testing.T){
 				if p==nil||!errors.Is(err,ErrCustodyActivation){t.Fatalf("wrong ready: %v",err)}
 			}else if err!=nil{t.Fatal(err)}
 			if p==nil{t.Fatal("missing cleanup owner")}
+			duplicate:=exec.Command(exe,"-test.run=^TestCustodyLaunchFixture$")
+			duplicate.Env=cmd.Env
+			if other,err:=StartCustodyProcess(ctx,duplicate,f);other!=nil||!errors.Is(err,ErrCustodyActivation){
+				if other!=nil{_ = other.Stop(ctx)}
+				t.Fatalf("second custodian for generation: %v",err)
+			}
+			if err:=f.Arm();!errors.Is(err,ErrStaleWorkerFence){t.Fatalf("bypassed custody owner: %v",err)}
 			if mode=="armed"||mode=="unconfirmed"{
 				if err:=p.Activate();err!=nil{t.Fatal(err)}
 				if err:=p.Activate();!errors.Is(err,ErrCustodyActivation){t.Fatalf("second arm: %v",err)}

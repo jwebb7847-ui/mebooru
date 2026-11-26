@@ -35,7 +35,7 @@ func StartCustodyProcess(ctx context.Context,cmd *exec.Cmd,fence *WorkerFence)(*
 	if ctx==nil||cmd==nil||fence==nil||!filepath.IsAbs(cmd.Path)||cmd.Process!=nil||
 		cmd.Cancel!=nil||cmd.Stdin!=nil||cmd.Stdout!=nil{return nil,ErrCustodyActivation}
 	if err:=ctx.Err();err!=nil{return nil,err}
-	if fence.isArmed(){return nil,ErrCustodyActivation}
+	if err:=fence.claimCustody();err!=nil{return nil,err}
 	life,err:=cmd.StdinPipe()
 	if err!=nil{return nil,err}
 	r,w,err:=os.Pipe()
@@ -80,7 +80,7 @@ func(p *CustodyProcess)Activate()error{
 	defer p.mu.Unlock()
 	if !p.ready||p.attempted||p.revoked{return ErrCustodyActivation}
 	select{case <-p.done:p.revoke();return ErrCustodyActivation;default:}
-	if err:=p.fence.Arm();err!=nil{p.revoke();return err}
+	if err:=p.fence.arm(true);err!=nil{p.revoke();return err}
 	p.attempted=true
 	n,err:=p.life.Write([]byte{custodyActivate})
 	if n!=1||err!=nil{p.revoke();return errors.Join(ErrCustodyActivation,err)}
