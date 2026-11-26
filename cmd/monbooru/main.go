@@ -24,6 +24,8 @@ import (
 )
 
 func main() {
+	// Private probe entries must precede console attachment and all app init.
+	if dispatchManagedProbe(os.Args[1:]) { return }
 	// Before anything prints: a Windows GUI build starts with no console.
 	desktop.AttachConsole()
 
