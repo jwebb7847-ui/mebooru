@@ -30,6 +30,7 @@ type probeBroker struct{
 	mu sync.Mutex
 	set *OperationSet
 	start ProbeStarter
+	transfer ProbeStarter
 	version VersionProbeStarter
 	stream StreamProbeStarter
 	streams map[uint64]*streamProbe
@@ -41,13 +42,18 @@ type probeBroker struct{
 func(b *probeBroker)handle(ctx context.Context,op workerproto.Operation,body json.RawMessage)(json.RawMessage,*workerproto.Fault){
 	fault:=func(code string)(json.RawMessage,*workerproto.Fault){return nil,&workerproto.Fault{Code:code}}
 	switch op{
-	case workerproto.OperationProbeStart:
+	case workerproto.OperationProbeStart,workerproto.OperationTransferProbeStart:
 		if len(body)!=0{return fault("invalid")}
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		if b.sealed||b.next==^uint64(0){return fault("closed")}
 		if err:=ctx.Err();err!=nil{return fault("canceled")}
-		lease,err:=b.set.Start(ctx,b.start)
+		starter:=b.start
+		if op==workerproto.OperationTransferProbeStart{
+			starter=b.transfer
+			if starter==nil{return fault("unsupported")}
+		}
+		lease,err:=b.set.Start(ctx,starter)
 		if err!=nil||ctx.Err()!=nil{
 			if lease!=nil{
 				cleanup,done:=context.WithTimeout(context.WithoutCancel(ctx),probeCleanupTimeout)
@@ -151,13 +157,16 @@ func ServeProbeBrokerWithVersion(ctx context.Context,r io.ReadCloser,w io.WriteC
 	return ServeProbeBrokerWithStream(ctx,r,w,set,start,version,nil)
 }
 func ServeProbeBrokerWithStream(ctx context.Context,r io.ReadCloser,w io.WriteCloser,set *OperationSet,start ProbeStarter,version VersionProbeStarter,stream StreamProbeStarter)error{
+	return ServeProbeBrokerWithTransfer(ctx,r,w,set,start,version,stream,nil)
+}
+func ServeProbeBrokerWithTransfer(ctx context.Context,r io.ReadCloser,w io.WriteCloser,set *OperationSet,start ProbeStarter,version VersionProbeStarter,stream StreamProbeStarter,transfer ProbeStarter)error{
 	if set==nil||start==nil{
 		_ = r.Close();_ = w.Close()
 		return ErrOperationUnconfirmed
 	}
 	lifetime,revoke:=context.WithCancel(ctx)
 	defer revoke()
-	b:=&probeBroker{set:set,start:start,version:version,stream:stream,streams:make(map[uint64]*streamProbe),leases:make(map[uint64]*OperationLease),revoke:revoke}
+	b:=&probeBroker{set:set,start:start,transfer:transfer,version:version,stream:stream,streams:make(map[uint64]*streamProbe),leases:make(map[uint64]*OperationLease),revoke:revoke}
 	s,err:=workerproto.OpenSession(lifetime,r,w,workerproto.OperationCustodian,b.handle)
 	if err==nil{<-s.Done();s.Close()}
 	// Seal the underlying set first: a handler already waiting for its

@@ -17,7 +17,10 @@ func NewProbeClient(s *Session)(*ProbeClient,error){
 	return &ProbeClient{session:s},nil
 }
 func(c *ProbeClient)Start(ctx context.Context)(ProbeOperationRef,error){
-	e,err:=c.session.Call(ctx,OperationProbeStart,nil)
+	return c.start(ctx,OperationProbeStart)
+}
+func(c *ProbeClient)start(ctx context.Context,op Operation)(ProbeOperationRef,error){
+	e,err:=c.session.Call(ctx,op,nil)
 	if err!=nil||e.Error!=nil{
 		c.session.Close()
 		return ProbeOperationRef{},errors.Join(ErrProbeBrokerRefused,err)

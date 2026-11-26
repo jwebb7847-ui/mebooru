@@ -20,13 +20,17 @@ func openProbeFixture(t *testing.T,ctx context.Context,set *OperationSet,start P
 }
 func openVersionProbeFixture(t *testing.T,ctx context.Context,set *OperationSet,start ProbeStarter,version VersionProbeStarter)(*workerproto.Session,*workerproto.ProbeClient,<-chan error){
 	t.Helper()
+	return openTransferProbeFixture(t,ctx,set,start,version,nil)
+}
+func openTransferProbeFixture(t *testing.T,ctx context.Context,set *OperationSet,start ProbeStarter,version VersionProbeStarter,transfer ProbeStarter)(*workerproto.Session,*workerproto.ProbeClient,<-chan error){
+	t.Helper()
 	cr,cw,err:=os.Pipe()
 	if err!=nil{t.Fatal(err)}
 	sr,sw,err:=os.Pipe()
 	if err!=nil{_ = cr.Close();_ = cw.Close();t.Fatal(err)}
 	t.Cleanup(func(){_ = cr.Close();_ = cw.Close();_ = sr.Close();_ = sw.Close()})
 	done:=make(chan error,1)
-	go func(){done<-ServeProbeBrokerWithVersion(ctx,sr,cw,set,start,version)}()
+	go func(){done<-ServeProbeBrokerWithTransfer(ctx,sr,cw,set,start,version,nil,transfer)}()
 	s,err:=workerproto.OpenSession(ctx,cr,sw,workerproto.OperationRequester,nil)
 	if err!=nil{t.Fatal(err)}
 	t.Cleanup(s.Close)
@@ -288,4 +292,73 @@ func TestVersionBrokerRawCancellationPreservesSibling(t *testing.T){
 	if err:=c.Stop(ctx,ref);err!=nil{t.Fatal(err)}
 	s.Close()
 	if err:=waitProbeCleanup(t,ctx,done);err!=nil{t.Fatal(err)}
+}
+
+func TestTransferProbeWorkerDrainWaitsForProof(t *testing.T){
+	for _,fail:=range []bool{false,true}{
+		name:="confirmed"
+		if fail{name="unconfirmed"}
+		t.Run(name,func(t *testing.T){
+			ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
+			defer cancel()
+			entered,release:=make(chan struct{}),make(chan struct{})
+			defer func(){select{case <-release:default:close(release)}}()
+			var once sync.Once
+			child:=&versionProbeFixture{beforeStop:func(ctx context.Context)error{
+				once.Do(func(){close(entered)})
+				select{case <-release:return nil;case <-ctx.Done():return ctx.Err()}
+			}}
+			child.fail.Store(fail)
+			set:=NewOperationSet(2)
+			b,c,done:=openTransferProbeFixture(t,ctx,set,func(context.Context)(OperationChild,error){return new(operationFixture),nil},nil,func(context.Context)(OperationChild,error){return child,nil})
+			lr,lw,err:=os.Pipe();if err!=nil{t.Fatal(err)}
+			wr,ww,err:=os.Pipe();if err!=nil{_ = lr.Close();_ = lw.Close();t.Fatal(err)}
+			defer lr.Close();defer lw.Close();defer wr.Close();defer ww.Close()
+			workerDone:=make(chan error,1)
+			go func(){workerDone<-workerproto.ServeLifecycleProbeWithBroker(ctx,wr,lw,c)}()
+			lib,err:=workerproto.OpenSession(ctx,lr,ww,workerproto.Library,nil)
+			if err!=nil{t.Fatal(err)}
+			defer lib.Close()
+			offlineBody:=json.RawMessage(`{"offline":true}`)
+			onlineBody:=json.RawMessage(`{"offline":false}`)
+			checkRefused:=func(){
+				t.Helper()
+				e,err:=lib.Call(ctx,workerproto.TransferProbeStart,nil)
+				if err!=nil||e.Error==nil||e.Error.Code!="offline"{t.Fatalf("admission: %+v %v",e,err)}
+			}
+			checkRefused()
+			e,err:=lib.Call(ctx,workerproto.SetOffline,onlineBody)
+			if err!=nil||e.Error!=nil{t.Fatalf("grant: %+v %v",e,err)}
+			e,err=lib.Call(ctx,workerproto.TransferProbeStart,nil)
+			if err!=nil||e.Error!=nil||!child.armed.Load(){t.Fatalf("start: %+v %v",e,err)}
+			type reply struct{e workerproto.Envelope;err error}
+			replyCh:=make(chan reply,1)
+			go func(){e,err:=lib.Call(ctx,workerproto.SetOffline,offlineBody);replyCh<-reply{e,err}}()
+			select{case <-entered:case <-ctx.Done():t.Fatal(ctx.Err())}
+			checkRefused()
+			select{case r:=<-replyCh:t.Fatalf("ack before proof: %+v",r);default:}
+			close(release)
+			select{
+			case r:=<-replyCh:
+				if fail{
+					if r.err==nil&&r.e.Error==nil{t.Fatal("unconfirmed cleanup acknowledged")}
+				}else{
+					if r.err!=nil||r.e.Error!=nil||!child.stopped.Load(){t.Fatalf("drain: %+v",r)}
+					var ack workerproto.OfflineAck
+					if err:=json.Unmarshal(r.e.Payload,&ack);err!=nil||!ack.Offline||!ack.Drained{t.Fatalf("ack: %+v %v",ack,err)}
+					checkRefused()
+				}
+			case <-ctx.Done():t.Fatal(ctx.Err())
+			}
+			lib.Close()
+			select{case err:=<-workerDone:if err!=nil{t.Fatal(err)};case <-ctx.Done():t.Fatal(ctx.Err())}
+			b.Close()
+			err=waitProbeCleanup(t,ctx,done)
+			if fail{
+				if !errors.Is(err,ErrOperationUnconfirmed){t.Fatal(err)}
+				child.fail.Store(false)
+				if err:=set.SealAndStop(ctx);err!=nil{t.Fatal(err)}
+			}else if err!=nil{t.Fatal(err)}
+		})
+	}
 }

@@ -56,6 +56,7 @@ func runRuntimeTransferLeaf(digest,dir,port string)error{
 type transferWitness struct{
 	seen,disconnected chan struct{}
 	once sync.Once
+	onSeen func()error
 }
 func(w *transferWitness)serve(rw http.ResponseWriter,r *http.Request){
 	if r.URL.Path!="/mebooru-synthetic.jpg"||r.Method!=http.MethodGet{
@@ -68,6 +69,9 @@ func(w *transferWitness)serve(rw http.ResponseWriter,r *http.Request){
 		if _,err:=rw.Write(make([]byte,4096));err!=nil{return}
 		if err:=http.NewResponseController(rw).Flush();err!=nil{return}
 		close(w.seen)
+		// The controller marker is written only after the response was
+		// flushed and the in-custodian witness became observable.
+		if w.onSeen!=nil{_ = w.onSeen()}
 		<-r.Context().Done()
 		close(w.disconnected)
 	})

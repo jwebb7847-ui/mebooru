@@ -19,6 +19,12 @@ def verify_transfer_cancel(library, directory):
     print(result.stdout, result.stderr, sep="")
     assert result.returncode == 0, result.returncode
     assert "PASS: contained gallery-dl active transfer cancellation" in result.stdout
+    drain = subprocess.run([str(library), "internal-managed-runtime-drain-probe-v1"],
+                           stdin=subprocess.DEVNULL, capture_output=True,
+                           cwd=directory, env=env, timeout=80, text=True)
+    print(drain.stdout, drain.stderr, sep="")
+    assert drain.returncode == 0, drain.returncode
+    assert "PASS: brokered gallery-dl transfer offline drain" in drain.stdout
 
 
 def verify_pinned_runtime(library, directory):

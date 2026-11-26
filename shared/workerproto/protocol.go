@@ -81,6 +81,8 @@ const (
 	// Separate private channel; no library/worker role can invoke these.
 	OperationProbeStart Operation = "custody.probe_start"
 	OperationProbeStop Operation = "custody.probe_stop"
+	OperationTransferProbeStart Operation = "custody.transfer_probe_start"
+	TransferProbeStart Operation = "worker.transfer_probe_start"
 	OperationVersionProbe Operation = "custody.version_probe"
 	OperationStreamStart Operation = "custody.stream_probe_start"
 	OperationStreamRead Operation = "custody.stream_probe_read"
@@ -164,6 +166,8 @@ const (
 var rules = map[Operation]Rule{
 	OperationProbeStart: {OperationRequester, Local},
 	OperationProbeStop: {OperationRequester, Local},
+	OperationTransferProbeStart: {OperationRequester, Online},
+	TransferProbeStart: {Library, Online},
 	OperationVersionProbe: {OperationRequester, Local},
 	OperationStreamStart: {OperationRequester, Local},
 	OperationStreamRead: {OperationRequester, Local},

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"sync"
+	"time"
 )
 
 // ServeLifecycleProbe exposes only a zero-work, non-network test worker.
@@ -31,6 +32,27 @@ func ServeWorkerLossProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser,b
 }
 
 func serveLifecycleProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser,broker *ProbeClient,abort func())error{
+	gate:=NewDrainGate(ctx)
+	// Transfer requests bypass the serialized lifecycle mutex. Admission
+	// is independently revoked by DrainGate before waiting for cleanup.
+	// A lease lasts beyond the start RPC, until actual Stop proof.
+	transfer:=func(call context.Context,payload json.RawMessage)(json.RawMessage,*Fault){
+		if len(payload)!=0{return nil,&Fault{Code:"invalid"}}
+		if broker==nil||abort!=nil{return nil,&Fault{Code:"unsupported"}}
+		if call.Err()!=nil{return nil,&Fault{Code:"canceled"}}
+		work,finish,err:=gate.Admit(ctx)
+		if err!=nil{return nil,&Fault{Code:"offline"}}
+		ref,err:=broker.start(call,OperationTransferProbeStart)
+		if err!=nil{finish(err);return nil,&Fault{Code:"start_failed"}}
+		go func(){
+			<-work.Done()
+			cleanup,done:=context.WithTimeout(context.WithoutCancel(work),12*time.Second)
+			defer done()
+			finish(broker.Stop(cleanup,ref))
+		}()
+		out,_:=json.Marshal(ref)
+		return out,nil
+	}
 	var active ProbeOperationRef
 	stop:=func(ctx context.Context)error{
 		if active.ID==0{return nil}
@@ -41,6 +63,7 @@ func serveLifecycleProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser,br
 	var mu sync.Mutex
 	offline,reserved,closed:=true,false,false
 	handler:=func(ctx context.Context,op Operation,payload json.RawMessage)(json.RawMessage,*Fault){
+		if op==TransferProbeStart{return transfer(ctx,payload)}
 		mu.Lock()
 		defer mu.Unlock()
 		if ctx.Err()!=nil{return nil,&Fault{Code:"canceled"}}
@@ -78,6 +101,9 @@ func serveLifecycleProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser,br
 			p,err:=DecodeOfflinePolicy(payload)
 			if err!=nil{return invalid()}
 			if (reserved||closed)&&!p.Offline{return nil,&Fault{Code:"closed"}}
+			if p.Offline{
+				if err:=gate.Drain(ctx);err!=nil{return nil,&Fault{Code:"cleanup_unconfirmed"}}
+			}
 			if broker!=nil{
 				if p.Offline{if err:=stop(ctx);err!=nil{return nil,&Fault{Code:"cleanup_unconfirmed"}}}else if active.ID==0{
 					a,err:=broker.Start(ctx);if err!=nil{return nil,&Fault{Code:"start_failed"}}
@@ -85,14 +111,17 @@ func serveLifecycleProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser,br
 					if err:=broker.Stop(ctx,a);err!=nil{return nil,&Fault{Code:"cleanup_unconfirmed"}}
 				}
 			}
+			if !p.Offline{if err:=gate.Open();err!=nil{return nil,&Fault{Code:"cleanup_unconfirmed"}}}
 			offline=p.Offline
 			body,_:=json.Marshal(OfflineAck{Offline:offline,Drained:offline})
 			return body,nil
 		case ReserveIdle:
+			if err:=gate.Seal(ctx);err!=nil{return nil,&Fault{Code:"cleanup_unconfirmed"}}
 			if err:=stop(ctx);err!=nil{return nil,&Fault{Code:"cleanup_unconfirmed"}}
 			offline,reserved=true,true
 			return json.RawMessage("{\"reserved\":true}"),nil
 		case Shutdown:
+			if err:=gate.Seal(ctx);err!=nil{return nil,&Fault{Code:"cleanup_unconfirmed"}}
 			// Leave any active fixed probe for combined custody shutdown.
 			// This diagnostic is not a real drained acknowledgement.
 			offline,closed=true,true
