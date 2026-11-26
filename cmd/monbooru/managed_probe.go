@@ -25,8 +25,12 @@ func dispatchManagedProbe(args []string)bool{
 	switch args[0]{
 	case "internal-managed-probe-v1":
 		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runManagedProbe()}
-	case "internal-managed-custody-probe-v1":
-		if len(args)!=4{err=processguard.ErrProbeExecutable}else{err=runManagedCustodyProbe(args[1],args[2],args[3])}
+	case "internal-managed-crash-probe-v1":
+		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runExecutableCrashProbe()}
+	case "internal-managed-crash-owner-probe-v1":
+		if len(args)!=2{err=processguard.ErrProbeExecutable}else{err=runCrashProbeOwner(args[1])}
+	case "internal-managed-custody-probe-v1", "internal-managed-crash-custody-probe-v1":
+		if len(args)!=4{err=processguard.ErrProbeExecutable}else{err=runManagedCustodyProbe(args[1],args[2],args[3],args[0]=="internal-managed-crash-custody-probe-v1")}
 	case "internal-managed-operation-guard-probe-v1":
 		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runOperationProbeGuard()}
 	case "internal-managed-operation-leaf-probe-v1":
@@ -113,7 +117,7 @@ func runManagedProbe()(result error){
 	return nil
 }
 
-func runManagedCustodyProbe(dir,generation,token string)error{
+func validateManagedProbeDir(dir string)error{
 	temp,err:=filepath.EvalSymlinks(os.TempDir())
 	if err!=nil{return err}
 	// Restrict this diagnostic to an immediate, nonsymlink temporary
@@ -122,6 +126,11 @@ func runManagedCustodyProbe(dir,generation,token string)error{
 	if !filepath.IsAbs(dir)||filepath.Dir(dir)!=temp||!strings.HasPrefix(filepath.Base(dir),managedProbePrefix){return processguard.ErrProbeExecutable}
 	info,err:=os.Lstat(dir)
 	if err!=nil||!info.IsDir()||info.Mode()&os.ModeSymlink!=0{return processguard.ErrProbeExecutable}
+	return nil
+}
+
+func runManagedCustodyProbe(dir,generation,token string,holdCleanup bool)error{
+	if err:=validateManagedProbeDir(dir);err!=nil{return err}
 	if _,err:=processguard.ProbeSibling("monbooru","monloader");err!=nil{return err}
 	r,w,err:=processguard.OpenInheritedPipes(token)
 	if err!=nil{return err}
@@ -142,7 +151,13 @@ func runManagedCustodyProbe(dir,generation,token string)error{
 		brokerCtx,stopBroker:=context.WithCancel(ctx)
 		done:=make(chan struct{})
 		owned:=&probeCustody{primary:primary,set:set,stopBroker:stopBroker,brokerDone:done,done:make(chan struct{})}
-		go func(){owned.brokerErr=processguard.ServeProbeBroker(brokerCtx,rr,bw,set,startOperationProbe);close(done)}()
+		startOperation:=processguard.ProbeStarter(startOperationProbe)
+		if holdCleanup{
+			// Only the second fixed leaf (the one still active after the
+			// online transition) participates in the crash-test barrier.
+			startOperation=crashProbeStarter(dir)
+		}
+		go func(){owned.brokerErr=processguard.ServeProbeBroker(brokerCtx,rr,bw,set,startOperation);close(done)}()
 		go func(){select{case <-primary.Done():case <-done:};close(owned.done)}()
 		return owned,err
 	})

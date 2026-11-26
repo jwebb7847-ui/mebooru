@@ -27,4 +27,10 @@ with tempfile.TemporaryDirectory(prefix="mebooru-probe-build-") as scratch:
     print(result.stdout, result.stderr, sep="")
     assert result.returncode == 0, result.returncode
     assert "PASS: managed executable probe (no acquisition)" in result.stdout
+    crash = subprocess.run([str(library), "internal-managed-crash-probe-v1"],
+                           stdin=subprocess.DEVNULL, capture_output=True,
+                           cwd=directory, env=env, timeout=100, text=True)
+    print(crash.stdout, crash.stderr, sep="")
+    assert crash.returncode == 0, crash.returncode
+    assert "PASS: managed executable crash recovery (active operation)" in crash.stdout
     assert sorted(p.name for p in directory.iterdir()) == sorted([library.name, loader.name])
