@@ -19,7 +19,7 @@ func ServeLifecycleProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser)er
 		defer mu.Unlock()
 		if ctx.Err()!=nil{return nil,&Fault{Code:"canceled"}}
 		invalid:=func()(json.RawMessage,*Fault){return nil,&Fault{Code:"invalid"}}
-		if op!=SetOffline&&len(payload)!=0{return invalid()}
+		if (op==Health||op==ReserveIdle||op==Shutdown)&&len(payload)!=0{return invalid()}
 		switch op{
 		case Health:
 			body,_:=json.Marshal(struct{
