@@ -104,3 +104,36 @@ func TestLegacyExecutorCaptureAndStream(t *testing.T){
 	})
 	if !c.started||c.runErr!=nil||c.readErr!=nil||c.exitCode!=7||string(output)!="fixture-out\n"||c.stderr!="fixture-err"||c.cleanupConfirmed{t.Fatalf("stream: %+v %q",c,output)}
 }
+
+func TestProofRequiredExecutorRejectsLegacyBeforeLaunch(t *testing.T){
+	tool:=testExecutionTool()
+	tool.requireCleanupProof=true
+	for _,executor:=range []processExecutor{legacyProcessExecutor{},&legacyProcessExecutor{}}{
+		tool.executor=executor
+		if _,err:=tool.runWithBinary(context.Background(),"never-execute-this-binary","--version");!errors.Is(err,errExecutionUnavailable){t.Fatalf("legacy capture: %v",err)}
+		c:=tool.stream(context.Background(),"never-execute-this-binary",nil,func(io.Reader)error{t.Fatal("legacy stream executed");return nil})
+		if c.started||!errors.Is(c.runErr,errExecutionUnavailable)||!c.cleanupConfirmed{t.Fatalf("legacy stream: %+v",c)}
+	}
+}
+
+func TestStrictPreflightRefusesUnconfirmedExecutor(t *testing.T){
+	tool:=testExecutionTool()
+	tool.requireCleanupProof=true
+	calls:=0
+	tool.executor=executorFixture{capture:func(_ context.Context,_ string,args []string)processCompletion{
+		calls++
+		if calls==1{
+			return processCompletion{started:true,cleanupConfirmed:true,runResult:runResult{stdout:[]byte(strictQualifiedVersion+"\n")}}
+		}
+		if calls!=2{t.Fatal("preflight continued after failed proof")}
+		// Correct looking negative predicate result cannot authorize a
+		// transfer if the runtime boundary has not been confirmed empty.
+		return processCompletion{started:true,runResult:runResult{stdout:[]byte(`[[2,{}]]`)}}
+	},stream:func(context.Context,string,[]string,func(io.Reader)error)processCompletion{
+		t.Fatal("transfer started after unconfirmed preflight")
+		return processCompletion{}
+	}}
+	approved:=[]Item{{ID:"42",Category:"derpibooru",Subcategory:"search",MediaURL:"https://example.invalid/synthetic.jpg",Meta:map[string]any{"id":"42","category":"derpibooru","tags":[]string{"safe"}}}}
+	_,err:=tool.DownloadStrict(context.Background(),"https://example.invalid/test","",t.TempDir(),ArchiveRead,nil,approved)
+	if err==nil||calls!=2{t.Fatalf("preflight: %d %v",calls,err)}
+}

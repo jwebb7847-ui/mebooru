@@ -102,15 +102,26 @@ func exitStatus(err error)(int,error){
 	return 0,err
 }
 
+// Reject the legacy executor before launch in proof-required mode,
+// even if accidentally installed by a future constructor.
+func(t *Tool)checkExecutor()error{
+	if t.executor==nil{return errExecutionUnavailable}
+	if t.requireCleanupProof{
+		switch t.executor.(type){
+		case legacyProcessExecutor,*legacyProcessExecutor:return errExecutionUnavailable
+		}
+	}
+	return nil
+}
 func(t *Tool)capture(ctx context.Context,bin string,args []string)(runResult,error){
-	if t.executor==nil{return runResult{},errExecutionUnavailable}
+	if err:=t.checkExecutor();err!=nil{return runResult{},err}
 	c:=t.executor.Capture(ctx,bin,args)
 	if err:=c.proofError(t.requireCleanupProof);err!=nil{return c.runResult,err}
 	if !c.started&&c.runErr==nil{return c.runResult,errExecutionUnavailable}
 	return c.runResult,c.runErr
 }
 func(t *Tool)stream(ctx context.Context,bin string,args []string,consume func(io.Reader)error)processCompletion{
-	if t.executor==nil{return processCompletion{runErr:errExecutionUnavailable}}
+	if err:=t.checkExecutor();err!=nil{return processCompletion{runErr:err,cleanupConfirmed:true}}
 	c:=t.executor.Stream(ctx,bin,args,consume)
 	if !c.started&&c.runErr==nil{c.runErr=errExecutionUnavailable}
 	return c
