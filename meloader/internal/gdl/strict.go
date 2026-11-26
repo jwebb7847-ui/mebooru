@@ -22,7 +22,7 @@ const strictMediaURLKey = acquisitionplan.StrictMediaURLKey
 
 // Qualification policy, independent of how the runtime is launched.
 // Expanding this list requires explicit source/predicate/transfer evidence.
-const strictQualifiedVersion = "1.32.19"
+const strictQualifiedVersion = acquisitionplan.StrictQualifiedVersion
 
 func strictVersionQualified(version string)bool{return version==strictQualifiedVersion}
 
