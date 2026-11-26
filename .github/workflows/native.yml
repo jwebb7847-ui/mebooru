@@ -109,7 +109,7 @@ jobs:
           go test -count=1 -timeout 3m ./internal/acquisitionpolicy ./cmd/monbooru
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cd shared
-          go test -count=1 -timeout 3m ./processguard ./workerproto
+          go test -count=1 -timeout 3m ./processguard ./workerproto ./acquisitionplan
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cd ../meloader
           go test -count=1 -timeout 3m ./internal/gdl
