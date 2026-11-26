@@ -267,13 +267,13 @@ func receiveHello(r io.Reader, expected Role) error {
 // child identity, time limits, pipe closure and failure handling.
 func Handshake(r io.Reader, w io.Writer, self Role) error {
 	switch self {
-	case Library:
+	case Library, OperationRequester:
 		if err := sendHello(w, self); err != nil {
 			return err
 		}
-		return receiveHello(r, Worker)
-	case Worker:
-		if err := receiveHello(r, Library); err != nil {
+		return receiveHello(r, counterpart(self))
+	case Worker, OperationCustodian:
+		if err := receiveHello(r, counterpart(self)); err != nil {
 			return err
 		}
 		return sendHello(w, self)

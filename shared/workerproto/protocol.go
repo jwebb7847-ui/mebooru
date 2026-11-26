@@ -14,6 +14,8 @@ type Role string
 const (
 	Library Role = "library"
 	Worker Role = "worker"
+	OperationRequester Role = "operation-requester"
+	OperationCustodian Role = "operation-custodian"
 )
 
 type Kind string
@@ -76,6 +78,10 @@ type Rule struct {
 }
 
 const (
+	// Separate private channel; no library/worker role can invoke these.
+	OperationProbeStart Operation = "custody.probe_start"
+	OperationProbeStop Operation = "custody.probe_stop"
+
 	Health Operation = "worker.health"
 	SetOffline Operation = "worker.set_offline"
 	Shutdown Operation = "worker.shutdown"
@@ -151,6 +157,8 @@ const (
 // Enqueue and resume may persist held work offline; scheduling/transfer must
 // never start WAN as a side effect until separately authorized.
 var rules = map[Operation]Rule{
+	OperationProbeStart: {OperationRequester, Local},
+	OperationProbeStop: {OperationRequester, Local},
 	Health: {Library, Local},
 	SetOffline: {Library, Local},
 	Shutdown: {Library, Local},
@@ -226,4 +234,16 @@ func RuleFor(op Operation) (Rule, bool) {
 func AllowedDirection(caller Role, op Operation) bool {
 	rule, ok := RuleFor(op)
 	return ok && rule.Caller == caller
+}
+
+// counterpart constrains both handshake and request dispatch to the
+// same role pair. A worker/library session cannot become a broker.
+func counterpart(role Role) Role {
+	switch role {
+	case Library:return Worker
+	case Worker:return Library
+	case OperationRequester:return OperationCustodian
+	case OperationCustodian:return OperationRequester
+	default:return ""
+	}
 }

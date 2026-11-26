@@ -7,13 +7,10 @@ import (
 
 func TestOperationDirections(t *testing.T) {
 	for op, rule := range rules {
-		if rule.Caller != Library && rule.Caller != Worker {
+		if rule.Caller != Library && rule.Caller != Worker && rule.Caller != OperationRequester {
 			t.Fatalf("%s: invalid caller %q", op, rule.Caller)
 		}
-		other := Worker
-		if rule.Caller == Worker {
-			other = Library
-		}
+		other := counterpart(rule.Caller)
 		if !AllowedDirection(rule.Caller, op) || AllowedDirection(other, op) ||
 			AllowedDirection(Role("external"), op) {
 			t.Fatalf("%s: invalid direction classification", op)
@@ -69,5 +66,16 @@ func TestEnvelopeTypedControlRoundTrip(t *testing.T) {
 	}
 	if got.Kind != Request || got.ID != 1 || got.Op != SetOffline || !policy.Offline || got.Error != nil {
 		t.Fatalf("unexpected round trip: %+v %+v", got, policy)
+	}
+}
+
+func TestBrokerRolesDoNotCrossLibraryBoundary(t *testing.T){
+	for _,op:=range []Operation{OperationProbeStart,OperationProbeStop}{
+		for _,role:=range []Role{Library,Worker,OperationCustodian}{
+			if AllowedDirection(role,op){t.Fatalf("broker operation allowed for %s",role)}
+		}
+	}
+	for _,op:=range []Operation{QueueEnqueue,GalleryList,SetOffline,ImportMedia}{
+		if AllowedDirection(OperationRequester,op)||AllowedDirection(OperationCustodian,op){t.Fatalf("library operation on broker: %s",op)}
 	}
 }

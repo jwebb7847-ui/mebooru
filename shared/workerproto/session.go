@@ -359,10 +359,7 @@ func (s *Session) receiveRequest(e Envelope) error {
 		return ErrCorrelation
 	}
 	s.lastPeerID = e.ID
-	peer := Worker
-	if s.role == Worker {
-		peer = Library
-	}
+	peer := counterpart(s.role)
 	var code string
 	if _, ok := RuleFor(e.Op); !ok {
 		code = "unsupported"
