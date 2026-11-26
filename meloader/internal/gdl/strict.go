@@ -93,11 +93,7 @@ func strictGate(workDir string, approved []Item) (string, error) {
 // Only a local path is interpolated. Source values stay in JSON, and the
 // transfer process caches the manifest after reading it for the first file.
 func strictGateExpression(path string) string {
-	return "(lambda d, j, p: (lambda r: r is not None and " +
-		"all(k in d and (list(d[k]) if isinstance(d[k], tuple) else d[k]) == v for k,v in r.items()) and " +
-		"all(k in r for k in d if k in ('tags','tag_ids','rating') or k.startswith('tags_')))(" +
-		"(j.__dict__.get(p) or j.__dict__.setdefault(p, j.loads(std.pathlib.Path(p).read_text(encoding='utf-8')))).get(str(d.get('id'))))" +
-		")(locals(), std.json, " + strconv.QuoteToASCII(path) + ")"
+	return acquisitionplan.StrictGateExpression(path)
 }
 
 func strictSourceArgs() []string {
