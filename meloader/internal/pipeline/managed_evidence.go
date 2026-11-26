@@ -32,6 +32,7 @@ type ManagedEvidencePost struct {
 // no durable receipt, production dispatcher or transfer verdict.
 type ManagedEvidenceWindow struct{
 	grant workerproto.MetadataPlanRequest
+	subcategory string
 	posts []workerproto.MetadataPost
 	taxonomy *taxonomy.ManagedTaxonomyWindow
 	gate *workerproto.DrainGate
@@ -47,7 +48,7 @@ func NewManagedEvidenceWindow(grant workerproto.MetadataPlanRequest, subcategory
 	if gate==nil||scope==nil||mapper==nil{return nil,ErrManagedMetadataEvidence}
 	posts,err:=workerproto.DecodeMetadataEvidence(body,grant,subcategory)
 	if err!=nil{return nil,ErrManagedMetadataEvidence}
-	w:=&ManagedEvidenceWindow{grant:grant,posts:posts,gate:gate,generation:generation,scope:scope,mapper:mapper}
+	w:=&ManagedEvidenceWindow{grant:grant,subcategory:subcategory,posts:posts,gate:gate,generation:generation,scope:scope,mapper:mapper}
 	if grant.Source==mapping.CategoryDerpibooru{
 		w.taxonomy,err=taxonomy.NewManagedTaxonomyWindow(grant,subcategory,body,gate,generation,scope,transport)
 		if err!=nil{return nil,ErrManagedMetadataEvidence}
