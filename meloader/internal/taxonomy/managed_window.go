@@ -78,8 +78,8 @@ func (t *managedTagTransport) permitted(req *http.Request)bool{
 		if err!=nil||n<1||n>50{return false}
 		query:=q.Get("q")
 		if t.allowedNames[query]{
-			// Never permit a literal name to introduce another search
-			// term or query operator. ID-based lookup remains available.
+			// Refuse obvious query syntax in name fallbacks; this is
+			// not a complete parser of Philomena search grammar.
 			return !strings.ContainsAny(query,"|&!()*~")&&!strings.Contains(query,"..")&&!strings.HasPrefix(strings.ToLower(query),"id:")
 		}
 		terms:=strings.Split(query," || ")
@@ -111,6 +111,7 @@ func(t *managedTagTransport)RoundTrip(req *http.Request)(*http.Response,error){
 	if closeErr!=nil{t.unconfirmed.Store(true)}
 	if readErr!=nil||closeErr!=nil||len(data)>maxManagedTaxonomyResponse||!t.allowed(req.Context())||
 		resp.StatusCode>=300&&resp.StatusCode<400{return nil,ErrManagedTaxonomy}
+	if resp.StatusCode>=200&&resp.StatusCode<300&&!validateManagedTagJSON(data){return nil,ErrManagedTaxonomy}
 	resp.Body=io.NopCloser(bytes.NewReader(data))
 	resp.ContentLength=int64(len(data))
 	return resp,nil
@@ -176,4 +177,42 @@ func(w *ManagedTaxonomyWindow)Run(caller context.Context,request workerproto.Met
 	}
 	if !allowed(ctx){return nil,ErrManagedTaxonomy}
 	return out,nil
+}
+
+// Source responses can contain additional API fields, but ambiguous JSON
+// keys (including case variants accepted by encoding/json) are refused.
+func validateManagedTagJSON(data []byte)bool{
+	d:=json.NewDecoder(bytes.NewReader(data));d.UseNumber()
+	first,err:=d.Token()
+	if err!=nil||first!=json.Delim('{'){return false}
+	if !scanManagedTagJSON(d,first,0){return false}
+	_,err=d.Token()
+	return err==io.EOF
+}
+func scanManagedTagJSON(d *json.Decoder,tok json.Token,depth int)bool{
+	if depth>32{return false}
+	switch tok{
+	case json.Delim('{'):
+		seen:=map[string]bool{}
+		for d.More(){
+			key,err:=d.Token()
+			s,ok:=key.(string)
+			if err!=nil||!ok{return false}
+			s=strings.ToLower(s)
+			if seen[s]{return false}
+			seen[s]=true
+			value,err:=d.Token()
+			if err!=nil||!scanManagedTagJSON(d,value,depth+1){return false}
+		}
+		end,err:=d.Token()
+		return err==nil&&end==json.Delim('}')
+	case json.Delim('['):
+		for d.More(){
+			value,err:=d.Token()
+			if err!=nil||!scanManagedTagJSON(d,value,depth+1){return false}
+		}
+		end,err:=d.Token()
+		return err==nil&&end==json.Delim(']')
+	default:return true
+	}
 }

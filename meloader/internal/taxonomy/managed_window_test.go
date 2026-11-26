@@ -121,3 +121,10 @@ func TestManagedTaxonomyRejectsStaleGenerationAndUnconfirmedClose(t *testing.T){
 	if out,err:=fresh.Run(ctx,q);out!=nil||!errors.Is(err,workerproto.ErrDrainUnconfirmed)||calls!=1{t.Fatalf("unconfirmed close: %v %v calls=%d",out,err,calls)}
 	if !errors.Is(gate.Drain(ctx),workerproto.ErrDrainUnconfirmed)||gate.Open()==nil{t.Fatal("unconfirmed HTTP cleanup reopened admission")}
 }
+
+func TestManagedTaxonomyRejectsAmbiguousSourceJSON(t *testing.T){
+	for _,bad:=range []string{`{"tags":[{"id":1,"id":2}]}`,`{"tags":[{"id":1,"ID":2}]}`,`{"tags":[]} {"tag":{}}`,`null`,`{"tags":[`+strings.Repeat("[",33)+strings.Repeat("]",33)+`]}`}{
+		if validateManagedTagJSON([]byte(bad)){t.Fatalf("ambiguous response accepted %s",bad)}
+	}
+	if !validateManagedTagJSON([]byte(`{"tags":[{"id":1,"name":"fixture","category":null,"aliases":[],"aliased_tag":null}]}`)){t.Fatal("valid source response refused")}
+}
