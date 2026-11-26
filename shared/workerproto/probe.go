@@ -58,6 +58,15 @@ func serveLifecycleProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser,br
 				Operations int `json:"operations"`
 			}{true,offline,map[bool]int{true:1}[active.ID!=0]})
 			return body,nil
+		case RuntimeStatus:
+			// Restricted probe only, not the production runtime status DTO.
+			// The custodian independently enables the fixed local operation.
+			if len(payload)!=0{return invalid()}
+			if broker==nil||abort!=nil||closed||reserved{return nil,&Fault{Code:"unsupported"}}
+			v,err:=broker.Version(ctx)
+			if err!=nil{return nil,&Fault{Code:"runtime_probe_failed"}}
+			body,_:=json.Marshal(v)
+			return body,nil
 		case SetOffline:
 			p,err:=DecodeOfflinePolicy(payload)
 			if err!=nil{return invalid()}

@@ -36,3 +36,17 @@ func(c *ProbeClient)Stop(ctx context.Context,ref ProbeOperationRef)error{
 	if err!=nil||got!=ref{c.session.Close();return ErrMessage}
 	return nil
 }
+
+// Version asks only for the fixed local diagnostic version command.
+// A valid response means the custodian reported completed cleanup;
+// cancellation/transport loss never constitutes that proof.
+func(c *ProbeClient)Version(ctx context.Context)(VersionProbeResult,error){
+	e,err:=c.session.Call(ctx,OperationVersionProbe,nil)
+	if err!=nil||e.Error!=nil{
+		c.session.Close()
+		return VersionProbeResult{},errors.Join(ErrProbeBrokerRefused,err)
+	}
+	v,err:=DecodeVersionProbeResult(e.Payload)
+	if err!=nil{c.session.Close()}
+	return v,err
+}

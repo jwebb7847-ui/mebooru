@@ -42,12 +42,23 @@ def verify_pinned_runtime(library, directory):
             print(result.stdout, result.stderr, sep="")
             assert result.returncode == 0, result.returncode
             assert "PASS: contained gallery-dl version probe: " + version in result.stdout
+            broker = subprocess.run([str(library), "internal-managed-runtime-broker-probe-v1"],
+                                    stdin=subprocess.DEVNULL, capture_output=True,
+                                    cwd=directory, env=env, timeout=80, text=True)
+            print(broker.stdout, broker.stderr, sep="")
+            assert broker.returncode == 0, broker.returncode
+            assert "PASS: brokered gallery-dl version probe: " + version in broker.stdout
             marker.write_text("0" * 64 + "\n", encoding="ascii", newline="\n")
             refused = subprocess.run([str(library), "internal-managed-runtime-version-probe-v1"],
                                      stdin=subprocess.DEVNULL, capture_output=True,
                                      cwd=directory, env=env, timeout=10)
             assert refused.returncode != 0, refused
             assert b"PASS: contained gallery-dl version probe" not in refused.stdout
+            refused_broker = subprocess.run([str(library), "internal-managed-runtime-broker-probe-v1"],
+                                            stdin=subprocess.DEVNULL, capture_output=True,
+                                            cwd=directory, env=env, timeout=10)
+            assert refused_broker.returncode != 0, refused_broker
+            assert b"PASS: brokered gallery-dl version probe" not in refused_broker.stdout
             # Keep the exact existing positive/negative filter and media
             # boundary fixtures; never run live-source acquisition here.
             if os.name != "nt":

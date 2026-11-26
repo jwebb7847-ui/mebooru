@@ -14,6 +14,14 @@ import (
 const probeCleanupTimeout=10*time.Second
 type ProbeStarter func(context.Context)(OperationChild,error)
 
+// VersionProbeChild is a trusted dormant local diagnostic runtime.
+// Version reads its bounded result; Stop still owns actual cleanup.
+type VersionProbeChild interface{
+	OperationChild
+	Version(context.Context)(string,error)
+}
+type VersionProbeStarter func(context.Context)(VersionProbeChild,error)
+
 // probeBroker is a one-session diagnostic adapter. Its starter is a
 // fixed trusted fixture supplied by the custodian, not by a request.
 // The actual custodian must also retain the same OperationSet for final
@@ -22,6 +30,7 @@ type probeBroker struct{
 	mu sync.Mutex
 	set *OperationSet
 	start ProbeStarter
+	version VersionProbeStarter
 	next uint64
 	leases map[uint64]*OperationLease
 	sealed bool
@@ -52,6 +61,10 @@ func(b *probeBroker)handle(ctx context.Context,op workerproto.Operation,body jso
 		b.leases[b.next]=lease
 		out,_:=json.Marshal(workerproto.ProbeOperationRef{ID:b.next})
 		return out,nil
+	case workerproto.OperationVersionProbe:
+		if len(body)!=0{return fault("invalid")}
+		if b.version==nil{return fault("unsupported")}
+		return b.runVersion(ctx)
 	case workerproto.OperationProbeStop:
 		ref,err:=workerproto.DecodeProbeOperationRef(body)
 		if err!=nil{return fault("invalid")}
@@ -74,19 +87,70 @@ func(b *probeBroker)handle(ctx context.Context,op workerproto.Operation,body jso
 	}
 }
 
+// No success can escape until the registered lease proves cleanup.
+// Failed launch with a handle also requires cleanup; no request deadline
+// can waive that requirement. Other owned operations remain independent.
+func(b *probeBroker)runVersion(ctx context.Context)(json.RawMessage,*workerproto.Fault){
+	ctx,deadline:=context.WithTimeout(ctx,15*time.Second)
+	defer deadline()
+	fault:=func(code string)(json.RawMessage,*workerproto.Fault){return nil,&workerproto.Fault{Code:code}}
+	b.mu.Lock()
+	if b.sealed{b.mu.Unlock();return fault("closed")}
+	var child VersionProbeChild
+	lease,startErr:=b.set.Start(ctx,func(start context.Context)(OperationChild,error){
+		var err error
+		child,err=b.version(start)
+		if child==nil{return nil,err}
+		return child,err
+	})
+	b.mu.Unlock()
+	var version string
+	readErr:=startErr
+	if readErr==nil&&lease!=nil{
+		version,readErr=child.Version(ctx)
+	}
+	if lease!=nil{
+		cleanup,done:=context.WithTimeout(context.WithoutCancel(ctx),probeCleanupTimeout)
+		stopErr:=lease.Stop(cleanup)
+		done()
+		if stopErr!=nil{
+			b.mu.Lock();b.sealed=true;b.revoke();b.mu.Unlock()
+			return fault("cleanup_unconfirmed")
+		}
+	}
+	if errors.Is(startErr,ErrOperationUnconfirmed){
+		b.mu.Lock();b.sealed=true;b.revoke();b.mu.Unlock()
+		return fault("cleanup_unconfirmed")
+	}
+	if ctx.Err()!=nil{return fault("canceled")}
+	if readErr!=nil||lease==nil{return fault("runtime_probe_failed")}
+	out,_:=json.Marshal(workerproto.VersionProbeResult{Version:version})
+	if _,err:=workerproto.DecodeVersionProbeResult(out);err!=nil{return fault("runtime_probe_failed")}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.sealed{return fault("closed")}
+	return out,nil
+}
+
 // ServeProbeBroker owns the separate inherited control channel for
 // one worker generation. On EOF, handshake failure, cancellation or
 // protocol failure, seal and stop every operation. Never reuse this set
 // or channel for another worker. A nil return proves set cleanup only,
 // not main worker termination. The caller must combine both proofs.
 func ServeProbeBroker(ctx context.Context,r io.ReadCloser,w io.WriteCloser,set *OperationSet,start ProbeStarter)error{
+	return ServeProbeBrokerWithVersion(ctx,r,w,set,start,nil)
+}
+
+// Optional fixed local runtime starter is provided by trusted custody
+// startup only. It is never configured by the requester.
+func ServeProbeBrokerWithVersion(ctx context.Context,r io.ReadCloser,w io.WriteCloser,set *OperationSet,start ProbeStarter,version VersionProbeStarter)error{
 	if set==nil||start==nil{
 		_ = r.Close();_ = w.Close()
 		return ErrOperationUnconfirmed
 	}
 	lifetime,revoke:=context.WithCancel(ctx)
 	defer revoke()
-	b:=&probeBroker{set:set,start:start,leases:make(map[uint64]*OperationLease),revoke:revoke}
+	b:=&probeBroker{set:set,start:start,version:version,leases:make(map[uint64]*OperationLease),revoke:revoke}
 	s,err:=workerproto.OpenSession(lifetime,r,w,workerproto.OperationCustodian,b.handle)
 	if err==nil{<-s.Done();s.Close()}
 	// Seal the underlying set first: a handler already waiting for its

@@ -70,7 +70,7 @@ func TestEnvelopeTypedControlRoundTrip(t *testing.T) {
 }
 
 func TestBrokerRolesDoNotCrossLibraryBoundary(t *testing.T){
-	for _,op:=range []Operation{OperationProbeStart,OperationProbeStop}{
+	for _,op:=range []Operation{OperationProbeStart,OperationProbeStop,OperationVersionProbe}{
 		for _,role:=range []Role{Library,Worker,OperationCustodian}{
 			if AllowedDirection(role,op){t.Fatalf("broker operation allowed for %s",role)}
 		}

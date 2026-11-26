@@ -23,6 +23,8 @@ func dispatchManagedProbe(args []string)bool{
 	if len(args)==0{return false}
 	var err error
 	switch args[0]{
+	case "internal-managed-runtime-broker-probe-v1":
+		if len(args)!=1{err=errRuntimeProbe}else{err=runRuntimeBrokerProbe()}
 	case "internal-managed-runtime-version-probe-v1":
 		if len(args)!=1{err=errRuntimeProbe}else{err=runRuntimeVersionProbe()}
 	case "internal-managed-runtime-version-guard-probe-v1":
@@ -37,9 +39,9 @@ func dispatchManagedProbe(args []string)bool{
 		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runExecutableWorkerCrashProbe()}
 	case "internal-managed-crash-owner-probe-v1":
 		if len(args)!=2{err=processguard.ErrProbeExecutable}else{err=runCrashProbeOwner(args[1])}
-	case "internal-managed-custody-probe-v1", "internal-managed-crash-custody-probe-v1", "internal-managed-worker-loss-custody-probe-v1":
+	case "internal-managed-custody-probe-v1", "internal-managed-crash-custody-probe-v1", "internal-managed-worker-loss-custody-probe-v1", "internal-managed-runtime-custody-probe-v1":
 		if len(args)!=4{err=processguard.ErrProbeExecutable}else{
-			err=runManagedCustodyProbe(args[1],args[2],args[3],args[0]!="internal-managed-custody-probe-v1",args[0]=="internal-managed-worker-loss-custody-probe-v1")
+			err=runManagedCustodyProbe(args[1],args[2],args[3],args[0]=="internal-managed-crash-custody-probe-v1"||args[0]=="internal-managed-worker-loss-custody-probe-v1",args[0]=="internal-managed-worker-loss-custody-probe-v1",args[0]=="internal-managed-runtime-custody-probe-v1")
 		}
 	case "internal-managed-operation-guard-probe-v1":
 		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runOperationProbeGuard()}
@@ -139,9 +141,15 @@ func validateManagedProbeDir(dir string)error{
 	return nil
 }
 
-func runManagedCustodyProbe(dir,generation,token string,holdCleanup,abortWorker bool)error{
+func runManagedCustodyProbe(dir,generation,token string,holdCleanup,abortWorker,runtimeProbe bool)error{
 	if err:=validateManagedProbeDir(dir);err!=nil{return err}
 	if _,err:=processguard.ProbeSibling("monbooru","monloader");err!=nil{return err}
+	var version processguard.VersionProbeStarter
+	if runtimeProbe{
+		digest,err:=runtimeProbeDigest()
+		if err!=nil{return err}
+		version=runtimeVersionStarter(digest)
+	}
 	r,w,err:=processguard.OpenInheritedPipes(token)
 	if err!=nil{return err}
 	defer r.Close()
@@ -167,7 +175,7 @@ func runManagedCustodyProbe(dir,generation,token string,holdCleanup,abortWorker 
 			// online transition) participates in the crash-test barrier.
 			startOperation=crashProbeStarter(dir)
 		}
-		go func(){owned.brokerErr=processguard.ServeProbeBroker(brokerCtx,rr,bw,set,startOperation);close(done)}()
+		go func(){owned.brokerErr=processguard.ServeProbeBrokerWithVersion(brokerCtx,rr,bw,set,startOperation,version);close(done)}()
 		go func(){select{case <-primary.Done():case <-done:};close(owned.done)}()
 		return owned,err
 	})

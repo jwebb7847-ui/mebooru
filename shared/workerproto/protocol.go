@@ -81,6 +81,7 @@ const (
 	// Separate private channel; no library/worker role can invoke these.
 	OperationProbeStart Operation = "custody.probe_start"
 	OperationProbeStop Operation = "custody.probe_stop"
+	OperationVersionProbe Operation = "custody.version_probe"
 
 	Health Operation = "worker.health"
 	SetOffline Operation = "worker.set_offline"
@@ -159,6 +160,7 @@ const (
 var rules = map[Operation]Rule{
 	OperationProbeStart: {OperationRequester, Local},
 	OperationProbeStop: {OperationRequester, Local},
+	OperationVersionProbe: {OperationRequester, Local},
 	Health: {Library, Local},
 	SetOffline: {Library, Local},
 	Shutdown: {Library, Local},
