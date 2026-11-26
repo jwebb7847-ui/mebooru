@@ -87,6 +87,14 @@ func(p *CustodyProcess)Activate()error{
 	return nil
 }
 
+// Revoke closes liveness without waiting for cleanup. Session loss or
+// startup cancellation may use it; only Stop verifies a terminal receipt.
+func(p *CustodyProcess) Revoke(){
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.revoke()
+}
+
 // Caller holds mu, or p is not yet published.
 func(p *CustodyProcess)revoke(){
 	p.revoked=true

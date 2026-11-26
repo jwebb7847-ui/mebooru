@@ -34,6 +34,7 @@ type DormantJob struct {
 	cmd *exec.Cmd
 	input io.WriteCloser
 	assigned bool
+	separateProtocol bool
 	activated bool
 	revoked bool
 	stopped bool
@@ -46,7 +47,24 @@ type DormantJob struct {
 // supplied. Do not use parent cancellation to kill the cleanup custodian.
 // The returned nonnil child on error MUST still be stopped by its owner.
 func StartDormantJob(cmd *exec.Cmd)(*DormantJob,error){
-	if cmd==nil||!filepath.IsAbs(cmd.Path)||cmd.Process!=nil||cmd.SysProcAttr!=nil||cmd.Stdin!=nil||len(cmd.ExtraFiles)!=0{return nil,ErrJobActivation}
+	return startDormantJob(cmd,false)
+}
+
+// StartDormantJobWithPipes gives the worker separate protocol handles.
+// stdin remains activation-only. The trusted private entry receives
+// the inherited pipe token as the final argument and must adopt it
+// only after AwaitJobActivation. The caller owns and closes r/w.
+func StartDormantJobWithPipes(cmd *exec.Cmd,r,w *os.File)(*DormantJob,error){
+	if cmd==nil||cmd.Stdin!=nil{return nil,ErrJobActivation}
+	token,release,err:=AttachInheritedPipes(cmd,r,w)
+	if err!=nil{return nil,err}
+	defer release()
+	cmd.Args=append(cmd.Args,token)
+	return startDormantJob(cmd,true)
+}
+
+func startDormantJob(cmd *exec.Cmd,separate bool)(*DormantJob,error){
+	if cmd==nil||!filepath.IsAbs(cmd.Path)||cmd.Process!=nil||(!separate&&cmd.SysProcAttr!=nil)||cmd.Stdin!=nil||len(cmd.ExtraFiles)!=0{return nil,ErrJobActivation}
 	job,err:=NewJob()
 	if err!=nil{return nil,err}
 	input,err:=cmd.StdinPipe()
@@ -55,7 +73,7 @@ func StartDormantJob(cmd *exec.Cmd)(*DormantJob,error){
 		_ = input.Close()
 		return nil,errors.Join(err,job.Close())
 	}
-	d:=&DormantJob{job:job,cmd:cmd,input:input,done:make(chan struct{})}
+	d:=&DormantJob{job:job,cmd:cmd,input:input,separateProtocol:separate,done:make(chan struct{})}
 	assignErr:=job.Assign(cmd.Process)
 	d.assigned=assignErr==nil
 	go func(){d.waitErr=cmd.Wait();close(d.done)}()
@@ -92,7 +110,7 @@ func(d *DormantJob)Activate()error{
 func(d *DormantJob)ProtocolInput()(io.WriteCloser,error){
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if !d.activated||d.revoked{return nil,ErrJobActivation}
+	if !d.activated||d.revoked||d.separateProtocol{return nil,ErrJobActivation}
 	return d.input,nil
 }
 
