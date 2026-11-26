@@ -74,7 +74,7 @@ def verify_pinned_runtime(library, directory):
             # Actual pinned extractors, synthetic source responses, no sockets.
             metadata_env = dict(env, MEBOORU_METADATA_TEST_PYTHON=str(python))
             subprocess.run(["go", "test", "-count=1", "-timeout=3m", "-v",
-                            "-run", "^TestMetadataOperationPinnedRuntime$", "./processguard"],
+                            "-run", "^Test(MetadataOperation|StrictTransferOperation)PinnedRuntime$", "./processguard"],
                            cwd=workspace / "shared", env=metadata_env, check=True, timeout=240)
             marker.write_text("0" * 64 + "\n", encoding="ascii", newline="\n")
             refused = subprocess.run([str(library), "internal-managed-runtime-version-probe-v1"],
