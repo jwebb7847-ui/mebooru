@@ -100,3 +100,11 @@ func TestMetadataBindingRejectsIncompleteIdentity(t *testing.T) {
 	one,_:=cfg.Identity();two,_:=next.Identity()
 	if one==two||one.SHA256!=two.SHA256{t.Fatal("generation binding")}
 }
+
+func TestMetadataConfigSourceOptions(t *testing.T) {
+	for _,site:=range []string{"danbooru","e621"}{
+		c:=MetadataConfig{Generation:1,Source:site}
+		args,err:=c.args()
+		if err!=nil||!slices.Contains(args,"extractor."+site+".metadata=false"){t.Fatalf("missing resolve-off option for %s",site)}
+	}
+}

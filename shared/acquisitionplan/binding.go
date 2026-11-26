@@ -53,6 +53,7 @@ func (c MetadataConfig) args() ([]string, error) {
 	case "danbooru":
 		args = append(args, "-o", "extractor.danbooru.metadata=false")
 	case "e621":
+		args = append(args, "-o", "extractor.e621.metadata=false")
 	default:
 		return nil, ErrMetadataPlan
 	}
