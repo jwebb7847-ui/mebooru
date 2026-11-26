@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"strings"
 	"testing"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
@@ -26,7 +27,7 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 		t.Cleanup(g.Close)
 		galleries=append(galleries,g)
 		cfg.Galleries=append(cfg.Galleries,gc)
-		if _,err:=g.TagSvc.CreateCategory("custom_"+name,"#888888");err!=nil{t.Fatal(err)}
+		if _,err:=g.TagSvc.CreateCategory("custom_"+strings.ToLower(name),"#888888");err!=nil{t.Fatal(err)}
 	}
 	// Default config might include a gallery; keep exactly the fixture.
 	cfg.Galleries=cfg.Galleries[len(cfg.Galleries)-2:]
@@ -49,7 +50,7 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	body,fault=serve(ctx,workerproto.CategoryList,json.RawMessage(`{"gallery":"A"}`))
 	if fault!=nil{t.Fatal(fault)}
 	cats,err:=workerproto.DecodeCategoryCatalog(body)
-	if err!=nil||len(cats.Names)!=1||cats.Names[0]!="custom_A"{t.Fatalf("categories: %+v %v",cats,err)}
+	if err!=nil||len(cats.Names)!=1||cats.Names[0]!="custom_a"{t.Fatalf("categories: %+v %v",cats,err)}
 	for _,tc:=range []struct{op workerproto.Operation;body string;code string}{
 		{workerproto.CategoryList,`{"gallery":"B"}`,"forbidden"},
 		{workerproto.CategoryList,`{"gallery":""}`,"invalid"},
