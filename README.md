@@ -10,6 +10,8 @@ Mebooru is a fork of [Monbooru](https://github.com/monbooru/monbooru), based on 
 
 For project direction, chapter roadmap, current milestone and development decisions, start with [MEBOORU.md](MEBOORU.md), our single project north star. The [documentation index](docs/README.md) points to technical and historical evidence. Development uses [milestone-level draft PRs and final acceptance](MEBOORU.md#development-workflow), not a full matrix for every intermediate commit.
 
+Development status: Meloader's source is now consolidated under [`meloader/`](meloader/) in the integration history. The accepted II.6.4a private-worker architecture is a diagnostic foundation, not an enabled production acquisition path; ordinary library/acquisition behavior remains on existing compatible launch and API paths until migration acceptance. See the [technical map](docs/project/managed-worker.md) and [acceptance record](docs/validation/worker-ownership-runtime-2026-11-26.md).
+
 Designed for organizing your local media collection: images, videos, animated GIFs and manga archives. Tag it by hand or auto-tag it locally with ONNX models (WD14, JoyTag...), then search it by tag. Generation metadata from AI image tools (A1111/Forge, ComfyUI) is read too. Mebooru itself never touches the internet; online features (downloading from boorus, reverse image lookup) live in [Meloader](https://github.com/jwebb7847-ui/meloader), the forked companion (originally Monloader).
 
 **[Upstream documentation](https://monbooru.github.io/mondocs/)** · **[Install](#install)** · **[Upstream Monbooru](https://github.com/monbooru/monbooru)** · **[Changelog](CHANGELOG.md)**

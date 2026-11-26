@@ -2,6 +2,8 @@
 
 **Historical snapshot, not a live roadmap.** Begin with [MEBOORU.md](../../MEBOORU.md) for current decisions, chapter status and next action. Preserve this document for operational context and earlier acceptance evidence. Current branch/PR/CI instructions are in [Development workflow](../../MEBOORU.md#development-workflow); the old per-change PR process and separate repository instructions are superseded.
 
+**Current resume pointer (2026-11-26):** II.6.4a accepted in draft PR #38; read [rolling resume checkpoint](../../MEBOORU.md#rolling-handoff--resume-checkpoint-2026-11-26), [technical map](managed-worker.md) and [acceptance evidence](../validation/worker-ownership-runtime-2026-11-26.md). The historical snapshot below is deliberately unchanged in substance and is not current branch status.
+
 **Snapshot:** 2026-11-25, after visual closeout. **Mebooru working branch:** `mebooru-foundation`, feature merge `3715067d067417dabeec94c05f1b6bb90148f293` (PR #15). **Meloader working branch:** `main`, feature merge `10542e66537430d21cc295449103bb2832e0693a` (PR #25). Recheck live GitHub heads before editing; a snapshot is not a floating reference.
 
 ## Project goal and fixed boundaries

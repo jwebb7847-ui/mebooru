@@ -2,7 +2,9 @@
 
 **Snapshot 2026-11-24; superseded by [MEBOORU.md](../../../MEBOORU.md).** The current [development workflow](../../../MEBOORU.md#development-workflow) uses one repository and milestone PRs. The old two-repository instructions, fixture counts and next actions below are historical evidence.
 
-## Start with these documents
+**Current resume pointer (2026-11-26):** start at [MEBOORU.md](../../../MEBOORU.md) on the active draft PR #38 branch, then [managed worker technical map](../../../docs/project/managed-worker.md) and [II.6.4a acceptance](../../../docs/validation/worker-ownership-runtime-2026-11-26.md). The old links and instructions below describe historical context only; no development in the frozen standalone repository.
+
+## Historical reference documents
 
 | Document | Why it matters |
 | --- | --- |

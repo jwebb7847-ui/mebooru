@@ -1,11 +1,13 @@
 # Mebooru documentation index
 
-**Reviewed:** 2026-11-25. The working branch is `mebooru-foundation`.
+**Reviewed:** 2026-11-26. Integration branch `mebooru-foundation`; active draft [PR #38](https://github.com/jwebb7847-ui/mebooru/pull/38) on `worker/operation-migration`. II.6.4a accepted; II.6.4b next. Verify live refs before changes.
 
 **Start with [MEBOORU.md](../MEBOORU.md)** — the single maintained north star for architecture, chapter roadmap, current milestone, [development workflow](../MEBOORU.md#development-workflow), and outstanding work.
 
 | Reference | Purpose |
 | --- | --- |
+| [Managed worker technical map](project/managed-worker.md) | Accepted architecture, code navigation, known production adapter inventory and limits |
+| [II.6.4a runtime acceptance](validation/worker-ownership-runtime-2026-11-26.md) | Exact cross-platform evidence, Mac reproduction, archived candidate history |
 | [Historical handoff](project/handoff.md) | Earlier operating context, test evidence and Mac environment |
 | [Bundled pairing](project/bundled-pairing.md) | Existing implementation and trust boundary |
 | [November 24 Mac acceptance](validation/mac-acceptance-2026-11-24.md) | Pairing, rating, detail regression and environment evidence |
