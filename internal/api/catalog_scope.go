@@ -4,6 +4,11 @@ import (
 	"context"
 	"errors"
 	"sync/atomic"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/library"
@@ -37,9 +42,11 @@ func (h *Handler) NewCatalogScope(ctx context.Context, discover bool, grants map
 	}
 	unlock := h.lock()
 	defer unlock()
+	configured:=h.configuredCatalogNames()
+	if configured==nil{return nil,errCatalogScope}
 	s := &CatalogScope{owner: h, discover: discover, galleries: make(map[string]catalogGrant, len(grants))}
 	for name, operations := range grants {
-		if name == "" || len(name) > workerproto.MaxCatalogNameBytes ||
+		if !utf8.ValidString(name)||strings.TrimSpace(name)==""||strings.ContainsFunc(name,unicode.IsControl)||len(name) > workerproto.MaxCatalogNameBytes || configured[name]!=1 ||
 			len(operations) == 0 || len(operations) > 3 || ctx.Err() != nil {
 			return nil, errCatalogScope
 		}
@@ -81,7 +88,10 @@ func (s *CatalogScope) allows(ctx context.Context, op workerproto.Operation, nam
 // Discovery must not silently omit a granted gallery that disappeared.
 func (s *CatalogScope) verifyLive(ctx context.Context, op workerproto.Operation, name string) bool {
 	if !s.allows(ctx, op, name) { return false }
+	configured:=s.owner.configuredCatalogNames()
+	if configured==nil{return false}
 	check := func(n string, g catalogGrant) bool {
+		if configured[n]!=1{return false}
 		current, ok := s.owner.resolver(n)
 		return ok && current != nil && current == g.gallery && !current.Closed() && current.Name == n
 	}
@@ -92,4 +102,31 @@ func (s *CatalogScope) verifyLive(ctx context.Context, op workerproto.Operation,
 		return true
 	}
 	return check(name, s.galleries[name])
+}
+
+
+// Config membership is distinct from a resolver pointer. A stale resolver
+// must not keep a deleted gallery authorized, and discovery must not silently
+// omit a granted gallery missing from the current configuration snapshot.
+func(h *Handler) configuredCatalogNames()map[string]int{
+	cfg:=h.cfg()
+	if cfg==nil{return nil}
+	names:=make(map[string]int,len(cfg.Galleries))
+	for _,g:=range cfg.Galleries{names[g.Name]++}
+	return names
+}
+
+// Verify the result set itself under the same gallery lifetime lock.
+// This also detects a transient config/list disagreement between snapshots.
+func(s *CatalogScope)verifyDiscovery(ctx context.Context,list []contract.Gallery)bool{
+	if !s.allows(ctx,workerproto.GalleryList,""){return false}
+	expected:=make(map[string]bool)
+	for name,grant:=range s.galleries{
+		if grant.operations[workerproto.GalleryList]{expected[name]=true}
+	}
+	for _,g:=range list{
+		if !expected[g.Name]{return false}
+		delete(expected,g.Name)
+	}
+	return len(expected)==0
 }

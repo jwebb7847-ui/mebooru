@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 )
 
@@ -16,13 +18,13 @@ type CatalogAuthority func(context.Context,workerproto.Operation,string)bool
 // ManagedCatalogHandler requires a pinned library-owned scope. Not mounted
 // or attached to ordinary production sessions yet.
 func(h *Handler)ManagedCatalogHandler(scope *CatalogScope)workerproto.Handler{
-	if scope==nil||scope.owner!=h{return h.managedCatalogHandler(nil,nil)}
-	return h.managedCatalogHandler(scope.allows,scope.verifyLive)
+	if scope==nil||scope.owner!=h{return h.managedCatalogHandler(nil,nil,nil)}
+	return h.managedCatalogHandler(scope.allows,scope.verifyLive,scope.verifyDiscovery)
 }
 
 // The injected authority seam is private; production-compatible callers
 // must use the concrete scope above rather than name-only authorization.
-func(h *Handler)managedCatalogHandler(allow CatalogAuthority, verifyLive CatalogAuthority)workerproto.Handler{
+func(h *Handler)managedCatalogHandler(allow CatalogAuthority, verifyLive CatalogAuthority,verifyDiscovery func(context.Context,[]contract.Gallery)bool)workerproto.Handler{
 	return func(ctx context.Context,op workerproto.Operation,body json.RawMessage)(json.RawMessage,*workerproto.Fault){
 		fault:=func(code string)(json.RawMessage,*workerproto.Fault){return nil,&workerproto.Fault{Code:code}}
 		if ctx.Err()!=nil{return fault("canceled")}
@@ -54,6 +56,7 @@ func(h *Handler)managedCatalogHandler(allow CatalogAuthority, verifyLive Catalog
 			list,listErr:=h.galleryCatalog(func(n string)bool{return allow(ctx,op,n)},true)
 			if listErr!=nil{return fault("unavailable")}
 			for _,g:=range list{if !allow(ctx,op,g.Name){return fault("forbidden")}}
+			if verifyDiscovery!=nil&&!verifyDiscovery(ctx,list){return fault("forbidden")}
 			payload,err=workerproto.EncodeGalleryCatalog(workerproto.GalleryCatalog{Galleries:list})
 		}else{
 			g,ok:=h.resolver(name)

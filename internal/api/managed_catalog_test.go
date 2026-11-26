@@ -12,6 +12,7 @@ import (
 	"sync"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/config"
@@ -47,7 +48,7 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	allowed:=func(_ context.Context,op workerproto.Operation,name string)bool{
 		return op==workerproto.GalleryList&&(name==""||name=="A")||(op==workerproto.CategoryList||op==workerproto.ResolveTags)&&name=="A"
 	}
-	serve:=h.managedCatalogHandler(allowed,nil)
+	serve:=h.managedCatalogHandler(allowed,nil,nil)
 	body,fault:=serve(ctx,workerproto.GalleryList,nil)
 	if fault!=nil{t.Fatal(fault)}
 	cat,err:=workerproto.DecodeGalleryCatalog(body)
@@ -91,7 +92,7 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	}
 	// Permission revoked while acquiring gallery lifetime lock.
 	checks:=0
-	revoked:=h.managedCatalogHandler(func(context.Context,workerproto.Operation,string)bool{checks++;return checks==1},nil)
+	revoked:=h.managedCatalogHandler(func(context.Context,workerproto.Operation,string)bool{checks++;return checks==1},nil,nil)
 	if _,f:=revoked(ctx,workerproto.ResolveTags,request);f==nil||f.Code!="forbidden"{t.Fatal("revoked authority accepted")}
 	for _,tc:=range []struct{op workerproto.Operation;body string;code string}{
 		{workerproto.CategoryList,`{"gallery":"B"}`,"forbidden"},
@@ -112,7 +113,7 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	// An authorized unavailable gallery must not silently disappear from
 	// managed discovery, unlike the compatibility HTTP route.
 	cfg.Galleries=append(cfg.Galleries,config.Gallery{Name:"missing"})
-	if _,f:=h.managedCatalogHandler(func(context.Context,workerproto.Operation,string)bool{return true},nil)(ctx,workerproto.GalleryList,nil);f==nil||f.Code!="unavailable"{t.Fatal("partial managed discovery accepted")}
+	if _,f:=h.managedCatalogHandler(func(context.Context,workerproto.Operation,string)bool{return true},nil,nil)(ctx,workerproto.GalleryList,nil);f==nil||f.Code!="unavailable"{t.Fatal("partial managed discovery accepted")}
 }
 
 func TestManagedCatalogScopePinsGalleryAndOperation(t *testing.T){
@@ -147,6 +148,19 @@ func TestManagedCatalogScopePinsGalleryAndOperation(t *testing.T){
 	if _,f:=serve(ctx,workerproto.ResolveTags,q);f!=nil{t.Fatal(f)}
 	if _,f:=serve(ctx,workerproto.CategoryList,json.RawMessage(`{"gallery":"A"}`));f==nil||f.Code!="forbidden"{t.Fatal("scope widened")}
 	if _,f:=serve(ctx,workerproto.GalleryList,nil);f!=nil{t.Fatal(f)}
+	// Config removal cannot be masked by the still-live resolver.
+	mu.Lock()
+	cfg.Galleries=nil
+	mu.Unlock()
+	for _,op:=range []workerproto.Operation{workerproto.GalleryList,workerproto.ResolveTags}{
+		var p json.RawMessage
+		if op==workerproto.ResolveTags{p=q}
+		if body,f:=serve(ctx,op,p);body!=nil||f==nil||f.Code!="forbidden"{t.Fatalf("unconfigured grant: %s %s %+v",op,body,f)}
+	}
+	if _,err:=h.NewCatalogScope(ctx,true,map[string][]workerproto.Operation{"A":{workerproto.GalleryList}});err==nil{t.Fatal("unconfigured resolver granted scope")}
+	mu.Lock()
+	cfg.Galleries=[]config.Gallery{{Name:"A"}}
+	mu.Unlock()
 	// Both galleries remain open: pointer identity, not just Closed,
 	// must prevent a matching name from inheriting an old grant.
 	mu.Lock()
@@ -165,4 +179,58 @@ func TestManagedCatalogScopePinsGalleryAndOperation(t *testing.T){
 	if _,err:=h.NewCatalogScope(ctx,false,map[string][]workerproto.Operation{"A":{workerproto.ImportMedia}});err==nil{t.Fatal("mutation grant accepted")}
 	if _,err:=h.NewCatalogScope(ctx,false,map[string][]workerproto.Operation{"":{workerproto.ResolveTags}});err==nil{t.Fatal("implicit gallery grant accepted")}
 	if _,err:=h.NewCatalogScope(ctx,false,map[string][]workerproto.Operation{"A":{workerproto.GalleryList}});err==nil{t.Fatal("implicit discovery grant accepted")}
+}
+
+
+// Actual framed private session, not direct handler invocation. This
+// is isolated; no production route, worker launch or network is enabled.
+func TestManagedCatalogPrivateSessionAuthorization(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),10*time.Second)
+	defer cancel()
+	dir:=t.TempDir()
+	gc:=config.Gallery{Name:"A",GalleryPath:dir,DBPath:filepath.Join(dir,"db.sqlite"),ThumbnailsPath:filepath.Join(dir,"thumb")}
+	g,err:=library.Open(gc)
+	if err!=nil{t.Fatal(err)}
+	defer g.Close()
+	cfg:=config.Default()
+	cfg.Galleries=[]config.Gallery{gc}
+	var mu sync.RWMutex
+	h:=New(func()*config.Config{return cfg},nil,func(name string)(*library.Gallery,bool){
+		if name==""||name=="A"{return g,true};return nil,false
+	},"test").WithGalleryLock(func()func(){mu.RLock();return mu.RUnlock})
+	scope,err:=h.NewCatalogScope(ctx,true,map[string][]workerproto.Operation{"A":{workerproto.GalleryList,workerproto.ResolveTags}})
+	if err!=nil{t.Fatal(err)}
+	lr,ww,err:=os.Pipe()
+	if err!=nil{t.Fatal(err)}
+	defer lr.Close();defer ww.Close()
+	wr,lw,err:=os.Pipe()
+	if err!=nil{t.Fatal(err)}
+	defer wr.Close();defer lw.Close()
+	type sessionResult struct{s *workerproto.Session;err error}
+	ready:=make(chan sessionResult,1)
+	go func(){s,err:=workerproto.OpenSession(ctx,wr,ww,workerproto.Worker,nil);ready<-sessionResult{s,err}}()
+	lib,err:=workerproto.OpenSession(ctx,lr,lw,workerproto.Library,h.ManagedCatalogHandler(scope))
+	if err!=nil{t.Fatal(err)}
+	defer lib.Close()
+	r:=<-ready
+	if r.err!=nil{t.Fatal(r.err)}
+	w:=r.s
+	defer w.Close()
+	request,err:=workerproto.EncodeResolveTagsRequest(workerproto.ResolveTagsRequest{Gallery:"A",Names:[]string{"fixture"}})
+	if err!=nil{t.Fatal(err)}
+	e,err:=w.Call(ctx,workerproto.ResolveTags,request)
+	if err!=nil||e.Error!=nil{t.Fatalf("scoped read: %+v %v",e,err)}
+	for _,tc:=range []struct{op workerproto.Operation;body json.RawMessage;code string}{
+		{workerproto.CategoryList,json.RawMessage(`{"gallery":"A"}`),"forbidden"},
+		{workerproto.ResolveTags,json.RawMessage(`{"gallery":"B","names":["fixture"]}`),"forbidden"},
+		{workerproto.ResolveTags,json.RawMessage(`{"gallery":"A","names":["fixture"],"path":"/tmp"}`),"invalid"},
+		{workerproto.ImportMedia,json.RawMessage(`{}`),"unsupported"},
+	}{
+		e,err:=w.Call(ctx,tc.op,tc.body)
+		if err!=nil||e.Error==nil||e.Error.Code!=tc.code||len(e.Payload)!=0{t.Fatalf("refusal %s: %+v %v",tc.op,e,err)}
+	}
+	if _,err:=w.Call(ctx,workerproto.OperationStrictTransferStart,nil);!errors.Is(err,workerproto.ErrDirection){t.Fatalf("custody direction: %v",err)}
+	scope.Revoke()
+	e,err=w.Call(ctx,workerproto.ResolveTags,request)
+	if err!=nil||e.Error==nil||e.Error.Code!="forbidden"{t.Fatalf("revoked scope: %+v %v",e,err)}
 }

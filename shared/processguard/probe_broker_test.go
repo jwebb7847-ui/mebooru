@@ -397,3 +397,28 @@ func TestTransferProbePersistedRefusalLeavesWorkerUsable(t *testing.T){
 	b.Close()
 	if err:=waitProbeCleanup(t,ctx,done);err!=nil{t.Fatal(err)}
 }
+
+
+// Registering typed wire vocabulary does not enable an operation. The
+// diagnostic custody channel must refuse even structurally valid plans.
+func TestProbeBrokerReservedAcquisitionOperationsRemainDisconnected(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),10*time.Second)
+	defer cancel()
+	set:=NewOperationSet(1)
+	starts:=0
+	s,_,done:=openProbeFixture(t,ctx,set,func(context.Context)(OperationChild,error){starts++;return new(operationFixture),nil})
+	q:=workerproto.MetadataPlanRequest{JobID:1,Gallery:"A",Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:"https://derpibooru.org/images/1",First:1,Last:1}
+	meta,err:=workerproto.EncodeMetadataPlanRequest(q)
+	if err!=nil{t.Fatal(err)}
+	transfer,err:=workerproto.EncodeTransferPlanRequest(workerproto.TransferPlanRequest{Metadata:q,Subcategory:"post",PolicyGeneration:1,ManifestSHA256:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
+	if err!=nil{t.Fatal(err)}
+	for _,tc:=range []struct{op workerproto.Operation;body json.RawMessage}{
+		{workerproto.OperationMetadataStart,meta},{workerproto.OperationStrictTransferStart,transfer},
+	}{
+		e,err:=s.Call(ctx,tc.op,tc.body)
+		if err!=nil||e.Error==nil||e.Error.Code!="unsupported"||len(e.Payload)!=0{t.Fatalf("reserved operation %s: %+v %v",tc.op,e,err)}
+	}
+	s.Close()
+	if err:=waitProbeCleanup(t,ctx,done);err!=nil{t.Fatal(err)}
+	if starts!=0{t.Fatal("reserved operation reached launcher")}
+}
