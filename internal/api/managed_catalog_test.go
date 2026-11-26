@@ -3,6 +3,10 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"os"
 	"path/filepath"
 	"sync"
@@ -43,7 +47,7 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	allowed:=func(_ context.Context,op workerproto.Operation,name string)bool{
 		return op==workerproto.GalleryList&&(name==""||name=="A")||(op==workerproto.CategoryList||op==workerproto.ResolveTags)&&name=="A"
 	}
-	serve:=h.ManagedCatalogHandler(allowed)
+	serve:=h.managedCatalogHandler(allowed,nil)
 	body,fault:=serve(ctx,workerproto.GalleryList,nil)
 	if fault!=nil{t.Fatal(fault)}
 	cat,err:=workerproto.DecodeGalleryCatalog(body)
@@ -62,7 +66,8 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	if err!=nil{t.Fatal(err)}
 	if err:=galleries[0].TagSvc.RenameTagKeepAlias(canonical.ID,"rainbow_dash_canonical");err!=nil{t.Fatal(err)}
 	if _,err:=galleries[0].TagSvc.AddImplication(canonical.ID,implied.ID);err!=nil{t.Fatal(err)}
-	q:=workerproto.ResolveTagsRequest{Gallery:"A",Names:[]string{"rainbow_dash","rainbow_dash_canonical","never_created","rating:invalid","rainbow_dash"}}
+	if _,err:=galleries[0].TagSvc.RejectTagName("blocked",catID);err!=nil{t.Fatal(err)}
+	q:=workerproto.ResolveTagsRequest{Gallery:"A",Names:[]string{"rainbow_dash","rainbow_dash_canonical","never_created","rating:invalid","rainbow_dash","blocked"}}
 	request,err:=workerproto.EncodeResolveTagsRequest(q)
 	if err!=nil{t.Fatal(err)}
 	body,fault=serve(ctx,workerproto.ResolveTags,request)
@@ -72,13 +77,21 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	if resolved.Results[0].Status!="alias"||resolved.Results[0].ResolvesTo!="rainbow_dash_canonical"||
 		len(resolved.Results[0].Implies)!=1||resolved.Results[0].Implies[0]!="pony"||
 		resolved.Results[1].Status!="exists"||resolved.Results[2].Status!="new"||
-		resolved.Results[3].Status!="refused"||resolved.Results[4].Status!="alias"{
+		resolved.Results[3].Status!="refused"||resolved.Results[4].Status!="alias"||resolved.Results[5].Status!="rejected"{
 		t.Fatalf("resolution: %+v",resolved)
 	}
-	if _,err:=galleries[0].TagSvc.FindTag("never_created",catID);err!=tags.ErrTagNotFound{t.Fatalf("read mutated tags: %v",err)}
+	if _,err:=galleries[0].TagSvc.FindTag("never_created",catID);!errors.Is(err,tags.ErrTagNotFound){t.Fatalf("read mutated tags: %v",err)}
+	// Compare actual compatibility handler output with managed DTO rows.
+	legacyBody,_:=json.Marshal(map[string]any{"names":q.Names})
+	w:=httptest.NewRecorder()
+	h.resolveTags(w,httptest.NewRequest(http.MethodPost,"/api/v1/tags/resolve?gallery=A",strings.NewReader(string(legacyBody))))
+	var legacy struct{Results []workerproto.TagResolution `json:"results"`}
+	if w.Code!=http.StatusOK||json.Unmarshal(w.Body.Bytes(),&legacy)!=nil||!reflect.DeepEqual(legacy.Results,resolved.Results){
+		t.Fatalf("legacy parity: %d %s",w.Code,w.Body.String())
+	}
 	// Permission revoked while acquiring gallery lifetime lock.
 	checks:=0
-	revoked:=h.ManagedCatalogHandler(func(context.Context,workerproto.Operation,string)bool{checks++;return checks==1})
+	revoked:=h.managedCatalogHandler(func(context.Context,workerproto.Operation,string)bool{checks++;return checks==1},nil)
 	if _,f:=revoked(ctx,workerproto.ResolveTags,request);f==nil||f.Code!="forbidden"{t.Fatal("revoked authority accepted")}
 	for _,tc:=range []struct{op workerproto.Operation;body string;code string}{
 		{workerproto.CategoryList,`{"gallery":"B"}`,"forbidden"},
@@ -99,5 +112,57 @@ func TestManagedCatalogHandlerActualGalleries(t *testing.T){
 	// An authorized unavailable gallery must not silently disappear from
 	// managed discovery, unlike the compatibility HTTP route.
 	cfg.Galleries=append(cfg.Galleries,config.Gallery{Name:"missing"})
-	if _,f:=h.ManagedCatalogHandler(func(context.Context,workerproto.Operation,string)bool{return true})(ctx,workerproto.GalleryList,nil);f==nil||f.Code!="unavailable"{t.Fatal("partial managed discovery accepted")}
+	if _,f:=h.managedCatalogHandler(func(context.Context,workerproto.Operation,string)bool{return true},nil)(ctx,workerproto.GalleryList,nil);f==nil||f.Code!="unavailable"{t.Fatal("partial managed discovery accepted")}
+}
+
+func TestManagedCatalogScopePinsGalleryAndOperation(t *testing.T){
+	root:=t.TempDir()
+	open:=func(dir string)*library.Gallery{
+		t.Helper()
+		path:=filepath.Join(root,dir)
+		if err:=os.Mkdir(path,0700);err!=nil{t.Fatal(err)}
+		g,err:=library.Open(config.Gallery{Name:"A",GalleryPath:path,DBPath:filepath.Join(path,"db.sqlite"),ThumbnailsPath:filepath.Join(path,"thumb")})
+		if err!=nil{t.Fatal(err)}
+		t.Cleanup(g.Close)
+		return g
+	}
+	original:=open("original")
+	replacement:=open("replacement")
+	current:=original
+	cfg:=config.Default()
+	cfg.Galleries=[]config.Gallery{{Name:"A"}}
+	var mu sync.RWMutex
+	h:=New(func()*config.Config{return cfg},nil,func(name string)(*library.Gallery,bool){
+		if name==""||name=="A"{return current,true}
+		return nil,false
+	},"test").WithGalleryLock(func()func(){mu.RLock();return mu.RUnlock})
+	ctx:=context.Background()
+	grants:=map[string][]workerproto.Operation{"A":{workerproto.GalleryList,workerproto.ResolveTags}}
+	scope,err:=h.NewCatalogScope(ctx,true,grants)
+	if err!=nil{t.Fatal(err)}
+	// Caller mutation cannot widen the snapshot.
+	grants["A"][1]=workerproto.CategoryList
+	serve:=h.ManagedCatalogHandler(scope)
+	q:=json.RawMessage(`{"gallery":"A","names":["new_tag"]}`)
+	if _,f:=serve(ctx,workerproto.ResolveTags,q);f!=nil{t.Fatal(f)}
+	if _,f:=serve(ctx,workerproto.CategoryList,json.RawMessage(`{"gallery":"A"}`));f==nil||f.Code!="forbidden"{t.Fatal("scope widened")}
+	if _,f:=serve(ctx,workerproto.GalleryList,nil);f!=nil{t.Fatal(f)}
+	// Both galleries remain open: pointer identity, not just Closed,
+	// must prevent a matching name from inheriting an old grant.
+	mu.Lock()
+	current=replacement
+	mu.Unlock()
+	for _,op:=range []workerproto.Operation{workerproto.GalleryList,workerproto.ResolveTags}{
+		var p json.RawMessage
+		if op==workerproto.ResolveTags{p=q}
+		if body,f:=serve(ctx,op,p);body!=nil||f==nil||f.Code!="forbidden"{t.Fatalf("stale grant: %s %s %+v",op,body,f)}
+	}
+	fresh,err:=h.NewCatalogScope(ctx,false,map[string][]workerproto.Operation{"A":{workerproto.ResolveTags}})
+	if err!=nil{t.Fatal(err)}
+	if _,f:=h.ManagedCatalogHandler(fresh)(ctx,workerproto.ResolveTags,q);f!=nil{t.Fatal(f)}
+	fresh.Revoke()
+	if _,f:=h.ManagedCatalogHandler(fresh)(ctx,workerproto.ResolveTags,q);f==nil||f.Code!="forbidden"{t.Fatal("revocation ignored")}
+	if _,err:=h.NewCatalogScope(ctx,false,map[string][]workerproto.Operation{"A":{workerproto.ImportMedia}});err==nil{t.Fatal("mutation grant accepted")}
+	if _,err:=h.NewCatalogScope(ctx,false,map[string][]workerproto.Operation{"":{workerproto.ResolveTags}});err==nil{t.Fatal("implicit gallery grant accepted")}
+	if _,err:=h.NewCatalogScope(ctx,false,map[string][]workerproto.Operation{"A":{workerproto.GalleryList}});err==nil{t.Fatal("implicit discovery grant accepted")}
 }

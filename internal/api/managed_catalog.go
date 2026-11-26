@@ -13,10 +13,16 @@ import (
 // empty-gallery permission and each returned gallery permission.
 type CatalogAuthority func(context.Context,workerproto.Operation,string)bool
 
-// ManagedCatalogHandler exposes bounded read-only catalog and tag resolution
-// callbacks. Requires an explicit trusted authority and the same gallery
-// lifetime lock used by REST. Not mounted or attached in production yet.
-func(h *Handler)ManagedCatalogHandler(allow CatalogAuthority)workerproto.Handler{
+// ManagedCatalogHandler requires a pinned library-owned scope. Not mounted
+// or attached to ordinary production sessions yet.
+func(h *Handler)ManagedCatalogHandler(scope *CatalogScope)workerproto.Handler{
+	if scope==nil||scope.owner!=h{return h.managedCatalogHandler(nil,nil)}
+	return h.managedCatalogHandler(scope.allows,scope.verifyLive)
+}
+
+// The injected authority seam is private; production-compatible callers
+// must use the concrete scope above rather than name-only authorization.
+func(h *Handler)managedCatalogHandler(allow CatalogAuthority, verifyLive CatalogAuthority)workerproto.Handler{
 	return func(ctx context.Context,op workerproto.Operation,body json.RawMessage)(json.RawMessage,*workerproto.Fault){
 		fault:=func(code string)(json.RawMessage,*workerproto.Fault){return nil,&workerproto.Fault{Code:code}}
 		if ctx.Err()!=nil{return fault("canceled")}
@@ -41,7 +47,7 @@ func(h *Handler)ManagedCatalogHandler(allow CatalogAuthority)workerproto.Handler
 		unlock:=h.lock()
 		defer unlock()
 		if ctx.Err()!=nil{return fault("canceled")}
-		if !allow(ctx,op,name){return fault("forbidden")}
+		if !allow(ctx,op,name)||verifyLive!=nil&&!verifyLive(ctx,op,name){return fault("forbidden")}
 		var payload json.RawMessage
 		var err error
 		if op==workerproto.GalleryList{
@@ -66,7 +72,7 @@ func(h *Handler)ManagedCatalogHandler(allow CatalogAuthority)workerproto.Handler
 			}
 		}
 		if ctx.Err()!=nil{return fault("canceled")}
-		if !allow(ctx,op,name){return fault("forbidden")}
+		if !allow(ctx,op,name)||verifyLive!=nil&&!verifyLive(ctx,op,name){return fault("forbidden")}
 		if err!=nil{return fault("unavailable")}
 		return payload,nil
 	}
