@@ -95,3 +95,34 @@ func TestWaitGroupGoneRejectsInvalidIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupGonePermissionRetryRequiresAbsence(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),time.Second)
+	defer cancel()
+	for _,tc:=range []struct{name string;retry bool;seq []error;want error;calls int}{
+		{"darwin-transient",true,[]error{syscall.EPERM,nil,syscall.ESRCH},nil,3},
+		{"darwin-persistent",true,[]error{syscall.EPERM},syscall.EPERM,0},
+		{"linux-permission",false,[]error{syscall.EPERM},syscall.EPERM,1},
+		{"other-error",true,[]error{syscall.EINVAL},syscall.EINVAL,1},
+	}{
+		t.Run(tc.name,func(t *testing.T){
+			calls:=0
+			err:=waitGroupGone(ctx,123,func(group int)error{
+				if group!=123{t.Fatal("wrong group")}
+				i:=min(calls,len(tc.seq)-1)
+				calls++
+				return tc.seq[i]
+			},tc.retry,100*time.Millisecond)
+			if !errors.Is(err,tc.want){t.Fatalf("proof: %v want %v",err,tc.want)}
+			if tc.calls!=0&&calls!=tc.calls{t.Fatalf("calls: %d want %d",calls,tc.calls)}
+			if tc.name=="darwin-persistent"&&calls<2{t.Fatal("permission was not retried")}
+		})
+	}
+}
+
+func TestGroupGonePermissionRetryHonorsCancellation(t *testing.T){
+	ctx,cancel:=context.WithCancel(context.Background())
+	defer cancel()
+	err:=waitGroupGone(ctx,123,func(int)error{cancel();return syscall.EPERM},true,3*time.Second)
+	if !errors.Is(err,context.Canceled){t.Fatal(err)}
+}
