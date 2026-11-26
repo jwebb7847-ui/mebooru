@@ -104,3 +104,29 @@ func TestProbeBrokerUnconfirmedCleanupIsNotSuccess(t *testing.T){
 	child.fail.Store(false)
 	if err:=set.SealAndStop(ctx);err!=nil{t.Fatal(err)}
 }
+
+func TestProbeBrokerRevokesOnUnconfirmedCleanupWithoutClientCooperation(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
+	defer cancel()
+	set:=NewOperationSet(2)
+	bad,other:=new(operationFixture),new(operationFixture)
+	bad.fail.Store(true)
+	next:=0
+	s,c,done:=openProbeFixture(t,ctx,set,func(context.Context)(OperationChild,error){
+		next++
+		if next==1{return bad,nil}
+		return other,nil
+	})
+	ref,err:=c.Start(ctx)
+	if err!=nil{t.Fatal(err)}
+	if _,err:=c.Start(ctx);err!=nil{t.Fatal(err)}
+	body,_:=json.Marshal(ref)
+	// Raw requester deliberately does not close on the refused stop.
+	e,err:=s.Call(ctx,workerproto.OperationProbeStop,body)
+	if err==nil&&e.Error==nil{t.Fatal("uncertain stop acknowledged")}
+	select{case <-s.Done():case <-ctx.Done():t.Fatal("broker did not independently revoke")}
+	if err:=waitProbeCleanup(t,ctx,done);!errors.Is(err,ErrOperationUnconfirmed){t.Fatalf("uncertain cleanup: %v",err)}
+	if !other.stopped.Load(){t.Fatal("sibling left active after failed cleanup")}
+	bad.fail.Store(false)
+	if err:=set.SealAndStop(ctx);err!=nil{t.Fatal(err)}
+}
