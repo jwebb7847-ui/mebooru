@@ -71,6 +71,11 @@ def verify_pinned_runtime(library, directory):
             assert ("PASS: brokered gallery-dl catalog stream: " + str(len(baseline)) + " " +
                     hashlib.sha256(baseline).hexdigest()) in broker.stdout
             verify_transfer_cancel(library, directory)
+            # Actual pinned extractors, synthetic source responses, no sockets.
+            metadata_env = dict(env, MEBOORU_METADATA_TEST_PYTHON=str(python))
+            subprocess.run(["go", "test", "-count=1", "-timeout=3m", "-v",
+                            "-run", "^TestMetadataOperationPinnedRuntime$", "./processguard"],
+                           cwd=workspace / "shared", env=metadata_env, check=True, timeout=240)
             marker.write_text("0" * 64 + "\n", encoding="ascii", newline="\n")
             refused = subprocess.run([str(library), "internal-managed-runtime-version-probe-v1"],
                                      stdin=subprocess.DEVNULL, capture_output=True,
