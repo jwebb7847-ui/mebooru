@@ -112,7 +112,7 @@ jobs:
           go test -count=1 -timeout 3m ./processguard ./workerproto ./acquisitionplan
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cd ../meloader
-          go test -count=1 -timeout 3m ./internal/gdl
+          go test -count=1 -timeout 3m ./internal/gdl ./internal/taxonomy
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify private executable probe (no acquisition)
         env:
