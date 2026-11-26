@@ -362,3 +362,38 @@ func TestTransferProbeWorkerDrainWaitsForProof(t *testing.T){
 		})
 	}
 }
+
+func TestTransferProbePersistedRefusalLeavesWorkerUsable(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
+	defer cancel()
+	set:=NewOperationSet(2)
+	b,c,done:=openTransferProbeFixture(t,ctx,set,func(context.Context)(OperationChild,error){return new(operationFixture),nil},nil,func(context.Context)(OperationChild,error){
+		// Simulates the library persisting offline after the worker's
+		// earlier grant, but before this admitted start reaches custody.
+		return nil,workerproto.ErrOffline
+	})
+	// Reject command-shaped payloads before calling the starter.
+	e,err:=b.Call(ctx,workerproto.OperationTransferProbeStart,json.RawMessage(`{"url":"https://example.invalid"}`))
+	if err!=nil||e.Error==nil||e.Error.Code!="invalid"{t.Fatalf("invalid: %+v %v",e,err)}
+	lr,lw,err:=os.Pipe();if err!=nil{t.Fatal(err)}
+	wr,ww,err:=os.Pipe();if err!=nil{_ = lr.Close();_ = lw.Close();t.Fatal(err)}
+	defer lr.Close();defer lw.Close();defer wr.Close();defer ww.Close()
+	workerDone:=make(chan error,1)
+	go func(){workerDone<-workerproto.ServeLifecycleProbeWithBroker(ctx,wr,lw,c)}()
+	lib,err:=workerproto.OpenSession(ctx,lr,ww,workerproto.Library,nil)
+	if err!=nil{t.Fatal(err)}
+	defer lib.Close()
+	e,err=lib.Call(ctx,workerproto.SetOffline,json.RawMessage(`{"offline":false}`))
+	if err!=nil||e.Error!=nil{t.Fatalf("grant: %+v %v",e,err)}
+	e,err=lib.Call(ctx,workerproto.TransferProbeStart,nil)
+	if err!=nil||e.Error==nil||e.Error.Code!="offline"{t.Fatalf("persisted refusal: %+v %v",e,err)}
+	e,err=lib.Call(ctx,workerproto.SetOffline,json.RawMessage(`{"offline":true}`))
+	if err!=nil||e.Error!=nil{t.Fatalf("drain: %+v %v",e,err)}
+	ack,err:=workerproto.DecodeOfflineAck(e.Payload)
+	if err!=nil||!ack.Offline||!ack.Drained{t.Fatalf("ack: %+v %v",ack,err)}
+	select{case <-b.Done():t.Fatal("explicit no-start refusal closed broker");default:}
+	lib.Close()
+	select{case err:=<-workerDone:if err!=nil{t.Fatal(err)};case <-ctx.Done():t.Fatal(ctx.Err())}
+	b.Close()
+	if err:=waitProbeCleanup(t,ctx,done);err!=nil{t.Fatal(err)}
+}

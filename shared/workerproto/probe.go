@@ -3,6 +3,7 @@ package workerproto
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -42,7 +43,12 @@ func serveLifecycleProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser,br
 		if call.Err()!=nil{return nil,&Fault{Code:"canceled"}}
 		work,finish,err:=gate.Admit(ctx)
 		if err!=nil{return nil,&Fault{Code:"offline"}}
+		// If revocation won before any RPC, release a truly empty
+		// lease. Otherwise retain it until the start result is known:
+		// canceling an in-flight launch is not proof of no child.
+		if work.Err()!=nil{finish(nil);return nil,&Fault{Code:"offline"}}
 		ref,err:=broker.start(call,OperationTransferProbeStart)
+		if errors.Is(err,ErrOffline){finish(nil);return nil,&Fault{Code:"offline"}}
 		if err!=nil{finish(err);return nil,&Fault{Code:"start_failed"}}
 		go func(){
 			<-work.Done()

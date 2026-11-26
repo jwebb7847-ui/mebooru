@@ -21,6 +21,7 @@ func(c *ProbeClient)Start(ctx context.Context)(ProbeOperationRef,error){
 }
 func(c *ProbeClient)start(ctx context.Context,op Operation)(ProbeOperationRef,error){
 	e,err:=c.session.Call(ctx,op,nil)
+	if err==nil&&op==OperationTransferProbeStart&&e.Error!=nil&&e.Error.Code=="offline"{return ProbeOperationRef{},ErrOffline}
 	if err!=nil||e.Error!=nil{
 		c.session.Close()
 		return ProbeOperationRef{},errors.Join(ErrProbeBrokerRefused,err)

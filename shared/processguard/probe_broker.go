@@ -61,6 +61,9 @@ func(b *probeBroker)handle(ctx context.Context,op workerproto.Operation,body jso
 				done()
 				if stopErr!=nil{b.sealed=true;b.revoke();return fault("cleanup_unconfirmed")}
 			}
+			// Only a trusted no-child refusal can be acknowledged as
+			// offline without invalidating the broker session.
+			if op==workerproto.OperationTransferProbeStart&&lease==nil&&errors.Is(err,workerproto.ErrOffline){return fault("offline")}
 			if errors.Is(err,ErrOperationLimit){return fault("busy")}
 			if errors.Is(err,ErrOperationUnconfirmed){b.sealed=true;b.revoke();return fault("cleanup_unconfirmed")}
 			return fault("start_failed")
