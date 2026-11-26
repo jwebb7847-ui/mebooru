@@ -611,14 +611,20 @@ func (c *Client) ListGalleries(ctx context.Context) ([]Gallery, error) {
 // per gallery. One gallery that does not answer costs only its own list, so
 // complete says whether the union is the whole truth.
 func (c *Client) CustomCategories(ctx context.Context) (names []string, complete bool, err error) {
-	galleries, err := c.ListGalleries(ctx)
+	return customCategories(ctx,c.ListGalleries,c.galleryCategories)
+}
+
+// Share the union and completeness semantics between compatibility HTTP
+// and the future private catalog transport without implicit fallback.
+func customCategories(ctx context.Context,list func(context.Context)([]Gallery,error),categories func(context.Context,string)([]string,error))(names []string,complete bool,err error){
+	galleries, err := list(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	answered := 0
 	var firstErr error
 	for _, g := range galleries {
-		found, err := c.galleryCategories(ctx, g.Name)
+		found, err := categories(ctx, g.Name)
 		if err != nil {
 			firstErr = cmp.Or(firstErr, err)
 			continue
