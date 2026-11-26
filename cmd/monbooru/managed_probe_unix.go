@@ -82,3 +82,26 @@ func runOperationProbeLeaf()error{
 	go func(){<-done;os.Exit(3)}()
 	return operationProbeLeaf()
 }
+
+func startRuntimeVersionPlatform(w *os.File,digest string)(processguard.OperationChild,error){
+	cmd,err:=operationProbeCommand("internal-managed-runtime-version-guard-probe-v1")
+	if err!=nil{return nil,err}
+	cmd.Args=append(cmd.Args,digest)
+	cmd.Stdout,cmd.Stderr=w,os.Stderr
+	g,err:=processguard.StartDormantGuard(cmd)
+	if g==nil{return nil,err}
+	return g,err
+}
+func runRuntimeVersionGuard(digest string)error{
+	cmd,err:=operationProbeCommand("internal-managed-runtime-version-leaf-probe-v1")
+	if err!=nil{return err}
+	cmd.Args=append(cmd.Args,digest)
+	cmd.Stdout,cmd.Stderr=os.Stdout,os.Stderr
+	return processguard.RunDormantGuard(os.NewFile(3,"custody-liveness"),cmd)
+}
+func runRuntimeVersionPlatformLeaf(digest string)error{
+	done,err:=processguard.WatchGuard(os.NewFile(3,"guard-liveness"))
+	if err!=nil{return err}
+	go func(){<-done;os.Exit(3)}()
+	return runRuntimeVersionLeaf(digest)
+}

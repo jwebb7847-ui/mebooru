@@ -23,6 +23,12 @@ func dispatchManagedProbe(args []string)bool{
 	if len(args)==0{return false}
 	var err error
 	switch args[0]{
+	case "internal-managed-runtime-version-probe-v1":
+		if len(args)!=1{err=errRuntimeProbe}else{err=runRuntimeVersionProbe()}
+	case "internal-managed-runtime-version-guard-probe-v1":
+		if len(args)!=2{err=errRuntimeProbe}else{err=runRuntimeVersionGuard(args[1])}
+	case "internal-managed-runtime-version-leaf-probe-v1":
+		if len(args)!=2{err=errRuntimeProbe}else{err=runRuntimeVersionPlatformLeaf(args[1])}
 	case "internal-managed-probe-v1":
 		if len(args)!=1{err=processguard.ErrProbeExecutable}else{err=runManagedProbe()}
 	case "internal-managed-crash-probe-v1":

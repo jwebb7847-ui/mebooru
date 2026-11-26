@@ -79,6 +79,8 @@ jobs:
           (cd shared && go test -timeout 5m ./...)
 
       - name: Verify private executable probe (no acquisition)
+        env:
+          MEBOORU_PROBE_PINNED_RUNTIME: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
         run: python3 .github/qa/managed-probe.py
 
       - name: Audit common source and dependency resolution
@@ -103,10 +105,14 @@ jobs:
             shared/go.sum
       - name: Test ownership and protocol transport
         run: |
-          go test -count=1 -timeout 3m ./internal/acquisitionpolicy
+          go test -count=1 -timeout 3m ./internal/acquisitionpolicy ./cmd/monbooru
           cd shared
           go test -count=1 -timeout 3m ./processguard ./workerproto
+          cd ../meloader
+          go test -count=1 -timeout 3m ./internal/gdl
       - name: Verify private executable probe (no acquisition)
+        env:
+          MEBOORU_PROBE_PINNED_RUNTIME: '1'
         run: python .github/qa/managed-probe.py
 
   native:

@@ -37,3 +37,18 @@ func runOperationProbeLeaf()error{
 	if err:=processguard.AwaitJobActivation(os.Stdin);err!=nil{return err}
 	return operationProbeLeaf()
 }
+
+func startRuntimeVersionPlatform(w *os.File,digest string)(processguard.OperationChild,error){
+	cmd,err:=operationProbeCommand("internal-managed-runtime-version-leaf-probe-v1")
+	if err!=nil{return nil,err}
+	cmd.Args=append(cmd.Args,digest)
+	cmd.Stdout,cmd.Stderr=w,os.Stderr
+	job,err:=processguard.StartDormantJob(cmd)
+	if job==nil{return nil,err}
+	return job,err
+}
+func runRuntimeVersionGuard(string)error{return errRuntimeProbe}
+func runRuntimeVersionPlatformLeaf(digest string)error{
+	if err:=processguard.AwaitJobActivation(os.Stdin);err!=nil{return err}
+	return runRuntimeVersionLeaf(digest)
+}
