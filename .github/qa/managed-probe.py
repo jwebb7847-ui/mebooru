@@ -76,6 +76,9 @@ def verify_pinned_runtime(library, directory):
             subprocess.run(["go", "test", "-count=1", "-timeout=3m", "-v",
                             "-run", "^Test(MetadataOperation|StrictTransferOperation)PinnedRuntime$", "./processguard"],
                            cwd=workspace / "shared", env=metadata_env, check=True, timeout=240)
+            subprocess.run(["go", "test", "-count=1", "-timeout=3m", "-v",
+                            "-run", "^TestManagedStrictTransferPinnedRuntime$", "./internal/pipeline"],
+                           cwd=workspace / "meloader", env=metadata_env, check=True, timeout=240)
             marker.write_text("0" * 64 + "\n", encoding="ascii", newline="\n")
             refused = subprocess.run([str(library), "internal-managed-runtime-version-probe-v1"],
                                      stdin=subprocess.DEVNULL, capture_output=True,
