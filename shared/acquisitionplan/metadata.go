@@ -25,14 +25,7 @@ func StrictSourceArgs() []string {
 // StrictSource limits the accepted extractor classification. Host alone
 // is not source proof; the actual extractor result must be checked.
 func StrictSource(site, subcategory string) bool {
-	switch site {
-	case "derpibooru":
-		return subcategory == "post" || subcategory == "search"
-	case "danbooru", "e621":
-		return subcategory == "post" || subcategory == "tag"
-	default:
-		return false
-	}
+	return workerproto.QualifiedMetadataSource(site,subcategory)
 }
 
 // CompileMetadata is a pure, config-free candidate command constructor.

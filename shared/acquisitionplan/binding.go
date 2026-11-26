@@ -160,29 +160,32 @@ const maxClassificationBytes = 64 << 10
 
 // Require one unambiguous header/value pair. Extra extractor blocks,
 // unexpected sites and unqualified subcategories cannot authorize resolve.
-func qualifiedClassification(output, source string) bool {
-	if len(output) > maxClassificationBytes { return false }
-	lines := strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n")
-	count := 0
-	for i, line := range lines {
-		if !strings.Contains(line, "Category / Subcategory") { continue }
-		count++
-		if count != 1 || i+1 >= len(lines) { return false }
-		parts := strings.Split(strings.TrimSpace(lines[i+1]), " / ")
-		if len(parts) != 3 { return false }
-		site := strings.Trim(strings.TrimSpace(parts[0]), "\"")
-		subcategory := strings.Trim(strings.TrimSpace(parts[1]), "\"")
-		if site != source || !StrictSource(site, subcategory) { return false }
+// QualifiedClassification returns the exact qualified extractor subcategory.
+func QualifiedClassification(output, source string)(string,error){
+	if len(output)>maxClassificationBytes{return "",ErrMetadataPlan}
+	lines:=strings.Split(strings.ReplaceAll(output,"\r\n","\n"),"\n")
+	var result string
+	for i,line:=range lines{
+		if !strings.Contains(line,"Category / Subcategory"){continue}
+		if result!=""||i+1>=len(lines){return "",ErrMetadataPlan}
+		parts:=strings.Split(strings.TrimSpace(lines[i+1])," / ")
+		if len(parts)!=3{return "",ErrMetadataPlan}
+		site:=strings.Trim(strings.TrimSpace(parts[0]),"\"")
+		sub:=strings.Trim(strings.TrimSpace(parts[1]),"\"")
+		if site!=source||!StrictSource(site,sub){return "",ErrMetadataPlan}
+		result=sub
 	}
-	return count == 1
+	if result==""{return "",ErrMetadataPlan}
+	return result,nil
 }
 
 func (s *MetadataSequence) AcceptClassification(result ClassificationCompletion) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_,classificationErr:=QualifiedClassification(result.Stdout,s.resolve.Source)
 	if s.phase != classifying || s.classify != result.Request || s.identity != result.Observed ||
 		result.ExitCode != 0 || !result.Cleaned || result.Stderr != "" ||
-		!qualifiedClassification(result.Stdout, s.resolve.Source) {
+		classificationErr!=nil {
 		s.phase = refused
 		return ErrMetadataPlan
 	}

@@ -3,7 +3,6 @@ package processguard
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"sync/atomic"
 	"time"
@@ -15,7 +14,7 @@ import (
 var ErrMetadataOperation = errors.New("contained metadata operation refused")
 
 const metadataClassificationLimit = 64 << 10
-const metadataResolveLimit = 64 << 20
+const metadataResolveLimit = workerproto.MaxMetadataOutputBytes
 const metadataOperationTimeout = 90 * time.Second
 
 // MetadataObserver and MetadataStarter are trusted custody-side seams.
@@ -30,7 +29,7 @@ type MetadataStarter func(context.Context, workerproto.MetadataKind, []string) (
 // MetadataOperation is a one-use candidate orchestration adapter, not a
 // production broker or runtime launcher. One drain lease spans both
 // classification and resolution. Output is returned only to trusted
-// local code, not over IPC; JSON syntax is not strict source evidence.
+// local code, not over IPC; native envelope validation is not a verdict.
 type MetadataOperation struct {
 	set *OperationSet
 	gate *workerproto.DrainGate
@@ -135,14 +134,15 @@ func (o *MetadataOperation) Run(caller context.Context,q workerproto.MetadataPla
 	if err:=o.sequence.AcceptClassification(acquisitionplan.ClassificationCompletion{
 		Request:classify,Observed:o.identity,ExitCode:0,Cleaned:true,Stdout:string(classification),
 	});err!=nil{return nil,ErrMetadataOperation}
+	subcategory,err:=acquisitionplan.QualifiedClassification(string(classification),q.Source)
+	if err!=nil{return nil,ErrMetadataOperation}
 	args,err=o.sequence.BeginResolve(q,o.identity)
 	if err!=nil||!o.current(ctx)||caller.Err()!=nil{return nil,ErrMetadataOperation}
 	out,err,proofErr:=o.capture(ctx,q.Kind,args,metadataResolveLimit)
 	cleanupErr=proofErr
 	if proofErr!=nil{return nil,ErrOperationUnconfirmed}
 	if err!=nil||!o.current(ctx)||caller.Err()!=nil{return nil,ErrMetadataOperation}
-	trimmed:=bytes.TrimSpace(out)
-	if len(trimmed)==0||trimmed[0]!='['||!json.Valid(trimmed){return nil,ErrMetadataOperation}
+	if _,err:=workerproto.DecodeMetadataEvidence(out,q,subcategory);err!=nil{return nil,ErrMetadataOperation}
 	if ctx.Err()!=nil||caller.Err()!=nil{return nil,ErrMetadataOperation}
 	return out,nil
 }
