@@ -221,3 +221,71 @@ func TestVersionBrokerCanceledCallStillCleansRuntime(t *testing.T){
 	if err:=waitProbeCleanup(t,ctx,done);err!=nil{t.Fatal(err)}
 	if !child.stopped.Load(){t.Fatal("canceled version left process")}
 }
+
+func TestVersionBrokerDisabledAndFailedStart(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
+	defer cancel()
+	set:=NewOperationSet(1)
+	s,_,done:=openProbeFixture(t,ctx,set,startOperationFixture(new(operationFixture)))
+	e,err:=s.Call(ctx,workerproto.OperationVersionProbe,nil)
+	if err!=nil||e.Error==nil||e.Error.Code!="unsupported"{t.Fatalf("disabled: %+v %v",e,err)}
+	s.Close()
+	if err:=waitProbeCleanup(t,ctx,done);err!=nil{t.Fatal(err)}
+
+	set=NewOperationSet(1)
+	child:=&versionProbeFixture{read:func(context.Context)(string,error){
+		t.Error("failed start reached version reader")
+		return "",ErrOperationUnconfirmed
+	}}
+	s,c,done:=openVersionProbeFixture(t,ctx,set,startOperationFixture(new(operationFixture)),func(context.Context)(VersionProbeChild,error){
+		return child,errors.New("dormant start failed")
+	})
+	e,err=s.Call(ctx,workerproto.OperationVersionProbe,nil)
+	if err!=nil||e.Error==nil||e.Error.Code!="runtime_probe_failed"||!child.stopped.Load()||child.armed.Load(){t.Fatalf("failed start: %+v %v",e,err)}
+	ref,err:=c.Start(ctx)
+	if err!=nil{t.Fatal("failed dormant operation still occupies slot",err)}
+	if err:=c.Stop(ctx,ref);err!=nil{t.Fatal(err)}
+	s.Close()
+	if err:=waitProbeCleanup(t,ctx,done);err!=nil{t.Fatal(err)}
+}
+
+func TestVersionBrokerRawCancellationPreservesSibling(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second)
+	defer cancel()
+	set:=NewOperationSet(2)
+	sibling:=new(operationFixture)
+	entered,cleanup:=make(chan struct{}),make(chan struct{})
+	child:=&versionProbeFixture{read:func(ctx context.Context)(string,error){
+		close(entered)
+		<-ctx.Done()
+		return "",ctx.Err()
+	},beforeStop:func(context.Context)error{
+		close(cleanup)
+		return nil
+	}}
+	s,c,done:=openVersionProbeFixture(t,ctx,set,startOperationFixture(sibling),func(context.Context)(VersionProbeChild,error){return child,nil})
+	ref,err:=c.Start(ctx)
+	if err!=nil{t.Fatal(err)}
+	call,stop:=context.WithCancel(ctx)
+	defer stop()
+	result:=make(chan error,1)
+	go func(){_,err:=s.Call(call,workerproto.OperationVersionProbe,nil);result<-err}()
+	select{case <-entered:case <-ctx.Done():t.Fatal(ctx.Err())}
+	stop()
+	if err:=<-result;!errors.Is(err,context.Canceled){t.Fatal(err)}
+	select{case <-cleanup:case <-ctx.Done():t.Fatal(ctx.Err())}
+	// Wait for actual lease removal (not just the cancellation request).
+	tick:=time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for{
+		set.mu.Lock()
+		remaining:=len(set.children)
+		set.mu.Unlock()
+		if remaining==1{break}
+		select{case <-ctx.Done():t.Fatal(ctx.Err());case <-tick.C:}
+	}
+	if !child.stopped.Load()||sibling.stopped.Load(){t.Fatal("individual cancellation affected sibling")}
+	if err:=c.Stop(ctx,ref);err!=nil{t.Fatal(err)}
+	s.Close()
+	if err:=waitProbeCleanup(t,ctx,done);err!=nil{t.Fatal(err)}
+}

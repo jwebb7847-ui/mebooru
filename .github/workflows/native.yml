@@ -81,6 +81,7 @@ jobs:
       - name: Verify private executable probe (no acquisition)
         env:
           MEBOORU_PROBE_PINNED_RUNTIME: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
+          MEBOORU_PROBE_STANDALONE_RUNTIME: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
         run: python3 .github/qa/managed-probe.py
 
       - name: Audit common source and dependency resolution
@@ -113,6 +114,7 @@ jobs:
       - name: Verify private executable probe (no acquisition)
         env:
           MEBOORU_PROBE_PINNED_RUNTIME: '1'
+          MEBOORU_PROBE_STANDALONE_RUNTIME: '1'
         run: python .github/qa/managed-probe.py
 
   native:

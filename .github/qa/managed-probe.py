@@ -1,10 +1,12 @@
 """Build real sibling binaries and exercise the private no-acquisition probe."""
 import hashlib
 import os
+import platform
 import shutil
 import sys
 import subprocess
 import tempfile
+import urllib.request
 from pathlib import Path
 
 workspace = Path.cwd()
@@ -73,6 +75,59 @@ def verify_pinned_runtime(library, directory):
             marker.unlink(missing_ok=True)
             candidate.unlink(missing_ok=True)
 
+def verify_standalone_runtime(library, directory):
+    # Separate opt-in hosted gate. Use the existing release-asset pins,
+    # not the fixture-generated digest as the source of release trust.
+    # The actual runtime command is still local-only.
+    if platform.machine().lower() not in ("amd64", "x86_64"):
+        raise RuntimeError("standalone runtime probe requires pinned x86-64 asset")
+    pins = dict(line.split("=", 1) for line in
+                (workspace / "meloader/packaging/pins.env").read_text().splitlines()
+                if line and not line.startswith("#") and "=" in line)
+    version = pins["GDL_VERSION"]
+    if os.name == "nt":
+        asset, expected = "gallery-dl.exe", pins["GDL_SHA256_WINDOWS_AMD64"]
+    elif sys.platform == "linux":
+        asset, expected = "gallery-dl.bin", pins["GDL_SHA256_LINUX_AMD64"]
+    else:
+        raise RuntimeError("no pinned standalone runtime for this OS")
+    url = "https://codeberg.org/mikf/gallery-dl/releases/download/v" + version + "/" + asset
+    candidate = directory / ("gallery-dl" + suffix)
+    marker = directory / "gallery-dl.probe.sha256"
+    try:
+        digest = hashlib.sha256()
+        total = 0
+        request = urllib.request.Request(url, headers={"User-Agent": "Mebooru-QA"})
+        with urllib.request.urlopen(request, timeout=30) as response, candidate.open("xb") as out:
+            while True:
+                chunk = response.read(1 << 20)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > 128 << 20:
+                    raise RuntimeError("standalone asset exceeds bounded size")
+                digest.update(chunk)
+                out.write(chunk)
+        if digest.hexdigest() != expected:
+            raise RuntimeError("standalone asset does not match repository pin")
+        candidate.chmod(0o755)
+        marker.write_text(expected + "\n", encoding="ascii", newline="\n")
+        for mode, label in [
+            ("internal-managed-runtime-version-probe-v1", "contained"),
+            ("internal-managed-runtime-broker-probe-v1", "brokered"),
+        ]:
+            result = subprocess.run([str(library), mode], stdin=subprocess.DEVNULL,
+                                    capture_output=True, cwd=directory, env=env,
+                                    timeout=80, text=True)
+            print(result.stdout, result.stderr, sep="")
+            assert result.returncode == 0, result.returncode
+            assert "PASS: " + label + " gallery-dl version probe: " + version in result.stdout
+        print("PASS: pinned standalone gallery-dl version through custody:", version)
+    finally:
+        marker.unlink(missing_ok=True)
+        candidate.unlink(missing_ok=True)
+
+
 with tempfile.TemporaryDirectory(prefix="mebooru-probe-build-") as scratch:
     directory = Path(scratch)
     library = directory / ("monbooru" + suffix)
@@ -111,4 +166,6 @@ with tempfile.TemporaryDirectory(prefix="mebooru-probe-build-") as scratch:
     assert "PASS: managed executable worker loss recovery (active operation)" in worker_crash.stdout
     if os.environ.get("MEBOORU_PROBE_PINNED_RUNTIME") == "1":
         verify_pinned_runtime(library, directory)
+    if os.environ.get("MEBOORU_PROBE_STANDALONE_RUNTIME") == "1":
+        verify_standalone_runtime(library, directory)
     assert sorted(p.name for p in directory.iterdir()) == sorted([library.name, loader.name])
