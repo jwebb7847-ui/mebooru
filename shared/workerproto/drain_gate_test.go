@@ -73,3 +73,22 @@ func TestDrainGateWaitsForExplicitCompletion(t *testing.T){
 	cancel()
 	if _,_,err:=g.Admit(context.Background());!errors.Is(err,ErrOffline){t.Fatal(err)}
 }
+
+func TestDrainGenerationBoundAdmission(t *testing.T){
+	ctx:=context.Background()
+	gate:=NewDrainGate(ctx)
+	if err:=gate.Open();err!=nil{t.Fatal(err)}
+	old:=gate.CurrentGeneration()
+	_,finish,err:=gate.AdmitBound(ctx,old)
+	if err!=nil{t.Fatal(err)}
+	finish(nil)
+	other:=NewDrainGate(ctx)
+	if err:=other.Open();err!=nil{t.Fatal(err)}
+	if _,_,err:=other.AdmitBound(ctx,old);!errors.Is(err,ErrOffline){t.Fatal("foreign gate accepted")}
+	if err:=gate.Drain(ctx);err!=nil{t.Fatal(err)}
+	if err:=gate.Open();err!=nil{t.Fatal(err)}
+	if _,_,err:=gate.AdmitBound(ctx,old);!errors.Is(err,ErrOffline){t.Fatal("revoked generation accepted")}
+	_,finish,err=gate.AdmitBound(ctx,gate.CurrentGeneration())
+	if err!=nil{t.Fatal(err)}
+	finish(nil)
+}

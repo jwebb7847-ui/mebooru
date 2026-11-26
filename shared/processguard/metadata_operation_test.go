@@ -218,3 +218,18 @@ func TestMetadataOperationCanceledBetweenStages(t *testing.T){
 	if err:=gate.Drain(context.Background());err!=nil{t.Fatal(err)}
 	if err:=set.SealAndStop(context.Background());err!=nil{t.Fatal(err)}
 }
+
+func TestMetadataOperationStaleGrantCannotStartAfterReopen(t *testing.T){
+	ctx:=context.Background()
+	q,r,c,id:=metadataGrant(t)
+	set:=NewOperationSet(1)
+	gate:=workerproto.NewDrainGate(ctx)
+	if err:=gate.Open();err!=nil{t.Fatal(err)}
+	starts:=0
+	o,err:=NewMetadataOperation(set,gate,q,r,c,func(context.Context)(acquisitionplan.MetadataIdentity,error){return id,nil},
+		func(context.Context,workerproto.MetadataKind,[]string)(StreamProbeChild,error){starts++;return nil,ErrMetadataOperation})
+	if err!=nil{t.Fatal(err)}
+	if err:=gate.Drain(ctx);err!=nil{t.Fatal(err)}
+	if err:=gate.Open();err!=nil{t.Fatal(err)}
+	if out,_,err:=o.RunBound(ctx,q);out!=nil||!errors.Is(err,workerproto.ErrOffline)||starts!=0{t.Fatalf("stale metadata grant %q %v %d",out,err,starts)}
+}

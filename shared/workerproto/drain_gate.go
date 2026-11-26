@@ -52,6 +52,34 @@ func(g *DrainGate)Open()error{
 func(g *DrainGate)Admit(caller context.Context)(context.Context,func(error),error){
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	return g.admitLocked(caller)
+}
+
+// DrainGeneration is opaque, in-process authorization identity. It is
+// never serialized or supplied by a requester. Revocation permanently
+// invalidates a generation, including an offline/online cycle.
+type DrainGeneration struct{
+	owner *DrainGate
+	online context.Context
+}
+
+func(g *DrainGate)CurrentGeneration()DrainGeneration{
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.sealed||g.uncertain||g.online==nil||g.online.Err()!=nil{return DrainGeneration{}}
+	return DrainGeneration{owner:g,online:g.online}
+}
+
+// AdmitBound checks the captured generation and acquires a lease in
+// the same critical section. A stale or foreign gate token cannot admit.
+func(g *DrainGate)AdmitBound(caller context.Context,generation DrainGeneration)(context.Context,func(error),error){
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if generation.owner!=g||generation.online==nil||generation.online!=g.online{return nil,nil,ErrOffline}
+	return g.admitLocked(caller)
+}
+
+func(g *DrainGate)admitLocked(caller context.Context)(context.Context,func(error),error){
 	if g.sealed||g.uncertain||g.online==nil||g.online.Err()!=nil{return nil,nil,ErrOffline}
 	if err:=caller.Err();err!=nil{return nil,nil,err}
 	if g.active==0{g.empty=make(chan struct{})}

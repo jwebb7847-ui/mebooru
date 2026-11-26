@@ -40,7 +40,7 @@ func TestManagedTaxonomyExactWindowAndAlias(t *testing.T){
 		return &http.Response{StatusCode:200,Body:io.NopCloser(strings.NewReader(raw)),Header:make(http.Header)},nil
 	})
 	makeWindow:=func()*ManagedTaxonomyWindow{
-		w,err:=NewManagedTaxonomyWindow(q,"post",body,gate,func(context.Context,workerproto.MetadataPlanRequest)bool{return true},transport)
+		w,err:=NewManagedTaxonomyWindow(q,"post",body,gate,gate.CurrentGeneration(),func(context.Context,workerproto.MetadataPlanRequest)bool{return true},transport)
 		if err!=nil{t.Fatal(err)}
 		return w
 	}
@@ -67,7 +67,7 @@ func TestManagedTaxonomyDrainAndRedirectRefusal(t *testing.T){
 	if err:=gate.Open();err!=nil{t.Fatal(err)}
 	entered,revoked,release:=make(chan struct{}),make(chan struct{}),make(chan struct{})
 	var calls atomic.Int32
-	w,err:=NewManagedTaxonomyWindow(q,"post",body,gate,func(context.Context,workerproto.MetadataPlanRequest)bool{return true},
+	w,err:=NewManagedTaxonomyWindow(q,"post",body,gate,gate.CurrentGeneration(),func(context.Context,workerproto.MetadataPlanRequest)bool{return true},
 		managedTaxonomyTransportFunc(func(r *http.Request)(*http.Response,error){
 			calls.Add(1);close(entered);<-r.Context().Done();close(revoked)
 			select{case <-release:case <-ctx.Done():}
@@ -87,11 +87,37 @@ func TestManagedTaxonomyDrainAndRedirectRefusal(t *testing.T){
 	select{case err:=<-drain:if err!=nil{t.Fatal(err)};case <-ctx.Done():t.Fatal(ctx.Err())}
 	if calls.Load()!=1{t.Fatal("requests after cancellation")}
 	if err:=gate.Open();err!=nil{t.Fatal(err)}
-	w,err=NewManagedTaxonomyWindow(q,"post",body,gate,func(context.Context,workerproto.MetadataPlanRequest)bool{return true},
+	w,err=NewManagedTaxonomyWindow(q,"post",body,gate,gate.CurrentGeneration(),func(context.Context,workerproto.MetadataPlanRequest)bool{return true},
 		managedTaxonomyTransportFunc(func(r *http.Request)(*http.Response,error){
 			calls.Add(1)
 			return &http.Response{StatusCode:302,Header:http.Header{"Location":[]string{"https://example.invalid/"}},Body:io.NopCloser(strings.NewReader(""))},nil
 		}))
 	if err!=nil{t.Fatal(err)}
 	if out,err:=w.Run(ctx,q);out!=nil||err==nil||calls.Load()!=2{t.Fatalf("redirect followed: %v %v calls=%d",out,err,calls.Load())}
+}
+
+type unconfirmedTaxonomyBody struct{io.Reader}
+func(unconfirmedTaxonomyBody)Close()error{return errors.New("fixture close failure")}
+
+func TestManagedTaxonomyRejectsStaleGenerationAndUnconfirmedClose(t *testing.T){
+	ctx:=context.Background()
+	q,body:=managedTaxonomyFixture()
+	gate:=workerproto.NewDrainGate(ctx)
+	if err:=gate.Open();err!=nil{t.Fatal(err)}
+	old:=gate.CurrentGeneration()
+	calls:=0
+	transport:=managedTaxonomyTransportFunc(func(*http.Request)(*http.Response,error){
+		calls++
+		return &http.Response{StatusCode:200,Header:make(http.Header),Body:unconfirmedTaxonomyBody{strings.NewReader("{}")}},nil
+	})
+	scope:=func(context.Context,workerproto.MetadataPlanRequest)bool{return true}
+	if err:=gate.Drain(ctx);err!=nil{t.Fatal(err)}
+	if err:=gate.Open();err!=nil{t.Fatal(err)}
+	stale,err:=NewManagedTaxonomyWindow(q,"post",body,gate,old,scope,transport)
+	if err!=nil{t.Fatal(err)}
+	if out,err:=stale.Run(ctx,q);out!=nil||!errors.Is(err,workerproto.ErrOffline)||calls!=0{t.Fatal("stale metadata generation admitted")}
+	fresh,err:=NewManagedTaxonomyWindow(q,"post",body,gate,gate.CurrentGeneration(),scope,transport)
+	if err!=nil{t.Fatal(err)}
+	if out,err:=fresh.Run(ctx,q);out!=nil||!errors.Is(err,workerproto.ErrDrainUnconfirmed)||calls!=1{t.Fatalf("unconfirmed close: %v %v calls=%d",out,err,calls)}
+	if !errors.Is(gate.Drain(ctx),workerproto.ErrDrainUnconfirmed)||gate.Open()==nil{t.Fatal("unconfirmed HTTP cleanup reopened admission")}
 }

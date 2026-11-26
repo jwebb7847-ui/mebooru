@@ -35,6 +35,7 @@ type ManagedTaxonomyWindow struct{
 	grant workerproto.MetadataPlanRequest
 	native []workerproto.MetadataPost
 	gate *workerproto.DrainGate
+	generation workerproto.DrainGeneration
 	scope ManagedTaxonomyScope
 	transport http.RoundTripper
 	used atomic.Bool
@@ -42,13 +43,14 @@ type ManagedTaxonomyWindow struct{
 
 // transport is a trusted local transport, never a requester option. It
 // must honor request cancellation and complete/close response bodies.
+// generation must come from the original trusted metadata result.
 // This candidate does not prove socket-level cleanup or DNS confinement.
 func NewManagedTaxonomyWindow(grant workerproto.MetadataPlanRequest, subcategory string, body []byte,
-	gate *workerproto.DrainGate, scope ManagedTaxonomyScope, transport http.RoundTripper)(*ManagedTaxonomyWindow,error){
+	gate *workerproto.DrainGate, generation workerproto.DrainGeneration, scope ManagedTaxonomyScope, transport http.RoundTripper)(*ManagedTaxonomyWindow,error){
 	if grant.Source!="derpibooru"||gate==nil||scope==nil||transport==nil{return nil,ErrManagedTaxonomy}
 	native,err:=workerproto.DecodeMetadataEvidence(body,grant,subcategory)
 	if err!=nil{return nil,ErrManagedTaxonomy}
-	return &ManagedTaxonomyWindow{grant:grant,native:native,gate:gate,scope:scope,transport:transport},nil
+	return &ManagedTaxonomyWindow{grant:grant,native:native,gate:gate,generation:generation,scope:scope,transport:transport},nil
 }
 
 // Only the exact validated tag names/IDs can be searched. Alias-target
@@ -60,6 +62,7 @@ type managedTagTransport struct{
 	allowedNames,allowedIDs map[string]bool
 	allowed func(context.Context)bool
 	count atomic.Int32
+	unconfirmed atomic.Bool
 }
 
 func (t *managedTagTransport) permitted(req *http.Request)bool{
@@ -95,16 +98,17 @@ func (t *managedTagTransport) permitted(req *http.Request)bool{
 }
 
 func(t *managedTagTransport)RoundTrip(req *http.Request)(*http.Response,error){
-	if !t.permitted(req)||t.count.Add(1)>maxManagedTaxonomyRequests{return nil,ErrManagedTaxonomy}
+	if t.unconfirmed.Load()||!t.permitted(req)||t.count.Add(1)>maxManagedTaxonomyRequests{return nil,ErrManagedTaxonomy}
 	resp,err:=t.base.RoundTrip(req)
 	if err!=nil||resp==nil||resp.Body==nil{
-		if resp!=nil&&resp.Body!=nil{_ = resp.Body.Close()}
+		if resp!=nil&&resp.Body!=nil{if resp.Body.Close()!=nil{t.unconfirmed.Store(true)}}
 		return nil,ErrManagedTaxonomy
 	}
 	// Consume and close the real response under the same admission lease;
 	// bounded even on error/status/redirect. No raw remote error is exposed.
 	data,readErr:=io.ReadAll(io.LimitReader(resp.Body,maxManagedTaxonomyResponse+1))
 	closeErr:=resp.Body.Close()
+	if closeErr!=nil{t.unconfirmed.Store(true)}
 	if readErr!=nil||closeErr!=nil||len(data)>maxManagedTaxonomyResponse||!t.allowed(req.Context())||
 		resp.StatusCode>=300&&resp.StatusCode<400{return nil,ErrManagedTaxonomy}
 	resp.Body=io.NopCloser(bytes.NewReader(data))
@@ -133,14 +137,17 @@ func decodeManagedNative(raw []byte)(map[string]any,error){
 // and apply the user's blacklist to the interpreted evidence.
 func(w *ManagedTaxonomyWindow)Run(caller context.Context,request workerproto.MetadataPlanRequest)([]ManagedTaxonomyPost,error){
 	if w==nil||request!=w.grant||!w.used.CompareAndSwap(false,true){return nil,ErrManagedTaxonomy}
-	ctx,finish,err:=w.gate.Admit(caller)
+	ctx,finish,err:=w.gate.AdmitBound(caller,w.generation)
 	if err!=nil{return nil,err}
-	defer finish(nil)
+	var t *managedTagTransport
+	defer func(){
+		if t!=nil&&t.unconfirmed.Load(){finish(workerproto.ErrDrainUnconfirmed)}else{finish(nil)}
+	}()
 	ctx,cancel:=context.WithTimeout(ctx,90*time.Second)
 	defer cancel()
 	allowed:=func(c context.Context)bool{return c.Err()==nil&&ctx.Err()==nil&&caller.Err()==nil&&w.scope(c,w.grant)}
 	if !allowed(ctx){return nil,ErrManagedTaxonomy}
-	t:=&managedTagTransport{base:w.transport,allowedNames:map[string]bool{},allowedIDs:map[string]bool{},allowed:allowed}
+	t=&managedTagTransport{base:w.transport,allowedNames:map[string]bool{},allowedIDs:map[string]bool{},allowed:allowed}
 	out:=make([]ManagedTaxonomyPost,0,len(w.native))
 	posts:=make([]map[string]any,0,len(w.native))
 	for _,post:=range w.native{
@@ -162,6 +169,7 @@ func(w *ManagedTaxonomyWindow)Run(caller context.Context,request workerproto.Met
 	resolver,err:=newDerpibooru("",derpibooruBaseURL,client)
 	if err!=nil{return nil,ErrManagedTaxonomy}
 	errs:=resolver.EnrichBatch(ctx,request.Source,posts)
+	if t.unconfirmed.Load(){return nil,workerproto.ErrDrainUnconfirmed}
 	if len(errs)!=len(posts)||!allowed(ctx){return nil,ErrManagedTaxonomy}
 	for i,e:=range errs{
 		if _,ok:=posts[i][kwdict.InterpretedTagsKey].([]kwdict.InterpretedTag);e!=nil||!ok{return nil,ErrManagedTaxonomy}

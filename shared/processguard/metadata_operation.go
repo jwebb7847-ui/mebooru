@@ -36,6 +36,7 @@ type MetadataOperation struct {
 	sequence *acquisitionplan.MetadataSequence
 	request workerproto.MetadataPlanRequest
 	identity acquisitionplan.MetadataIdentity
+	generation workerproto.DrainGeneration
 	observe MetadataObserver
 	start MetadataStarter
 	used atomic.Bool
@@ -50,7 +51,7 @@ func NewMetadataOperation(set *OperationSet, gate *workerproto.DrainGate,
 	cfg,err:=config.Identity()
 	if err!=nil{return nil,ErrMetadataOperation}
 	return &MetadataOperation{set:set,gate:gate,sequence:sequence,request:grant,
-		identity:acquisitionplan.MetadataIdentity{Runtime:runtime,Config:cfg},observe:observe,start:start},nil
+		identity:acquisitionplan.MetadataIdentity{Runtime:runtime,Config:cfg},generation:gate.CurrentGeneration(),observe:observe,start:start},nil
 }
 
 // capture returns a separate cleanup error. A canceled read, EOF or
@@ -111,9 +112,25 @@ func (o *MetadataOperation) current(ctx context.Context) bool {
 // waits for the entire operation's final cleanup. This is not atomic
 // result publication with the library policy transaction.
 func (o *MetadataOperation) Run(caller context.Context,q workerproto.MetadataPlanRequest)([]byte,error){
+	out,_,err:=o.RunBound(caller,q)
+	return out,err
+}
+
+// RunBound returns the originating opaque online generation with the
+// validated native output. A subsequent local taxonomy candidate must
+// use AdmitBound on that same gate and token, not acquire a fresh grant
+// based on old metadata. Not a wire DTO or durable job authorization.
+func (o *MetadataOperation) RunBound(caller context.Context,q workerproto.MetadataPlanRequest)([]byte,workerproto.DrainGeneration,error){
+	if o==nil{return nil,workerproto.DrainGeneration{},ErrMetadataOperation}
+	out,err:=o.run(caller,q)
+	if err!=nil{return nil,workerproto.DrainGeneration{},err}
+	return out,o.generation,nil
+}
+
+func (o *MetadataOperation) run(caller context.Context,q workerproto.MetadataPlanRequest)([]byte,error){
 	if o==nil||o.sequence==nil||q!=o.request||!o.used.CompareAndSwap(false,true){return nil,ErrMetadataOperation}
 	defer o.sequence.Invalidate()
-	ctx,finish,err:=o.gate.Admit(caller)
+	ctx,finish,err:=o.gate.AdmitBound(caller,o.generation)
 	if err!=nil{return nil,err}
 	var cleanupErr error
 	defer func(){finish(cleanupErr)}()
