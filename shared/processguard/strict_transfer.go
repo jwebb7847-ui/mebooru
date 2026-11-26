@@ -31,11 +31,11 @@ type StrictTransferStarter func(context.Context,StrictTransferStage,[]string)(St
 
 // RunStrictTransfer is an isolated QA coordinator, not a production
 // dispatcher. root is a fresh trusted disposable directory, not a
-// worker path. Returned stdout is not a file receipt or ingest grant.
-// Staging, returned evidence checks, real policy authority and atomic
+// worker path. Returned file evidence is not a durable receipt or ingest grant.
+// Production staging, real policy authority and atomic
 // launch/revocation remain required before production integration.
 func RunStrictTransfer(caller context.Context,set *OperationSet,q workerproto.TransferPlanRequest,
-	config acquisitionplan.MetadataConfig,root string,admit StrictTransferAdmission,current StrictTransferCurrent,start StrictTransferStarter)([]byte,error){
+	config acquisitionplan.MetadataConfig,root string,admit StrictTransferAdmission,current StrictTransferCurrent,start StrictTransferStarter)([]acquisitionplan.VerifiedTransferFile,error){
 	if set==nil||admit==nil||current==nil||start==nil||!workerproto.ValidTransferPlan(q){return nil,ErrStrictTransferOperation}
 	ctx,manifest,finish,err:=admit(caller,q)
 	if err!=nil{return nil,err}
@@ -70,7 +70,9 @@ func RunStrictTransfer(caller context.Context,set *OperationSet,q workerproto.Tr
 		case TransferPositive:
 			if !acquisitionplan.ValidatePredicateProbe(out,true){return nil,ErrStrictTransferOperation}
 		case TransferMedia:
-			return out,nil
+			files,err:=commands.VerifyTransferResult(ctx,out)
+			if err!=nil||!allowed(){return nil,ErrStrictTransferOperation}
+			return files,nil
 		}
 	}
 	return nil,ErrStrictTransferOperation

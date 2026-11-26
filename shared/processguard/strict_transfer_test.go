@@ -55,13 +55,13 @@ func TestStrictTransferOperationRequiresEveryProbe(t *testing.T){
 				case TransferPositive:
 					f.data=`[[2,{}],[3,"x",{}]]`
 					if mode=="positive empty"{f.data=`[[2,{}]]`}
-				case TransferMedia:f.data="synthetic result"
+				case TransferMedia:f.data=""
 				}
 				previous=f
 				return f,nil
 			})
 			if mode=="success"{
-				if err!=nil||string(out)!="synthetic result"||!slices.Equal(stages,[]StrictTransferStage{TransferVersion,TransferNegative,TransferPositive,TransferMedia}){t.Fatalf("success: %q %v %v",out,err,stages)}
+				if err!=nil||len(out)!=0||!slices.Equal(stages,[]StrictTransferStage{TransferVersion,TransferNegative,TransferPositive,TransferMedia}){t.Fatalf("success: %v %v %v",out,err,stages)}
 			}else{
 				if err==nil||out!=nil||slices.Contains(stages,TransferMedia){t.Fatalf("failed probe launched transfer: %v %v",err,stages)}
 			}

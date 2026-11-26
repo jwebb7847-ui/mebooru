@@ -153,7 +153,7 @@ func TestStrictTransferOperationPinnedRuntime(t *testing.T){
 	root,err:=filepath.EvalSymlinks(t.TempDir())
 	if err!=nil{t.Fatal(err)}
 	var stages []StrictTransferStage
-	_,err=RunStrictTransfer(ctx,set,plan.Request(),c,root,func(caller context.Context,request workerproto.TransferPlanRequest)(context.Context,[]byte,func(error),error){
+	files,err:=RunStrictTransfer(ctx,set,plan.Request(),c,root,func(caller context.Context,request workerproto.TransferPlanRequest)(context.Context,[]byte,func(error),error){
 		lease,finish,err:=gate.AdmitBound(caller,epoch)
 		if err!=nil{return nil,nil,nil,err}
 		manifest,err:=plan.Consume(request,id,1)
@@ -164,6 +164,7 @@ func TestStrictTransferOperationPinnedRuntime(t *testing.T){
 		return start(c,args)
 	})
 	if err!=nil{t.Fatalf("strict transfer stage %v: %v",stages,err)}
+	if len(files)!=1||files[0].ID!="42"||files[0].Size!=int64(len("synthetic fixture bytes")){t.Fatalf("verified files: %+v",files)}
 	if !slices.Equal(stages,[]StrictTransferStage{TransferVersion,TransferNegative,TransferPositive,TransferMedia}){t.Fatalf("stages: %v",stages)}
 	lock.Lock()
 	got:=slices.Clone(requests)

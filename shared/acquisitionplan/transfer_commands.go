@@ -35,6 +35,8 @@ type TransferCommands struct {
 	manifestPath string
 	probePath string
 	manifest []byte
+	request workerproto.TransferPlanRequest
+	mediaRoot string
 }
 
 // PrepareTransferCommands accepts only a fresh, empty, owner-created
@@ -70,9 +72,10 @@ func PrepareTransferCommands(q workerproto.TransferPlanRequest,manifest []byte,c
 	args:=append([]string{"--config-ignore"},options...)
 	args=append(args,StrictSourceArgs()...)
 	args=append(args,"-D",dest,"--filter",gate,"-o","fallback=false","-o","archive=",
+		"-o",`postprocessors=[{"name":"metadata","mode":"json","event":"file"}]`,"-o","filename={id}.{extension}",
 		"--post-range",strconv.FormatUint(uint64(q.Metadata.First),10)+"-"+strconv.FormatUint(uint64(q.Metadata.Last),10),"--",q.Metadata.URL)
 	return TransferCommands{Version:[]string{"--config-ignore","--version"},Negative:probe(gate),Positive:probe(StrictGateExpression(probePath)),Transfer:args,
-		manifestPath:manifestPath,probePath:probePath,manifest:bytes.Clone(manifest)},nil
+		manifestPath:manifestPath,probePath:probePath,manifest:bytes.Clone(manifest),request:q,mediaRoot:dest},nil
 }
 const probeManifest = `{"1":{"category":"directlink","tags":["probe"]}}`
 
