@@ -58,3 +58,7 @@ Initial source review, 2026-11-27. Reviewed tree `281cbfb83e9169dde1acb5fb0e6a98
 4. Tests for b: malformed/unknown/oversized DTO, missing scope, cross-gallery/job, stale permission, exact ordered responses, cancellation and no fallback. Tests for later c/d/e: durable staging and uncertain acknowledgement, network/child drain, held work, local-only PTR, disposal/restart and integrated strict media boundary. Full ready-PR matrix and owner acceptance remain required.
 
 No product decision requested in this review. Managed acquisition remains disabled and PR #38 remains draft.
+
+## 2026-11-27 metadata plan increment
+
+The existing generated configuration is **not** a qualified managed execution input: `gdl/config.go` merges profile options, site credentials/cookies and raw JSON last over archive, cache, output, postprocessors and extractor settings. This candidate uses only fixed config-free arguments and shares strict evidence flags with the legacy path. Before connecting real execution, design immutable trusted config generation and runtime identity, preserve required categorized metadata behavior (including resolve-off site options), bind actual extractor classification and grant to a bounded job, and reject unqualified config. Do not interpret allowed hostname syntax as redirect/DNS policy, or exact plan equality as online permission. `FetchMeta` unbounded legacy behavior, trace/test requests without durable jobs, custom hosts and normal/deep acquisition need separate qualified plan types or explicit refusal. Production remains disconnected.

@@ -11,13 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/kwdict"
 	"github.com/monbooru/monloader/internal/outcome"
 )
 
-const strictMediaURLKey = "meloader_verified_media_url"
+const strictMediaURLKey = acquisitionplan.StrictMediaURLKey
 
 // Qualification policy, independent of how the runtime is launched.
 // Expanding this list requires explicit source/predicate/transfer evidence.
@@ -28,14 +29,7 @@ func strictVersionQualified(version string)bool{return version==strictQualifiedV
 // StrictSource limits the transfer guarantee to extractor paths covered by
 // the pinned gallery-dl predicate behavior. Other routes stop before resolve.
 func StrictSource(site, subcategory string) bool {
-	switch site {
-	case "derpibooru":
-		return subcategory == "post" || subcategory == "search"
-	case "danbooru", "e621":
-		return subcategory == "post" || subcategory == "tag"
-	default:
-		return false
-	}
+	return acquisitionplan.StrictSource(site, subcategory)
 }
 
 func (t *Tool) ResolveStrict(ctx context.Context, url, rng string) (ResolveResult, error) {
@@ -107,12 +101,7 @@ func strictGateExpression(path string) string {
 }
 
 func strictSourceArgs() []string {
-	// gallery-dl applies custom keywords and generated metadata after
-	// extraction. Keep those options from replacing the source evidence.
-	return []string{"--child-filter", "False", "-o", "follow=false",
-		"-o", "keywords={}", "-o", "keywords-global={}",
-		"-o", "metadata-url=" + strictMediaURLKey, "-o", "metadata-path=false",
-		"-o", "metadata-http=false", "-o", "metadata-version=false", "-o", "metadata-extractor=false"}
+	return acquisitionplan.StrictSourceArgs()
 }
 
 func strictDownloadArgs(workDir, rng, url string, archive Archive, gate string) []string {

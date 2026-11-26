@@ -88,6 +88,8 @@ const (
 	OperationStreamRead Operation = "custody.stream_probe_read"
 	OperationStreamFinish Operation = "custody.stream_probe_finish"
 	OperationStreamStop Operation = "custody.stream_probe_stop"
+	// Reserved typed metadata start; no broker handler is enabled yet.
+	OperationMetadataStart Operation = "custody.metadata_start"
 
 	Health Operation = "worker.health"
 	SetOffline Operation = "worker.set_offline"
@@ -173,6 +175,7 @@ var rules = map[Operation]Rule{
 	OperationStreamRead: {OperationRequester, Local},
 	OperationStreamFinish: {OperationRequester, Local},
 	OperationStreamStop: {OperationRequester, Local},
+	OperationMetadataStart: {OperationRequester, Online},
 	Health: {Library, Local},
 	SetOffline: {Library, Local},
 	Shutdown: {Library, Local},
