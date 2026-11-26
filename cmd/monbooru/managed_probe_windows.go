@@ -10,17 +10,19 @@ import (
 	"github.com/monbooru/monbooru/internal/acquisitionpolicy"
 )
 
-func startManagedProbeWorker(r,w,br,bw *os.File)(acquisitionpolicy.CustodyChild,error){
+func startManagedProbeWorker(r,w,br,bw *os.File,abortWorker bool)(acquisitionpolicy.CustodyChild,error){
 	path,err:=processguard.ProbeSibling("monbooru","monloader")
 	if err!=nil{return nil,err}
-	cmd:=exec.Command(path,"internal-managed-worker-probe-v1")
+	mode:="internal-managed-worker-probe-v1"
+	if abortWorker{mode="internal-managed-worker-loss-probe-v1"}
+	cmd:=exec.Command(path,mode)
 	cmd.Stderr=os.Stderr
 	job,err:=processguard.StartDormantJobWithBroker(cmd,r,w,br,bw)
 	if job==nil{return nil,err}
 	if err!=nil{return job,err}
 	return job,job.Activate()
 }
-func runManagedGuardProbe()error{return processguard.ErrProbeExecutable}
+func runManagedGuardProbe(bool)error{return processguard.ErrProbeExecutable}
 
 func startOperationProbePlatform(w *os.File)(processguard.OperationChild,error){
 	cmd,err:=operationProbeCommand("internal-managed-operation-leaf-probe-v1")

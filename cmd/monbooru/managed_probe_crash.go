@@ -79,13 +79,15 @@ func crashProbeManager(ctx context.Context,dir,mode string)(*acquisitionpolicy.M
 	if err!=nil{_ = store.Close();_ = lock.Close();return nil,nil,nil,err}
 	generation:=new(string)
 	m,err:=acquisitionpolicy.NewManager(ctx,lock,policy,func(start,lifetime context.Context,f *acquisitionpolicy.WorkerFence)(acquisitionpolicy.ManagedPeer,error){
+		launchMode:=mode
+		if *generation!=""{launchMode="internal-managed-custody-probe-v1"}
 		*generation=f.Generation()
-		cmd:=exec.Command(self,mode,dir,*generation)
+		cmd:=exec.Command(self,launchMode,dir,*generation)
 		cmd.Stderr=os.Stderr
 		p,err:=acquisitionpolicy.StartCustodySession(start,lifetime,cmd,f,nil)
 		if p==nil{return nil,err}
 		return p,err
-	},acquisitionpolicy.LifecycleOptions{})
+	},acquisitionpolicy.LifecycleOptions{RestartDelay:time.Millisecond})
 	if err!=nil{_ = store.Close();_ = lock.Close();return nil,nil,nil,err}
 	return m,store,generation,nil
 }
@@ -238,5 +240,78 @@ func runExecutableCrashProbe()(result error){
 	if err:=recoverCrashProbe(ctx,dir,old);err!=nil{return err}
 	safe=true
 	fmt.Println("PASS: managed executable crash recovery (active operation)")
+	return nil
+}
+
+// Keep the library and its lock alive while the designated diagnostic
+// worker abruptly exits inside a health handler. No arbitrary PID or
+// general crash operation is exposed. The normal worker entry has no
+// abort hook and is used for the replacement generation.
+func runExecutableWorkerCrashProbe()(result error){
+	if _,err:=processguard.ProbeSibling("monbooru","monloader");err!=nil{return err}
+	temp,err:=filepath.EvalSymlinks(os.TempDir())
+	if err!=nil{return err}
+	dir,err:=os.MkdirTemp(temp,managedProbePrefix)
+	if err!=nil{return err}
+	safe:=false
+	defer func(){
+		if safe{result=errors.Join(result,os.RemoveAll(dir))}else{fmt.Fprintln(os.Stderr,"retained disposable worker crash profile:",dir)}
+	}()
+	ctx,cancel:=context.WithTimeout(context.Background(),65*time.Second)
+	defer cancel()
+	m,store,generation,err:=crashProbeManager(ctx,dir,"internal-managed-worker-loss-custody-probe-v1")
+	if err!=nil{return err}
+	defer store.Close()
+	defer func(){
+		_ = os.WriteFile(filepath.Join(dir,crashRelease),nil,0600)
+		stop,done:=context.WithTimeout(context.Background(),20*time.Second)
+		defer done()
+		result=errors.Join(result,m.Shutdown(stop))
+	}()
+	lease,err:=m.Acquire(ctx)
+	if err!=nil{return err}
+	defer lease.Release()
+	if err:=checkCrashHealth(ctx,m,lease,false);err!=nil{return err}
+	if err:=m.SetOffline(ctx,false);err!=nil{return err}
+	if !m.EffectiveOnline(){return errors.New("online acknowledgement missing before worker crash")}
+	old:=*generation
+	p,ok:=lease.Peer.(*acquisitionpolicy.CustodySessionPeer)
+	if !ok{return processguard.ErrProbeExecutable}
+	if _,err:=p.Session().Call(ctx,workerproto.Health,nil);err==nil{return errors.New("abrupt worker loss returned a response")}
+	select{case <-p.Done():case <-ctx.Done():return ctx.Err()}
+	if m.EffectiveOnline(){return errors.New("dead worker retained admission")}
+	if err:=waitCrashMarker(ctx,dir,crashPending);err!=nil{return err}
+	if _,err:=os.Lstat(filepath.Join(dir,"acquisition-cleanup.receipt"));!errors.Is(err,os.ErrNotExist){return errors.New("worker crash receipt preceded cleanup")}
+	other,err:=acquisitionpolicy.LockProfile(dir)
+	if other!=nil{_ = other.Close()}
+	if !errors.Is(err,acquisitionpolicy.ErrProfileOwned){return errors.Join(errors.New("live library lost profile ownership"),err)}
+	next,err:=m.Acquire(ctx)
+	if next!=nil{next.Release()}
+	if next!=nil||!errors.Is(err,acquisitionpolicy.ErrActiveLeases){return errors.Join(errors.New("replacement permitted before lost lease release"),err)}
+	if err:=m.SetOffline(ctx,false);!errors.Is(err,acquisitionpolicy.ErrPeerUnusable){return errors.Join(errors.New("dead peer allowed online grant"),err)}
+	lease.Release()
+	if err:=os.WriteFile(filepath.Join(dir,crashRelease),nil,0600);err!=nil{return err}
+	if err:=m.Tick(ctx,false);err!=nil{return err}
+	if err:=waitCrashReceipt(ctx,dir,old);err!=nil{return err}
+	if err:=m.SetOffline(ctx,true);err!=nil{return err}
+	tick:=time.NewTicker(10*time.Millisecond)
+	defer tick.Stop()
+	for{
+		next,err=m.Acquire(ctx)
+		if !errors.Is(err,acquisitionpolicy.ErrRestartBackoff){break}
+		select{case <-ctx.Done():return ctx.Err();case <-tick.C:}
+	}
+	if err!=nil{return err}
+	defer next.Release()
+	if *generation==""||*generation==old{return errors.New("worker replacement reused generation")}
+	if err:=checkCrashHealth(ctx,m,next,false);err!=nil{return err}
+	if err:=m.SetOffline(ctx,false);err!=nil{return err}
+	if err:=checkCrashHealth(ctx,m,next,true);err!=nil{return err}
+	if err:=m.SetOffline(ctx,true);err!=nil{return err}
+	if err:=checkCrashHealth(ctx,m,next,false);err!=nil{return err}
+	if err:=m.Shutdown(ctx);err!=nil{return err}
+	if err:=waitCrashReceipt(ctx,dir,*generation);err!=nil{return err}
+	safe=true
+	fmt.Println("PASS: managed executable worker loss recovery (active operation)")
 	return nil
 }

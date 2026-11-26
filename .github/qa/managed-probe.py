@@ -33,4 +33,14 @@ with tempfile.TemporaryDirectory(prefix="mebooru-probe-build-") as scratch:
     print(crash.stdout, crash.stderr, sep="")
     assert crash.returncode == 0, crash.returncode
     assert "PASS: managed executable crash recovery (active operation)" in crash.stdout
+    refused_crash = subprocess.run([str(loader), "internal-managed-worker-loss-probe-v1"],
+                                   stdin=subprocess.DEVNULL, capture_output=True,
+                                   cwd=directory, env=env, timeout=10)
+    assert refused_crash.returncode != 0, refused_crash
+    worker_crash = subprocess.run([str(library), "internal-managed-worker-crash-probe-v1"],
+                                  stdin=subprocess.DEVNULL, capture_output=True,
+                                  cwd=directory, env=env, timeout=100, text=True)
+    print(worker_crash.stdout, worker_crash.stderr, sep="")
+    assert worker_crash.returncode == 0, worker_crash.returncode
+    assert "PASS: managed executable worker loss recovery (active operation)" in worker_crash.stdout
     assert sorted(p.name for p in directory.iterdir()) == sorted([library.name, loader.name])

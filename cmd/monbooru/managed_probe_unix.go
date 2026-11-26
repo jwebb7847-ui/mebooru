@@ -24,12 +24,14 @@ func(p *probeGuard)Stop(ctx context.Context)error{
 	select{case <-p.g.Done():case <-t.C:case <-ctx.Done():}
 	return p.g.Stop(ctx)
 }
-func startManagedProbeWorker(r,w,br,bw *os.File)(acquisitionpolicy.CustodyChild,error){
+func startManagedProbeWorker(r,w,br,bw *os.File,abortWorker bool)(acquisitionpolicy.CustodyChild,error){
 	self,err:=os.Executable()
 	if err!=nil{return nil,err}
 	self,err=filepath.EvalSymlinks(self)
 	if err!=nil{return nil,err}
-	cmd:=exec.Command(self,"internal-managed-guard-probe-v1")
+	mode:="internal-managed-guard-probe-v1"
+	if abortWorker{mode="internal-managed-worker-loss-guard-probe-v1"}
+	cmd:=exec.Command(self,mode)
 	cmd.Stdin,cmd.Stdout,cmd.Stderr=r,w,os.Stderr
 	g,err:=processguard.StartDormantGuardWithBroker(cmd,br,bw)
 	if g==nil{return nil,err}
@@ -37,10 +39,12 @@ func startManagedProbeWorker(r,w,br,bw *os.File)(acquisitionpolicy.CustodyChild,
 	if err!=nil{return p,err}
 	return p,g.Activate()
 }
-func runManagedGuardProbe()error{
+func runManagedGuardProbe(abortWorker bool)error{
 	path,err:=processguard.ProbeSibling("monbooru","monloader")
 	if err!=nil{return err}
-	cmd:=exec.Command(path,"internal-managed-worker-probe-v1")
+	mode:="internal-managed-worker-probe-v1"
+	if abortWorker{mode="internal-managed-worker-loss-probe-v1"}
+	cmd:=exec.Command(path,mode)
 	cmd.Stdin,cmd.Stdout,cmd.Stderr=os.Stdin,os.Stdout,os.Stderr
 	br,bw,err:=processguard.AdoptGuardBrokerPipes()
 	if err!=nil{return err}

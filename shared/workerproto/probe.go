@@ -18,6 +18,19 @@ func ServeLifecycleProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser)er
 // Simulated online starts two fixed leaves and stops one. Offline waits
 // for the remaining cleanup proof. No WAN is performed.
 func ServeLifecycleProbeWithBroker(ctx context.Context,r io.ReadCloser,w io.WriteCloser,broker *ProbeClient)error{
+	return serveLifecycleProbe(ctx,r,w,broker,nil)
+}
+
+// ServeWorkerLossProbe is only called by the distinct internal diagnostic
+// worker executable entry. A health request after an acknowledged online
+// transition deliberately loses its response by exiting that process.
+// No extra operation is added to the ordinary protocol vocabulary.
+func ServeWorkerLossProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser,broker *ProbeClient,abort func())error{
+	if broker==nil||abort==nil{return ErrMessage}
+	return serveLifecycleProbe(ctx,r,w,broker,abort)
+}
+
+func serveLifecycleProbe(ctx context.Context,r io.ReadCloser,w io.WriteCloser,broker *ProbeClient,abort func())error{
 	var active ProbeOperationRef
 	stop:=func(ctx context.Context)error{
 		if active.ID==0{return nil}
@@ -35,6 +48,10 @@ func ServeLifecycleProbeWithBroker(ctx context.Context,r io.ReadCloser,w io.Writ
 		if (op==Health||op==ReserveIdle||op==Shutdown)&&len(payload)!=0{return invalid()}
 		switch op{
 		case Health:
+			if abort!=nil&&active.ID!=0&&!offline{
+				abort()
+				return nil,&Fault{Code:"diagnostic_abort_returned"}
+			}
 			body,_:=json.Marshal(struct{
 				Probe bool `json:"probe"`
 				Offline bool `json:"offline"`
