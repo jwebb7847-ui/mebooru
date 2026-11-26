@@ -63,6 +63,18 @@ func StartDormantJobWithPipes(cmd *exec.Cmd,r,w *os.File)(*DormantJob,error){
 	return startDormantJob(cmd,true)
 }
 
+// StartDormantJobWithBroker passes exactly four pipe ends with stdin
+// reserved for activation. All four are adopted only after Job assignment.
+func StartDormantJobWithBroker(cmd *exec.Cmd,r,w,br,bw *os.File)(*DormantJob,error){
+	if cmd==nil||cmd.Process!=nil||cmd.SysProcAttr!=nil||cmd.Stdin!=nil||len(cmd.ExtraFiles)!=0{return nil,ErrJobActivation}
+	if err:=validateProbePipes(r,w,br,bw);err!=nil{return nil,err}
+	token,release,err:=attachWindowsPipes(cmd,r,w,br,bw)
+	if err!=nil{return nil,err}
+	defer release()
+	cmd.Args=append(cmd.Args,token)
+	return startDormantJob(cmd,true)
+}
+
 func startDormantJob(cmd *exec.Cmd,separate bool)(*DormantJob,error){
 	if cmd==nil||!filepath.IsAbs(cmd.Path)||cmd.Process!=nil||(!separate&&cmd.SysProcAttr!=nil)||cmd.Stdin!=nil||len(cmd.ExtraFiles)!=0{return nil,ErrJobActivation}
 	job,err:=NewJob()

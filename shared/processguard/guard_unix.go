@@ -53,6 +53,17 @@ var ErrActivationRefused = errors.New("managed guard activation refused")
 // further byte or EOF revokes liveness. The worker still must install
 // WatchGuard and start with default-deny network admission.
 func RunDormantGuard(parentLife *os.File, worker *exec.Cmd) error {
+	return runDormantGuard(parentLife,worker,nil)
+}
+
+// RunDormantGuardWithBroker transfers only the adopted broker ends to
+// the worker, preserving fd 3 for guard liveness. No other inherited
+// endpoints may be forwarded.
+func RunDormantGuardWithBroker(parentLife *os.File,worker *exec.Cmd,r,w *os.File)error{
+	if err:=validateProbePipes(r,w);err!=nil{return err}
+	return runDormantGuard(parentLife,worker,[]*os.File{r,w})
+}
+func runDormantGuard(parentLife *os.File, worker *exec.Cmd,extra []*os.File) error {
 	if parentLife == nil || worker == nil {
 		return ErrActivationRefused
 	}
@@ -71,7 +82,7 @@ func RunDormantGuard(parentLife *os.File, worker *exec.Cmd) error {
 	if err != nil || n != 1 || one[0] != ActivationByte {
 		return ErrActivationRefused
 	}
-	return RunGuard(parentLife, worker)
+	return runGuard(parentLife, worker,extra)
 }
 
 // RunGuard must execute in a dedicated process group leader. The worker
@@ -83,6 +94,9 @@ func RunDormantGuard(parentLife *os.File, worker *exec.Cmd) error {
 // An unexpected guard exit is handled by the live worker's WatchGuard.
 // Simultaneous loss of both sentinels is not guaranteed to be contained.
 func RunGuard(parentLife *os.File, worker *exec.Cmd) error {
+	return runGuard(parentLife,worker,nil)
+}
+func runGuard(parentLife *os.File, worker *exec.Cmd,extra []*os.File) error {
 	group,err:=syscall.Getpgid(0)
 	if err!=nil || group!=os.Getpid() || group<=1 ||
 		worker.SysProcAttr!=nil || len(worker.ExtraFiles)!=0 ||
@@ -95,9 +109,10 @@ func RunGuard(parentLife *os.File, worker *exec.Cmd) error {
 	if err!=nil{return err}
 	defer write.Close()
 	defer read.Close()
-	worker.ExtraFiles=[]*os.File{read}
+	worker.ExtraFiles=append([]*os.File{read},extra...)
 	if err:=worker.Start();err!=nil{return err}
 	_ = read.Close()
+	for _,f:=range extra{_ = f.Close()}
 	// An EOF, unexpected byte, or read failure all revoke parent liveness.
 	lost:=make(chan struct{},1)
 	go func(){

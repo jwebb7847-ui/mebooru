@@ -31,6 +31,16 @@ type DormantGuard struct {
 // an error, the caller still owns cleanup. The command must not use a
 // shell or be controlled by protocol, browser, or other untrusted input.
 func StartDormantGuard(cmd *exec.Cmd) (*DormantGuard, error) {
+	return startDormantGuard(cmd,nil)
+}
+
+// StartDormantGuardWithBroker forwards only the selected broker pipe ends
+// as fd 4/5. fd 3 remains exclusively guard liveness. Caller owns ends.
+func StartDormantGuardWithBroker(cmd *exec.Cmd,r,w *os.File)(*DormantGuard,error){
+	if err:=validateProbePipes(r,w);err!=nil{return nil,err}
+	return startDormantGuard(cmd,[]*os.File{r,w})
+}
+func startDormantGuard(cmd *exec.Cmd,extra []*os.File) (*DormantGuard, error) {
 	if cmd == nil || !filepath.IsAbs(cmd.Path) || len(cmd.ExtraFiles) != 0 {
 		return nil, ErrGroupIdentity
 	}
@@ -42,7 +52,7 @@ func StartDormantGuard(cmd *exec.Cmd) (*DormantGuard, error) {
 		return nil, err
 	}
 	defer r.Close()
-	cmd.ExtraFiles = []*os.File{r}
+	cmd.ExtraFiles = append([]*os.File{r},extra...)
 	if err := cmd.Start(); err != nil {
 		_ = w.Close()
 		return nil, err
