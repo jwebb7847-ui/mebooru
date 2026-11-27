@@ -18,7 +18,7 @@ import(
 	"github.com/monbooru/monbooru/internal/library"
 )
 func TestComposedHeldReceipt(t *testing.T){
-	for _,mode:=range []string{"plain","DB reopen","nested canonical","operator alias","collection","parent","missing relationship","missing collection","nonempty extras","no authority","changed retained before unlink","revoked before unlink","revoked after unlink","DB delete failure","changed canonical","same bytes replacement","changed operator alias","changed rating","changed note","changed source","changed collection","changed relationship","old alias returns","changed job","lost composition","damaged receipt"}{
+	for _,mode:=range []string{"plain","DB reopen","nested canonical","operator alias","collection","parent","missing relationship","missing collection","nonempty extras","no authority","changed retained before unlink","changed managed row","revoked before unlink","revoked after unlink","DB delete failure","changed canonical","same bytes replacement","changed operator alias","changed rating","changed note","changed source","changed collection","changed relationship","old alias returns","changed job","lost composition","damaged receipt"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -81,11 +81,13 @@ func TestComposedHeldReceipt(t *testing.T){
 			if mode=="nonempty extras"{job.Tags=[]string{"unapplied"}}
 			injected:=false
 			extras:=extrasAuthority(func(context.Context,workerproto.StageAllocation)(contract.JobExtras,error){
-				if mode=="changed retained before unlink"||mode=="revoked before unlink"{
+				if mode=="changed retained before unlink"||mode=="changed managed row"||mode=="revoked before unlink"{
 					if _,err:=os.Stat(attempt);err==nil&&!injected{
 						injected=true
 						if mode=="revoked before unlink"{return job,ErrStageRefused}
-						if _,err:=g.DB.Write.Exec(`UPDATE images SET note='changed before unlink' WHERE id=?`,id);err!=nil{t.Fatal(err)}
+						if mode=="changed managed row"{
+							if _,err:=g.DB.Write.Exec(`UPDATE image_paths SET id=id+10000 WHERE path=?`,alias);err!=nil{t.Fatal(err)}
+						}else if _,err:=g.DB.Write.Exec(`UPDATE images SET note='changed before unlink' WHERE id=?`,id);err!=nil{t.Fatal(err)}
 					}
 				}
 				if mode=="revoked after unlink"{
@@ -97,7 +99,7 @@ func TestComposedHeldReceipt(t *testing.T){
 			if _,err:=a.finishHeldReceipt(ctx,grant,g,extras);err==nil{t.Fatal("receipt before disposal")}
 			got,err:=a.disposeComposedHeld(ctx,grant,g,extras)
 			pre:=mode=="missing relationship"||mode=="missing collection"||mode=="nonempty extras"||mode=="no authority"
-			partial:=mode=="changed retained before unlink"||mode=="revoked before unlink"||mode=="revoked after unlink"||mode=="DB delete failure"
+			partial:=mode=="changed retained before unlink"||mode=="changed managed row"||mode=="revoked before unlink"||mode=="revoked after unlink"||mode=="DB delete failure"
 			if (err!=nil)!=(pre||partial){t.Fatal("unexpected disposal",got,err)}
 			checkBytes:=func(p string,want []byte){t.Helper();b,err:=os.ReadFile(p);if err!=nil||!bytes.Equal(b,want){t.Fatal("bytes",p,err)}}
 			count:=func(q string,args ...any)int{t.Helper();var n int;if err:=g.DB.Read.QueryRow(q,args...).Scan(&n);err!=nil{t.Fatal(err)};return n}
