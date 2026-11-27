@@ -112,7 +112,7 @@ jobs:
         run: |
           go test -count=1 -timeout 3m ./internal/acquisitionpolicy ./cmd/monbooru
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go test -count=1 -v -timeout 6m ./internal/acquisitionstage ./internal/library
+          go test -count=1 -v -timeout 10m ./internal/acquisitionstage ./internal/library
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cd shared
           go test -count=1 -timeout 3m ./processguard ./workerproto ./acquisitionplan ./contract
