@@ -123,7 +123,10 @@ func verifyNewDerivedBaseline(ctx context.Context,tx *sql.Tx,id int64,expected [
 // Never retry this routine after an attempt even if no image row exists.
 func(a *Allocator)landNewPrepared(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)error{
 	a.mu.Lock();defer a.mu.Unlock()
-	if err:=a.beginLandingLocked(ctx,grant,g,true);err!=nil{return err}
+	return a.landNewPreparedLocked(ctx,grant,g,"",nil)
+}
+func(a *Allocator)landNewPreparedLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,planHash string,guard func()error)error{
+	if err:=a.beginLandingPlanLocked(ctx,grant,g,true,false,planHash);err!=nil{return err}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return err}
 	defer p.Close();defer src.Close();defer dst.Close()
@@ -136,6 +139,7 @@ func(a *Allocator)landNewPrepared(ctx context.Context,grant workerproto.StageAll
 		if err!=nil||!sameLandingDB(current,landing){return ErrStageRecovery}
 		name:=finalName(grant,f)
 		if err:=readCheckedLinks(ctx,dst,name,f.Size,f.SHA256,io.Discard,2);err!=nil{return err}
+		if guard!=nil{if err:=guard();err!=nil{return err}}
 		path:=filepath.Join(r.GalleryRoot,name)
 		res,err:=g.LandInPlace(ctx,path,library.LandSpec{Origin:newReceiptOrigin,MaxBytes:f.Size,Check:func(path,_ string)error{
 			f,err:=os.Open(path)
