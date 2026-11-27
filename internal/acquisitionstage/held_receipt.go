@@ -131,16 +131,16 @@ func retainedHeldState(ctx context.Context,g *library.Gallery,r record,dst *os.R
 }
 
 func(a *Allocator)heldCompositionContext(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,h heldDuplicate,placed bool,expectedPathID int64)(heldComposition,*os.Root,error){
-	return a.heldCompositionContextMode(ctx,grant,g,extras,h,placed,expectedPathID,false)
+	return a.heldCompositionContextMode(ctx,grant,g,extras,h,placed,expectedPathID,false,false)
 }
-func(a *Allocator)heldCompositionContextMode(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,h heldDuplicate,placed bool,expectedPathID int64,released bool)(heldComposition,*os.Root,error){
+func(a *Allocator)heldCompositionContextMode(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,h heldDuplicate,placed bool,expectedPathID int64,released,retired bool)(heldComposition,*os.Root,error){
 	var zero heldComposition
 	if g==nil||g.WatcherRunning()||extras==nil{return zero,nil,ErrStageRefused}
 	job,err:=extras(ctx,grant)
 	if err!=nil||!job.Empty(){return zero,nil,ErrStageRefused}
-	snapshot,err:=a.boundPolicyLocked(ctx,grant)
+	snapshot,err:=a.boundPolicyModeLocked(ctx,grant,retired)
 	if err!=nil{return zero,nil,err}
-	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,retired)
 	if err!=nil{return zero,nil,err}
 	defer src.Close();defer dst.Close()
 	fail:=func(err error)(heldComposition,*os.Root,error){p.Close();return zero,nil,err}
@@ -200,11 +200,11 @@ func(a *Allocator)heldCompositionContextMode(ctx context.Context,grant workerpro
 }
 
 func(a *Allocator)observeHeldCompositionLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,placed bool)(heldComposition,error){
-	return a.observeHeldCompositionModeLocked(ctx,grant,g,extras,placed,false)
+	return a.observeHeldCompositionModeLocked(ctx,grant,g,extras,placed,false,false)
 }
-func(a *Allocator)observeHeldCompositionModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,placed,released bool)(heldComposition,error){
+func(a *Allocator)observeHeldCompositionModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,placed,released,retired bool)(heldComposition,error){
 	var zero heldComposition
-	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,retired)
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
 	l,err:=readLandingAttempt(p,r)
@@ -215,7 +215,7 @@ func(a *Allocator)observeHeldCompositionModeLocked(ctx context.Context,grant wor
 	if err!=nil{return zero,err}
 	stored,err:=readHeldComposition(p,r,e,l,result)
 	if err!=nil{return zero,err}
-	actual,check,err:=a.heldCompositionContextMode(ctx,grant,g,extras,stored.Held,placed,stored.ManagedPathID,released)
+	actual,check,err:=a.heldCompositionContextMode(ctx,grant,g,extras,stored.Held,placed,stored.ManagedPathID,released,retired)
 	if err!=nil{return zero,err}
 	same:=sameRelationshipRoot(p,check);check.Close()
 	if !same||!reflect.DeepEqual(stored,actual){return zero,ErrStageRecovery}
@@ -259,16 +259,16 @@ func readHeldReceipt(p *os.Root,r record,e SealedEvidence,l landingAttempt,m met
 	return want,nil
 }
 func(a *Allocator)heldReceiptLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,write bool)(heldReceipt,error){
-	return a.heldReceiptModeLocked(ctx,grant,g,extras,write,false)
+	return a.heldReceiptModeLocked(ctx,grant,g,extras,write,false,false)
 }
-func(a *Allocator)heldReceiptModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,write,released bool)(heldReceipt,error){
+func(a *Allocator)heldReceiptModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,write,released,retired bool)(heldReceipt,error){
 	var zero heldReceipt
-	if write&&released{return zero,ErrStageRefused}
-	h,err:=a.observeDuplicateDisposalModeLocked(ctx,grant,g,released)
+	if write&&(released||retired){return zero,ErrStageRefused}
+	h,err:=a.observeDuplicateDisposalModeLocked(ctx,grant,g,released,retired)
 	if err!=nil{return zero,err}
-	composition,err:=a.observeHeldCompositionModeLocked(ctx,grant,g,extras,false,released)
+	composition,err:=a.observeHeldCompositionModeLocked(ctx,grant,g,extras,false,released,retired)
 	if err!=nil||composition.Held!=h{return zero,ErrStageRecovery}
-	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,retired)
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
 	l,err:=readLandingAttempt(p,r)
