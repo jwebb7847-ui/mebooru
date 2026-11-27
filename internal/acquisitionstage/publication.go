@@ -260,10 +260,13 @@ func inspectPlacements(ctx context.Context,g workerproto.StageAllocation,e Seale
 // publicationRoots validates all durable prerequisites and opens exact
 // private and gallery roots. Caller holds allocator mutex and owner lock.
 func(a *Allocator)publicationRoots(ctx context.Context,g workerproto.StageAllocation)(record,SealedEvidence,*os.Root,*os.Root,*os.Root,error){
+	return a.publicationRootsMode(ctx,g,false)
+}
+func(a *Allocator)publicationRootsMode(ctx context.Context,g workerproto.StageAllocation,retired bool)(record,SealedEvidence,*os.Root,*os.Root,*os.Root,error){
 	var r record
 	var e SealedEvidence
 	fail:=func(err error)(record,SealedEvidence,*os.Root,*os.Root,*os.Root,error){return r,e,nil,nil,nil,err}
-	e,err:=a.sealedLocked(ctx,g)
+	e,err:=a.sealedModeLocked(ctx,g,retired)
 	if err!=nil{return fail(err)}
 	s,err:=a.scope(ctx,g.Request)
 	if err!=nil{return fail(err)}
