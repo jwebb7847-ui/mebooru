@@ -32,3 +32,8 @@ The local-only allocator uses an existing dedicated owner-selected canonical sta
 ## Initial sealed-copy primitive
 
 The strict runtime result now binds native sidecar bytes as well as media bytes. A local library-only copy helper accepts trusted manifest/result after independently proven cleanup; checks exact flat inventory and native evidence, canonical ID filename and supported extension, file count/byte limits including sidecars, rooted regular single-link objects; copies exclusively to a fresh owner root, fsyncs and independently rechecks all source/destination hashes. No caller-supplied path or arbitrary write from IPC. Failed copy retains incomplete destination without publishing success; durable state and actual custody binding remain later increments. A same-user adversary can still mutate files; this is not sandboxing or remote source authenticity.
+
+
+## Persistent sealed evidence candidate
+
+The allocator now has an isolated Seal/Sealed path. Only trusted local observer supplies exact original approved manifest and contained results after writer-stop proof; fixture observer is not production custody. Verify fixed strict workspace, exclusive `sealed` sibling, separately verified media copy, synced manifest and canonical seal.json. Partial marker retains all state and blocks replay/allocation; completed seal disallows workspace reopening and a second seal attempt. Reopen queries revalidate current gallery scope and actual bytes; no claim of final commit or permission to ingest, no automatic reclaim. Directory sync remains best effort. This does not solve external writer identity or power-loss atomicity.

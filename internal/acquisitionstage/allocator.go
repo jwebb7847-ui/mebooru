@@ -148,14 +148,14 @@ func readRecord(dir *os.Root)(record,error){
 	if err!=nil{return r,ErrStageRecovery}
 	defer f.Close()
 	actual,err:=f.Stat()
-	if err!=nil||!os.SameFile(info,actual){return r,ErrStageRecovery}
+	if err!=nil||!os.SameFile(info,actual)||!singleLink(f,actual){return r,ErrStageRecovery}
 	raw,err:=io.ReadAll(io.LimitReader(f,maxRecordBytes+1))
 	if err!=nil||int64(len(raw))!=info.Size()||json.Unmarshal(raw,&r)!=nil{return record{},ErrStageRecovery}
 	canonical,err:=json.Marshal(r)
 	if err!=nil||!bytes.Equal(raw,canonical)||r.Version!=1||r.GalleryIdentity==""||
 		!workerproto.ValidStageAllocation(r.Allocation){return record{},ErrStageRecovery}
 	after,err:=dir.Lstat("allocation.json")
-	if err!=nil||!os.SameFile(info,after)||after.Size()!=info.Size()||after.ModTime()!=info.ModTime(){return record{},ErrStageRecovery}
+	if err!=nil||!os.SameFile(info,after)||after.Size()!=info.Size()||after.ModTime()!=info.ModTime()||!singleLink(f,after){return record{},ErrStageRecovery}
 	return r,nil
 }
 func openDir(root *os.Root,name string)(*os.Root,error){
@@ -183,8 +183,11 @@ func(a *Allocator)load(id string)(record,error){
 	defer dir.Close()
 	r,err:=readRecord(dir)
 	if err!=nil||r.Allocation.Request.OperationID!=id||r.StageRoot!=a.path{return zero,ErrStageRecovery}
-	entries,err:=list(dir,2)
-	if err!=nil||len(entries)!=2{return zero,ErrStageRecovery}
+	entries,err:=list(dir,3)
+	if err!=nil||len(entries)<2||len(entries)>3{return zero,ErrStageRecovery}
+	if len(entries)==3{
+		if _,err:=readSeal(dir,r.Allocation);err!=nil{return zero,ErrStageRecovery}
+	}
 	workspace,err:=openDir(dir,r.Allocation.TransferID)
 	if err!=nil{return zero,err}
 	_ = workspace.Close()
@@ -276,6 +279,10 @@ func(a *Allocator)Workspace(ctx context.Context,grant workerproto.StageAllocatio
 	if err!=nil{return "",err}
 	r,err:=a.load(grant.Request.OperationID)
 	if err!=nil||r.Allocation!=grant||!matches(r,s){return "",ErrStageRefused}
+	dir,err:=openDir(a.root,grant.Request.OperationID)
+	if err!=nil{return "",err}
+	defer dir.Close()
+	if _,err:=dir.Lstat("sealed");!errors.Is(err,os.ErrNotExist){return "",ErrStageRecovery}
 	path:=filepath.Join(a.path,grant.Request.OperationID,grant.TransferID)
 	if _,_,err:=directory(path);err!=nil||!a.live()||ctx.Err()!=nil{return "",ErrStageRefused}
 	return path,nil
