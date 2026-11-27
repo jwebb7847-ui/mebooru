@@ -18,7 +18,9 @@ import (
 	"github.com/monbooru/monbooru/internal/library"
 )
 
-// Isolated single-new-PNG, existing destination directory, optional verified collection.
+// Isolated single-new or explicitly restored PNG, existing destination
+// directory. New-only may include verified collection and client tags;
+// restored naming is restricted to an explicitly empty owner job.
 // The trusted caller supplies an independent current naming decision,
 // never a worker-supplied destination. No production authority yet.
 // Retain both private copies and refuse replay after any attempt.
@@ -243,6 +245,11 @@ func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAlloc
 	current,err:=observedDB(r,g)
 	if err!=nil||!sameLandingDB(current,l){return ErrStageRecovery}
 	if g.Boundary().Check(filepath.Join(r.GalleryRoot,m.Final))!=nil||g.Boundary().Check(filepath.Join(r.GalleryRoot,m.Old))!=nil{return ErrStageRefused}
+	if restore!=nil{
+		if _,err:=dst.Lstat(l.RestorePath);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
+		state,err:=restoreStateDigest(ctx,g,m.ImageID)
+		if err!=nil||state!=m.RestoreStateSHA256{return ErrStageRecovery}
+	}
 	return nil
 }
 func(a *Allocator)applyNaming(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority)error{
