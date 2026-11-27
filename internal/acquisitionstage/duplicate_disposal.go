@@ -47,14 +47,14 @@ func readDuplicateAttempt(p *os.Root,e SealedEvidence,result metadataResult)(dup
 // a missing file alone. The private publication copy remains intact.
 // No mutation or retry on recovery.
 func(a *Allocator)observeDuplicateDisposalLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)(heldDuplicate,error){
-	return a.observeDuplicateDisposalModeLocked(ctx,grant,g,false)
+	return a.observeDuplicateDisposalModeLocked(ctx,grant,g,false,false)
 }
-func(a *Allocator)observeDuplicateDisposalModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,released bool)(heldDuplicate,error){
+func(a *Allocator)observeDuplicateDisposalModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,released,retired bool)(heldDuplicate,error){
 	var zero heldDuplicate
 	if g==nil||g.WatcherRunning(){return zero,ErrStageRefused}
-	snapshot,err:=a.boundPolicyLocked(ctx,grant)
+	snapshot,err:=a.boundPolicyModeLocked(ctx,grant,retired)
 	if err!=nil{return zero,err}
-	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,retired)
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
 	l,err:=readLandingAttempt(p,r)
