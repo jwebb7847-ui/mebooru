@@ -165,7 +165,7 @@ func namingRows(ctx context.Context,g *library.Gallery,r record,f acquisitionpla
 }
 // Independently verify upstream evidence without assuming the old
 // diagnostic path is still canonical. No new receipt is issued here.
-func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p *os.Root,auth namingAuthority)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){
+func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p *os.Root,auth namingAuthority,client *clientTagState)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){
 	var l landingAttempt;var result metadataResult;var q gallery.ReceivedNamingRequest
 	fail:=func(err error)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){return l,result,q,err}
 	if g==nil||g.WatcherRunning()||auth==nil||len(e.Files)!=1{return fail(ErrStageRefused)}
@@ -185,7 +185,7 @@ func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllo
 	if err!=nil{return fail(err)}
 	v,err:=verifyMappedRow(ctx,g,m.Targets[0],rows[0],result.Rows[0].Rejected)
 	if err!=nil||!sameMetadataObservation(v,result.Rows[0]){return fail(ErrStageRecovery)}
-	if err:=verifyNewMetadataState(ctx,g,rows,m,result);err!=nil{return fail(err)}
+	if err:=verifyNewMetadataStateWithClient(ctx,g,rows,m,result,client);err!=nil{return fail(err)}
 	relRaw,err:=boundedRegularBytes(p,"relationship-attempt.json",maxRelationshipRecord)
 	var rel relationshipAttempt
 	if err!=nil||json.Unmarshal(relRaw,&rel)!=nil||rel.ImageID!=v.ImageID||rel.URL!=rows[0].PostURL||rel.ParentURL!=""{return fail(ErrStageRecovery)}
@@ -200,8 +200,8 @@ func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllo
 		q.Source!=rows[0].SourceLabel||q.PostID!=rows[0].PostID{return fail(ErrStageRefused)}
 	return l,result,q,nil
 }
-func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p,src,dst,parent *os.Root,m namingAttempt,auth namingAuthority)error{
-	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth)
+func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p,src,dst,parent *os.Root,m namingAttempt,auth namingAuthority,client *clientTagState)error{
+	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth,client)
 	if err!=nil||q!=m.Request||len(result.Rows)!=1||result.Rows[0].ImageID!=m.ImageID{return ErrStageRecovery}
 	meta,err:=json.Marshal(result)
 	rel,relErr:=boundedRegularBytes(p,"relationship-result.json",maxRelationshipRecord)
@@ -222,7 +222,7 @@ func(a *Allocator)applyNaming(ctx context.Context,grant workerproto.StageAllocat
 	for _,name:=range []string{"naming-attempt.json","naming-result.json"}{
 		if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
 	}
-	_,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth)
+	_,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth,nil)
 	if err!=nil{return err}
 	f:=e.Files[0]
 	preview,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),result.Rows[0].ImageID,q)
@@ -246,12 +246,12 @@ func(a *Allocator)applyNaming(ctx context.Context,grant workerproto.StageAllocat
 	if err!=nil||relErr!=nil{return ErrStageRecovery}
 	m.MetadataSHA256=digestBytes(meta);m.RelationshipSHA256=digestBytes(rel)
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,false);err!=nil{return err}
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil);err!=nil{return err}
 	raw,err:=json.Marshal(m)
 	if err!=nil||len(raw)>maxNamingRecord{return ErrStageLimit}
 	if err:=writeOwnerBytes(ctx,p,"naming-attempt.json",raw);err!=nil{return err}
 	syncDirectory(p)
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil);err!=nil{return err}
 	again,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),m.ImageID,q)
 	if err!=nil||again!=preview{return ErrStageRecovery}
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,false);err!=nil{return err}
@@ -259,7 +259,7 @@ func(a *Allocator)applyNaming(ctx context.Context,grant workerproto.StageAllocat
 	// even interruption here leaves the old canonical and private bytes.
 	if err:=dst.Link(m.Old,m.Final);err!=nil{return ErrStageRecovery}
 	syncDirectory(parent)
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil);err!=nil{return err}
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,true);err!=nil{return err}
 	pid,err:=namingRows(ctx,g,r,f,m.ImageID,m.Old,m.Final)
 	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
@@ -278,7 +278,7 @@ func(a *Allocator)applyNaming(ctx context.Context,grant workerproto.StageAllocat
 		})
 	})
 	if err!=nil{return ErrStageRecovery}
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil);err!=nil{return err}
 	pid,err=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old)
 	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,true);err!=nil{return err}
@@ -289,7 +289,7 @@ func(a *Allocator)applyNaming(ctx context.Context,grant workerproto.StageAllocat
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,false,true);err!=nil{return err}
 	pid,err=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old)
 	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil);err!=nil{return err}
 	body,err:=json.Marshal(namingResult{Version:1,AttemptSHA256:digestBytes(raw)})
 	if err!=nil{return ErrStageRecovery}
 	if err:=writeOwnerBytes(ctx,p,"naming-result.json",body);err!=nil{return err}
@@ -301,10 +301,13 @@ func(a *Allocator)observeNaming(ctx context.Context,grant workerproto.StageAlloc
 	return a.observeNamingLocked(ctx,grant,g,auth)
 }
 func(a *Allocator)observeNamingLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority)error{
+	return a.observeNamingWithClientLocked(ctx,grant,g,auth,nil)
+}
+func(a *Allocator)observeNamingWithClientLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority,client *clientTagState)error{
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return err}
 	defer p.Close();defer src.Close();defer dst.Close()
-	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth)
+	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth,client)
 	if err!=nil{return err}
 	if err:=validateNamingRecords(p,r,e,l,result,true);err!=nil{return err}
 	m,_,err:=readNamingAttempt(p,r,e,result)
@@ -312,10 +315,10 @@ func(a *Allocator)observeNamingLocked(ctx context.Context,grant workerproto.Stag
 	parent,_,err:=namingParent(dst,m.Final)
 	if err!=nil{return err}
 	defer parent.Close()
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,client);err!=nil{return err}
 	f:=e.Files[0]
 	pid,err:=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old)
 	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,false,true);err!=nil{return err}
-	return a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth)
+	return a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,client)
 }
