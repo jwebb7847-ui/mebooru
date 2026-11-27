@@ -24,6 +24,7 @@ type landingAttempt struct{
 	DBPath string `json:"db_path"`
 	DBFileIdentity string `json:"db_file_identity"`
 	NewOnly bool `json:"new_only,omitempty"`
+	PlanSHA256 string `json:"plan_sha256,omitempty"`
 	RestoreImageID int64 `json:"restore_image_id,omitempty"`
 	RestorePath string `json:"restore_path,omitempty"`
 	RestoreRating string `json:"restore_rating,omitempty"`
@@ -53,6 +54,8 @@ func readLandingAttempt(p *os.Root,r record)(landingAttempt,error){
 		attempt.RestorePath=="."||!canonicalRating(attempt.RestoreRating)||
 		(attempt.RestorePathID==0)!=(attempt.RestorePreservationSHA256=="")||
 		(attempt.RestorePathID>0&&!validDigest(attempt.RestorePreservationSHA256)){return zero,ErrStageRecovery}
+	plan,hash,err:=readPublicationAttempt(p,r.Allocation)
+	if err!=nil||attempt.PlanSHA256!=hash||(plan!=nil&&(!attempt.NewOnly||!sameLandingDB(plan.DB,attempt))){return zero,ErrStageRecovery}
 	canonical,err:=json.Marshal(attempt)
 	if err!=nil||!bytes.Equal(body,canonical){return zero,ErrStageRecovery}
 	return attempt,nil
@@ -88,6 +91,9 @@ func(a *Allocator)beginLandingLocked(ctx context.Context,grant workerproto.Stage
 	return a.beginLandingModeLocked(ctx,grant,g,newOnly,false)
 }
 func(a *Allocator)beginLandingModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,newOnly,restore bool)error{
+	return a.beginLandingPlanLocked(ctx,grant,g,newOnly,restore,"")
+}
+func(a *Allocator)beginLandingPlanLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,newOnly,restore bool,planHash string)error{
 	if newOnly&&restore{return ErrStageRefused}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return err}
@@ -96,7 +102,9 @@ func(a *Allocator)beginLandingModeLocked(ctx context.Context,grant workerproto.S
 	attempt,err:=observedDB(r,g)
 	if err!=nil{return err}
 	if _,err:=p.Lstat("landing-attempt.json");!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
-	if _,err:=boundedRegularBytes(p,"attempt",64);err!=nil{return ErrStageRecovery}
+	plan,hash,err:=readPublicationAttempt(p,grant)
+	if err!=nil||hash!=planHash||(plan!=nil&&(!newOnly||restore||!sameLandingDB(attempt,plan.DB))){return ErrStageRefused}
+	attempt.PlanSHA256=hash
 	places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
 	if err!=nil{return err}
 	for _,v:=range places{if v.State!="placed"{return ErrStageRecovery}}
@@ -200,6 +208,7 @@ func(a *Allocator)observeLandingLocked(ctx context.Context,grant workerproto.Sta
 // The DB observation does not infer the durable disposition request.
 func sameLandingDB(current,attempt landingAttempt)bool{
 	current.NewOnly=attempt.NewOnly
+	current.PlanSHA256=attempt.PlanSHA256
 	current.RestoreImageID=attempt.RestoreImageID
 	current.RestorePath=attempt.RestorePath
 	current.RestoreRating=attempt.RestoreRating
