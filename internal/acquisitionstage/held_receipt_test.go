@@ -18,7 +18,7 @@ import(
 	"github.com/monbooru/monbooru/internal/library"
 )
 func TestComposedHeldReceipt(t *testing.T){
-	for _,mode:=range []string{"plain","DB reopen","nested canonical","operator alias","collection","parent","missing relationship","missing collection","nonempty extras","no authority","changed retained before unlink","changed managed row","revoked before unlink","revoked after unlink","DB delete failure","changed canonical","same bytes replacement","changed operator alias","changed rating","changed note","changed source","changed collection","changed relationship","old alias returns","changed job","lost composition","damaged receipt"}{
+	for _,mode:=range []string{"plain","DB reopen","nested canonical","operator alias","collection","parent","missing relationship","missing collection","nonempty extras","no authority","changed retained before unlink","changed managed row","revoked before unlink","revoked after unlink","DB delete failure","changed canonical","same bytes replacement","changed operator alias","changed rating","changed note","changed source","changed collection","changed relationship","old alias returns","changed job","lost composition","damaged receipt","receipt revoked","extra retained alias"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -93,6 +93,9 @@ func TestComposedHeldReceipt(t *testing.T){
 				if mode=="revoked after unlink"{
 					if _,err:=os.Stat(alias);os.IsNotExist(err)&&!injected{injected=true;return job,ErrStageRefused}
 				}
+				if mode=="receipt revoked"{
+					if _,err:=os.Stat(receipt);err==nil&&!injected{injected=true;return job,ErrStageRefused}
+				}
 				return job,nil
 			})
 			if mode=="no authority"{extras=nil}
@@ -127,6 +130,11 @@ func TestComposedHeldReceipt(t *testing.T){
 			if withCollection&&count(`SELECT COUNT(*) FROM image_collections WHERE image_id=? AND name='pool' AND position=7`,id)!=1{t.Fatal("collection missing")}
 			if withParent&&count(`SELECT COUNT(*) FROM derivative_edges WHERE derivative_image_id=? AND source_image_id=?`,id,parent)!=1{t.Fatal("relationship missing")}
 			stored,err:=a.finishHeldReceipt(ctx,grant,g,extras)
+			if mode=="receipt revoked"{
+				if err==nil{t.Fatal("acknowledged revoked receipt")}
+				if _,err:=os.Stat(receipt);err!=nil{t.Fatal("receipt not written",err)}
+				stored,err=a.observeHeldReceipt(ctx,grant,g,extras)
+			}
 			if err!=nil||stored.Kind!=heldReceiptKind||stored.Held!=got{t.Fatal("held receipt",stored,err)}
 			if _,err:=a.finishHeldReceipt(ctx,grant,g,extras);err==nil{t.Fatal("receipt overwritten")}
 			if err:=a.Close();err!=nil{t.Fatal(err)}
@@ -145,12 +153,16 @@ func TestComposedHeldReceipt(t *testing.T){
 			case "changed collection":if _,err:=g.DB.Write.Exec(`UPDATE image_collections SET position=8 WHERE image_id=? AND name='pool'`,id);err!=nil{t.Fatal(err)}
 			case "changed relationship":if _,err:=g.DB.Write.Exec(`DELETE FROM derivative_edges WHERE derivative_image_id=? AND source_image_id=?`,id,parent);err!=nil{t.Fatal(err)}
 			case "old alias returns":if err:=os.WriteFile(alias,[]byte("operator"),0600);err!=nil{t.Fatal(err)}
+			case "extra retained alias":
+				p:=filepath.Join(s.GalleryRoot,"new-operator.png")
+				if err:=os.WriteFile(p,buf.Bytes(),0600);err!=nil{t.Fatal(err)}
+				if res,err:=g.LandInPlace(ctx,p,library.LandSpec{Origin:"fixture"});err!=nil||!res.Duplicate{t.Fatal("new operator alias",err)}
 			case "changed job":job.Commentary="unapplied"
 			case "lost composition":if err:=os.Remove(composition);err!=nil{t.Fatal(err)}
 			case "damaged receipt":if err:=os.WriteFile(receipt,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
 			}
 			recovered,err:=a.observeHeldReceipt(ctx,grant,g,extras)
-			bad:=strings.HasPrefix(mode,"changed")||mode=="same bytes replacement"||mode=="old alias returns"||mode=="lost composition"||mode=="damaged receipt"
+			bad:=strings.HasPrefix(mode,"changed")||mode=="same bytes replacement"||mode=="old alias returns"||mode=="lost composition"||mode=="damaged receipt"||mode=="extra retained alias"
 			if (err!=nil)!=bad||(!bad&&recovered!=stored){t.Fatal("unexpected recovery",err)}
 			if _,err:=a.disposeComposedHeld(ctx,grant,g,extras);err==nil{t.Fatal("disposal replay")}
 			if mode=="old alias returns"{checkBytes(alias,[]byte("operator"))}
