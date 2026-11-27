@@ -215,6 +215,7 @@ func(a *Allocator)beginWorkspaceReclaimLocked(ctx context.Context,grant workerpr
 	if err!=nil||again!=witness{return ErrStageRecovery}
 	if err:=authorize(ctx,grant,witness);err!=nil{return ErrStageRefused}
 	if !a.livePublicationRoots(grant,r,p,src,dst)||ctx.Err()!=nil{return ErrStageRefused}
+	if progress,err:=workspaceProgress(ctx,w,media,m,true);err!=nil||progress!=0{return ErrStageRecovery}
 	body,err:=json.Marshal(m)
 	if err!=nil||len(body)>maxWorkspaceReclaimRecord{return ErrStageLimit}
 	if err:=writeOwnerBytes(ctx,p,"workspace-reclaim-attempt.json",body);err!=nil{return err}
@@ -254,6 +255,8 @@ func(a *Allocator)resumeWorkspaceReclaimLocked(ctx context.Context,grant workerp
 		witness,err:=a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
 		if err!=nil||witness!=m.Witness{return 0,ErrStageRecovery}
 		if err:=authorize(ctx,grant,witness);err!=nil{return 0,ErrStageRefused}
+		again,err:=a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
+		if err!=nil||again!=witness{return 0,ErrStageRecovery}
 		if !a.livePublicationRoots(grant,r,p,src,dst)||ctx.Err()!=nil{return 0,ErrStageRefused}
 		for _,v:=range []struct{path string;root *os.Root}{
 			{filepath.Join(a.path,grant.Request.OperationID,grant.TransferID),w},
