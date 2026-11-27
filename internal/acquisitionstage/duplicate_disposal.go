@@ -146,9 +146,11 @@ func(a *Allocator)disposeHeldDuplicateLocked(ctx context.Context,grant workerpro
 	raw,err:=json.Marshal(result)
 	if err!=nil{return zero,ErrStageRecovery}
 	d:=duplicateAttempt{Version:1,MetadataSHA256:digestBytes(raw),Held:held[0]}
+	var managedPathID int64
 	if extras!=nil{
 		composition,err:=a.observeHeldCompositionLocked(ctx,grant,g,extras,true)
 		if err!=nil||composition.Held!=held[0]{return zero,ErrStageRecovery}
+		managedPathID=composition.ManagedPathID
 		d.CompositionSHA256,err=heldCompositionDigest(p)
 		if err!=nil||d.CompositionSHA256==""{return zero,ErrStageRecovery}
 	}else if _,err:=p.Lstat("held-composition.json");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
@@ -185,9 +187,9 @@ func(a *Allocator)disposeHeldDuplicateLocked(ctx context.Context,grant workerpro
 		if _,err:=a.observeHeldCompositionLocked(ctx,grant,g,extras,false);err!=nil{return zero,err}
 	}
 	err=g.Edit(func(database *db.DB)error{
-		res,err:=database.Write.ExecContext(ctx,`DELETE FROM image_paths WHERE image_id=? AND path=? AND is_canonical=0
+		res,err:=database.Write.ExecContext(ctx,`DELETE FROM image_paths WHERE image_id=? AND path=? AND is_canonical=0 AND (?=0 OR id=?)
 			AND EXISTS (SELECT 1 FROM images WHERE id=? AND canonical_path=? AND sha256=? AND is_missing=0)`,
-			d.Held.ImageID,filepath.Join(r.GalleryRoot,name),d.Held.ImageID,filepath.Join(r.GalleryRoot,d.Held.CanonicalPath),f.SHA256)
+			d.Held.ImageID,filepath.Join(r.GalleryRoot,name),managedPathID,managedPathID,d.Held.ImageID,filepath.Join(r.GalleryRoot,d.Held.CanonicalPath),f.SHA256)
 		if err!=nil{return err}
 		n,err:=res.RowsAffected()
 		if err!=nil||n!=1{return ErrStageRecovery}
