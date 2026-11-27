@@ -82,7 +82,7 @@ func validateNamingRecords(p *os.Root,r record,e SealedEvidence,l landingAttempt
 	if err!=nil{return err}
 	if l.NewOnly{
 		if l.RestoreImageID!=0||m.RestoreStateSHA256!=""{return ErrStageRecovery}
-	}else if !validDigest(m.RestoreStateSHA256)||m.ImageID!=l.RestoreImageID||m.CollectionSHA256!=""||strings.EqualFold(m.Final,l.RestorePath)||strings.EqualFold(m.Initial,l.RestorePath){return ErrStageRecovery}
+	}else if l.RestorePathID<=0||!validDigest(l.RestorePreservationSHA256)||!validDigest(m.RestoreStateSHA256)||m.ImageID!=l.RestoreImageID||m.CollectionSHA256!=""||strings.EqualFold(m.Final,l.RestorePath)||strings.EqualFold(m.Initial,l.RestorePath){return ErrStageRecovery}
 	if !hasResult{return nil}
 	body,err:=boundedRegularBytes(p,"naming-result.json",maxNamingRecord)
 	want,e2:=json.Marshal(namingResult{Version:1,AttemptSHA256:digestBytes(raw)})
@@ -188,7 +188,7 @@ func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllo
 	if restore==nil{
 		if !l.NewOnly{return fail(ErrStageRefused)}
 	}else{
-		if l.NewOnly||l.RestoreImageID<=0||client!=nil{return fail(ErrStageRefused)}
+		if l.NewOnly||l.RestoreImageID<=0||l.RestorePathID<=0||!validDigest(l.RestorePreservationSHA256)||client!=nil{return fail(ErrStageRefused)}
 		if _,err:=newOnlyRows(e,snapshot);err!=nil{return fail(err)}
 		job,err:=restore(ctx,grant)
 		if err!=nil||!job.Empty(){return fail(ErrStageRefused)}
