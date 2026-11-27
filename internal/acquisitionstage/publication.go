@@ -11,6 +11,7 @@ import(
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
@@ -103,16 +104,25 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		if !item.Type().IsRegular()||!want[item.Name()]{return zero,ErrStageRecovery}
 		delete(want,item.Name())
 	}
+	var plan *newPublicationPlan
 	if names["attempt"]{
-		marker,err:=boundedRegularBytes(p,"attempt",64)
-		if err!=nil||string(marker)!=r.Allocation.TransferID{return zero,ErrStageRecovery}
+		plan,_,err=readPublicationAttempt(p,r.Allocation)
+		if err!=nil{return zero,ErrStageRecovery}
+		if plan!=nil{
+			if len(e.Files)!=1||e.Files[0]!=plan.File||plan.DB.GalleryIdentity!=r.GalleryIdentity||
+				names["held-composition.json"]||names["restored-receipt.json"]||names["new-receipt.json"]||names["duplicate-attempt.json"]||names["collection-attempt.json"]{return zero,ErrStageRecovery}
+			for _,path:=range []string{plan.Preview.InitialPath,plan.Preview.FinalPath}{
+				rel,err:=namingRelative(r.GalleryRoot,path)
+				if err!=nil||strings.EqualFold(rel,finalName(r.Allocation,plan.File)){return zero,ErrStageRecovery}
+			}
+		}
 	}
 	if names["landing-attempt.json"]{
 		landing,err:=readLandingAttempt(p,r)
 		if err!=nil{return zero,ErrStageRecovery}
 		if names["metadata-attempt.json"]{
 			m,err:=readMetadataAttempt(p,landing,e)
-			if err!=nil{return zero,ErrStageRecovery}
+			if err!=nil||(plan!=nil&&m.PolicySHA256!=plan.PolicySHA256){return zero,ErrStageRecovery}
 			if names["metadata-result.json"]{
 				result,err:=readMetadataResult(p,m)
 				if err!=nil{return zero,ErrStageRecovery}
@@ -124,9 +134,17 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 				}
 				if names["naming-attempt.json"]{
 					if err:=validateNamingRecords(p,r,e,landing,result,names["naming-result.json"]);err!=nil{return zero,err}
+					if plan!=nil{
+						m,_,err:=readNamingAttempt(p,r,e,result)
+						if err!=nil||!matchesPlanNaming(r,*plan,m){return zero,ErrStageRecovery}
+					}
 				}
 				if names["extras-attempt.json"]{
 					if err:=validateExtrasRecords(p,landing,result,names["extras-result.json"]);err!=nil{return zero,err}
+					if plan!=nil{
+						m,_,err:=readExtrasAttempt(p,result)
+						if err!=nil||!samePlannedJob(plan.Job,m.Job){return zero,ErrStageRecovery}
+					}
 				}
 				if names["restored-receipt.json"]{
 					if _,err:=readRestoredReceipt(p,r,e,landing,m,result);err!=nil{return zero,err}
@@ -236,7 +254,7 @@ func commonRoot(a,b string)(*os.Root,string,string,error){
 // the exact retained inode/file and precisely two links after attempt.
 func inspectPlacements(ctx context.Context,g workerproto.StageAllocation,e SealedEvidence,p,src,dst *os.Root)([]placement,error){
 	attempted:=false
-	if marker,err:=boundedRegularBytes(p,"attempt",64);err==nil&&string(marker)==g.TransferID{
+	if _,_,err:=readPublicationAttempt(p,g);err==nil{
 		attempted=true
 	}else if _,err:=p.Lstat("attempt");!errors.Is(err,os.ErrNotExist){return nil,ErrStageRecovery}
 	out:=make([]placement,0,len(e.Files))
@@ -309,13 +327,13 @@ func digestBytes(body []byte)string{
 // even an all-placed result is not database commit or receipt.
 func(a *Allocator)publishPrepared(ctx context.Context,g workerproto.StageAllocation)([]placement,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	return a.publishPreparedLocked(ctx,g,nil)
+	return a.publishPreparedLocked(ctx,g,[]byte(g.TransferID),nil)
 }
 
 // guard is an independent owner-side pre-publication check. Diagnostic
 // callers retain their previous behavior; the guarded caller supplies
 // an exact plan re-observer before intent and immediately before link.
-func(a *Allocator)publishPreparedLocked(ctx context.Context,g workerproto.StageAllocation,guard func()error)([]placement,error){
+func(a *Allocator)publishPreparedLocked(ctx context.Context,g workerproto.StageAllocation,marker []byte,guard func()error)([]placement,error){
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,g)
 	if err!=nil{return nil,err}
 	defer p.Close();defer src.Close();defer dst.Close()
@@ -333,7 +351,7 @@ func(a *Allocator)publishPreparedLocked(ctx context.Context,g workerproto.StageA
 	}
 	if guard!=nil{if err:=guard();err!=nil{return nil,err}}
 	if !rootsMatch(){return nil,ErrStageRefused}
-	if err:=writeOwnerBytes(ctx,p,"attempt",[]byte(g.TransferID));err!=nil{return nil,err}
+	if err:=writeOwnerBytes(ctx,p,"attempt",marker);err!=nil{return nil,err}
 	syncDirectory(p)
 	for _,f:=range e.Files{
 		s,err:=a.scope(ctx,g.Request)
