@@ -203,7 +203,13 @@ func TestComposedRestoredReceipt(t *testing.T){
 			if err:=a.applyRestoredNaming(ctx,grant,g,naming,extras);err==nil{t.Fatal("naming replay")}
 			if mode=="old path returns after receipt"{checkBytes(old,[]byte("operator"))}
 			if mode=="collision"{checkBytes(filepath.Join(s.GalleryRoot,"derpibooru-42.png"),[]byte("operator"))}
-			checkBytes(filepath.Join(dir,"media",f.RelativeName),buf.Bytes())
+			// The prepared file and final canonical intentionally share an
+			// inode until a separate reclaim. An injected in-place edit
+			// changes both, and must invalidate the receipt. The independent
+			// sealed copy is never linked to either of them.
+			wantPrepared:=buf.Bytes()
+			if mode=="changed canonical"{wantPrepared=[]byte("changed")}
+			checkBytes(filepath.Join(dir,"media",f.RelativeName),wantPrepared)
 			checkBytes(filepath.Join(stage,grant.Request.OperationID,"sealed","media",f.RelativeName),buf.Bytes())
 		})
 	}
