@@ -183,7 +183,14 @@ func readNewReceipt(p *os.Root,r record,e SealedEvidence,m metadataAttempt,resul
 // Verify exact new-only metadata independently of the current canonical path.
 // Callers must separately prove the file and canonical path row.
 func verifyNewMetadataState(ctx context.Context,g *library.Gallery,rows []acquisitionplan.ApprovedPolicyRow,m metadataAttempt,result metadataResult)error{
-	if !m.Landing.NewOnly||len(rows)==0||len(rows)!=len(m.Targets)||len(rows)!=len(result.Rows){return ErrStageRecovery}
+	return verifyNewMetadataStateWithClient(ctx,g,rows,m,result,nil)
+}
+
+// Client ownership is an independently proven additive ledger, never
+// a replacement for source or locally derived ownership.
+func verifyNewMetadataStateWithClient(ctx context.Context,g *library.Gallery,rows []acquisitionplan.ApprovedPolicyRow,m metadataAttempt,result metadataResult,client *clientTagState)error{
+	if !m.Landing.NewOnly||len(rows)==0||len(rows)!=len(m.Targets)||len(rows)!=len(result.Rows)||
+		(client!=nil&&(len(rows)!=1||client.Via==""||client.Via==rows[0].SourceLabel||client.Via==models.TagSourceMonbooru)){return ErrStageRecovery}
 	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
 	if err!=nil{return ErrStageRecovery}
 	defer tx.Rollback()
@@ -196,6 +203,15 @@ func verifyNewMetadataState(ctx context.Context,g *library.Gallery,rows []acquis
 		direct:=map[int64]bool{}
 		for _,id:=range derived{direct[id]=true}
 		for _,id:=range v.TagIDs{direct[id]=true}
+		clientCount:=0
+		if client!=nil{
+			clientCount=len(client.TagIDs)
+			for _,id:=range client.TagIDs{
+				direct[id]=true
+				var count int
+				if err:=tx.QueryRowContext(ctx,`SELECT COUNT(*) FROM image_tag_sources ts JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.tag_id=? AND ts.source=? AND it.stale=0 AND it.is_implied=0 AND it.is_auto=0`,v.ImageID,id,client.Via).Scan(&count);err!=nil||count!=1{return ErrStageRecovery}
+			}
+		}
 		var n int
 		// New-only: no extra origins or aliases, no unexpected active
 		// attribution to this source, and no omitted parent/collection.
@@ -203,10 +219,12 @@ func verifyNewMetadataState(ctx context.Context,g *library.Gallery,rows []acquis
 			{`SELECT COUNT(*) FROM images WHERE id=? AND origin=? AND source=? AND url=?`,[]any{v.ImageID,newReceiptOrigin,row.SourceLabel,row.PostURL},1},
 			{`SELECT COUNT(*) FROM image_paths WHERE image_id=?`,[]any{v.ImageID},1},
 			{`SELECT COUNT(*) FROM image_sources WHERE image_id=?`,[]any{v.ImageID},1},
-			{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=?`,[]any{v.ImageID},len(v.TagIDs)+len(derived)},
+			{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=?`,[]any{v.ImageID},len(v.TagIDs)+len(derived)+clientCount},
 			{`SELECT COUNT(*) FROM image_tag_sources ts JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source=? AND it.stale=0`,[]any{v.ImageID,row.SourceLabel},len(v.TagIDs)},
 			{`SELECT COUNT(*) FROM image_tags WHERE image_id=? AND is_implied=0`,[]any{v.ImageID},len(direct)},
 			{`SELECT COUNT(*) FROM image_collections WHERE image_id=?`,[]any{v.ImageID},0},
+			{`SELECT COUNT(*) FROM images WHERE id=? AND COALESCE(series,'')='' AND series_order IS NULL`,[]any{v.ImageID},1},
+			{`SELECT COUNT(*) FROM derivative_edges WHERE source_image_id=? OR derivative_image_id=?`,[]any{v.ImageID,v.ImageID},0},
 			{`SELECT COUNT(*) FROM image_sources WHERE parent_url=?`,[]any{row.PostURL},0},
 		}{
 			if err:=tx.QueryRowContext(ctx,check.query,check.args...).Scan(&n);err!=nil||n!=check.want{return ErrStageRecovery}
