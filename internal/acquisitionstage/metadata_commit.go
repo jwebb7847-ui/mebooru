@@ -26,6 +26,7 @@ type metadataTarget struct{
 	PostID string `json:"post_id"`
 	ImageID int64 `json:"image_id"`
 	PriorRating string `json:"prior_rating"`
+	DerivedTags []int64 `json:"derived_tags,omitempty"`
 }
 type metadataAttempt struct{
 	Version int `json:"version"`
@@ -55,6 +56,12 @@ func readMetadataAttempt(p *os.Root,landing landingAttempt,e SealedEvidence)(met
 	for i,t:=range m.Targets{
 		if t.PostID!=e.Files[i].ID||t.ImageID<=0||seen[t.ImageID]||!canonicalRating(t.PriorRating){return zero,ErrStageRecovery}
 		seen[t.ImageID]=true
+		if !landing.NewOnly&&len(t.DerivedTags)!=0{return zero,ErrStageRecovery}
+		var prior int64
+		for _,id:=range t.DerivedTags{
+			if id<=prior{return zero,ErrStageRecovery}
+			prior=id
+		}
 	}
 	raw,err:=json.Marshal(m)
 	if err!=nil||!bytes.Equal(raw,body){return zero,ErrStageRecovery}
@@ -198,7 +205,13 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 		seen[v.ImageID]=true
 		rating,err:=readImageRating(ctx,g,v.ImageID)
 		if err!=nil{return nil,err}
-		m.Targets=append(m.Targets,metadataTarget{PostID:v.PostID,ImageID:v.ImageID,PriorRating:rating})
+		target:=metadataTarget{PostID:v.PostID,ImageID:v.ImageID,PriorRating:rating}
+		if landing.NewOnly{
+			if rating!=""{return nil,ErrStageRecovery}
+			target.DerivedTags,err=readNewDerivedBaseline(ctx,g,v.ImageID)
+			if err!=nil{return nil,err}
+		}
+		m.Targets=append(m.Targets,target)
 	}
 	stillCurrent:=func()bool{
 		s,err:=a.scope(ctx,grant.Request)

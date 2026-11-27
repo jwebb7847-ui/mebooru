@@ -15,9 +15,10 @@ import(
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/library"
+	"github.com/monbooru/monbooru/internal/models"
 )
 func TestNewOnlyReceiptThroughActualIngest(t *testing.T){
-	for _,mode:=range []string{"complete","unrated","existing bytes","parent claim","missing provenance","legacy attempt","missing metadata result","changed row","changed file","damaged receipt","extra source tag","stale source tag","unexpected source claim","wrong origin"}{
+	for _,mode:=range []string{"complete","unrated","existing bytes","parent claim","missing provenance","legacy attempt","missing metadata result","changed row","changed file","damaged receipt","extra source tag","stale source tag","unexpected source claim","wrong origin","removed derived ownership"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -70,6 +71,8 @@ func TestNewOnlyReceiptThroughActualIngest(t *testing.T){
 				if _,err:=a.finishNewReceipt(ctx,grant,g);err==nil{t.Fatal("uncertain metadata received receipt")}
 				return
 			}
+			var derived int
+			if err:=g.DB.Read.QueryRow(`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=? AND source=?`,v[0].ImageID,models.TagSourceMonbooru).Scan(&derived);err!=nil||derived==0{t.Fatal("fixture did not exercise library-derived metadata",err)}
 			receipt,err:=a.finishNewReceipt(ctx,grant,g)
 			if err!=nil||receipt.Kind!=newReceiptKind||len(receipt.Rows)!=1||receipt.Rows[0].ImageID!=v[0].ImageID{t.Fatalf("receipt %+v %v",receipt,err)}
 			if _,err:=a.finishNewReceipt(ctx,grant,g);err==nil{t.Fatal("receipt overwritten")}
@@ -93,6 +96,8 @@ func TestNewOnlyReceiptThroughActualIngest(t *testing.T){
 				if _,err:=g.DB.Write.Exec(`UPDATE image_sources SET commentary='unexpected' WHERE image_id=?`,v[0].ImageID);err!=nil{t.Fatal(err)}
 			case "wrong origin":
 				if _,err:=g.DB.Write.Exec(`UPDATE images SET origin='other' WHERE id=?`,v[0].ImageID);err!=nil{t.Fatal(err)}
+			case "removed derived ownership":
+				if _,err:=g.DB.Write.Exec(`DELETE FROM image_tag_sources WHERE image_id=? AND source=?`,v[0].ImageID,models.TagSourceMonbooru);err!=nil{t.Fatal(err)}
 			}
 			got,err:=a.observeNewReceipt(ctx,grant,g)
 			if mode=="complete"||mode=="unrated"{

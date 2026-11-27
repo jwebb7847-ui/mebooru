@@ -16,6 +16,7 @@ import(
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/library"
+	"github.com/monbooru/monbooru/internal/models"
 )
 
 // The first terminal receipt is deliberately restricted to an isolated
@@ -47,7 +48,7 @@ func newOnlyRows(e SealedEvidence,snapshot acquisitionplan.ApprovedPolicySnapsho
 	seen:=map[string]bool{}
 	urls:=map[string]bool{}
 	for i,r:=range rows{
-		if r.Provenance==nil||r.Provenance.ParentURL!=""||r.Provenance.Collection!=""||r.Provenance.CollectionOrder!=0||
+		if r.SourceLabel==models.TagSourceMonbooru||r.Provenance==nil||r.Provenance.ParentURL!=""||r.Provenance.Collection!=""||r.Provenance.CollectionOrder!=0||
 			filepath.Ext(e.Files[i].RelativeName)!=".png"||seen[e.Files[i].SHA256]||urls[r.PostURL]{return nil,ErrStageRefused}
 		seen[e.Files[i].SHA256]=true;urls[r.PostURL]=true
 	}
@@ -65,6 +66,50 @@ func verifyNewOnlyEligibility(ctx context.Context,g *library.Gallery,e SealedEvi
 		if err:=tx.QueryRowContext(ctx,`SELECT COUNT(*) FROM image_sources WHERE (site=? AND post_id=?) OR url=? OR parent_url=?`,row.SourceLabel,row.PostID,row.PostURL,row.PostURL).Scan(&n);err!=nil||n!=0{return ErrStageRefused}
 	}
 	if err:=tx.Commit();err!=nil{return ErrStageRecovery}
+	return nil
+}
+
+// Snapshot library-derived tag ownership immediately after actual
+// landing, before any mapped source writes. Ingestion legitimately
+// generates local meta tags (e.g. lowres); never conflate them with the
+// approved remote source or accept unrelated user/source attribution.
+func readNewDerivedBaseline(ctx context.Context,g *library.Gallery,id int64)([]int64,error){
+	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
+	if err!=nil{return nil,ErrStageRecovery}
+	defer tx.Rollback()
+	rows,err:=tx.QueryContext(ctx,`SELECT ts.tag_id FROM image_tag_sources ts JOIN image_tags it
+		ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source=? AND it.stale=0 ORDER BY ts.tag_id`,id,models.TagSourceMonbooru)
+	if err!=nil{return nil,ErrStageRecovery}
+	var out []int64
+	for rows.Next(){
+		var tag int64
+		if rows.Scan(&tag)!=nil||tag<=0||(len(out)>0&&tag<=out[len(out)-1])||len(out)>=8192{
+			rows.Close();return nil,ErrStageRecovery
+		}
+		out=append(out,tag)
+	}
+	err=rows.Err();rows.Close()
+	if err!=nil{return nil,ErrStageRecovery}
+	for _,q:=range []string{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=?`,`SELECT COUNT(*) FROM image_tags WHERE image_id=? AND is_implied=0`}{
+		var count int
+		if err:=tx.QueryRowContext(ctx,q,id).Scan(&count);err!=nil||count!=len(out){return nil,ErrStageRecovery}
+	}
+	if err:=tx.Commit();err!=nil{return nil,ErrStageRecovery}
+	return out,nil
+}
+
+func verifyNewDerivedBaseline(ctx context.Context,tx *sql.Tx,id int64,expected []int64)error{
+	rows,err:=tx.QueryContext(ctx,`SELECT ts.tag_id FROM image_tag_sources ts JOIN image_tags it
+		ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source=? AND it.stale=0 ORDER BY ts.tag_id`,id,models.TagSourceMonbooru)
+	if err!=nil{return ErrStageRecovery}
+	defer rows.Close()
+	i:=0
+	for rows.Next(){
+		var tag int64
+		if i>=len(expected)||rows.Scan(&tag)!=nil||tag!=expected[i]{return ErrStageRecovery}
+		i++
+	}
+	if rows.Err()!=nil||i!=len(expected){return ErrStageRecovery}
 	return nil
 }
 
@@ -159,6 +204,11 @@ func(a *Allocator)newReceiptLocked(ctx context.Context,grant workerproto.StageAl
 		if !landed[i].Canonical||landed[i].ImageID!=v.ImageID||!sameMetadataObservation(v,result.Rows[i]){return zero,ErrStageRecovery}
 		in,md5,err:=normalizedMappedSource(row)
 		if err!=nil||verifySourceClaimsMode(ctx,tx,v.ImageID,in,md5,true)!=nil{return zero,ErrStageRecovery}
+		derived:=m.Targets[i].DerivedTags
+		if err:=verifyNewDerivedBaseline(ctx,tx,v.ImageID,derived);err!=nil{return zero,err}
+		direct:=map[int64]bool{}
+		for _,id:=range derived{direct[id]=true}
+		for _,id:=range v.TagIDs{direct[id]=true}
 		var n int
 		// New-only: no extra origins or aliases, no unexpected active
 		// attribution to this source, and no omitted parent/collection.
@@ -166,9 +216,9 @@ func(a *Allocator)newReceiptLocked(ctx context.Context,grant workerproto.StageAl
 			{`SELECT COUNT(*) FROM images WHERE id=? AND origin=? AND source=? AND url=?`,[]any{v.ImageID,newReceiptOrigin,row.SourceLabel,row.PostURL},1},
 			{`SELECT COUNT(*) FROM image_paths WHERE image_id=?`,[]any{v.ImageID},1},
 			{`SELECT COUNT(*) FROM image_sources WHERE image_id=?`,[]any{v.ImageID},1},
-			{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=?`,[]any{v.ImageID},len(v.TagIDs)},
+			{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=?`,[]any{v.ImageID},len(v.TagIDs)+len(derived)},
 			{`SELECT COUNT(*) FROM image_tag_sources ts JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source=? AND it.stale=0`,[]any{v.ImageID,row.SourceLabel},len(v.TagIDs)},
-			{`SELECT COUNT(*) FROM image_tags WHERE image_id=? AND is_implied=0`,[]any{v.ImageID},len(v.TagIDs)},
+			{`SELECT COUNT(*) FROM image_tags WHERE image_id=? AND is_implied=0`,[]any{v.ImageID},len(direct)},
 			{`SELECT COUNT(*) FROM image_collections WHERE image_id=?`,[]any{v.ImageID},0},
 			{`SELECT COUNT(*) FROM image_sources WHERE parent_url=?`,[]any{row.PostURL},0},
 		}{
