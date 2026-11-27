@@ -1383,22 +1383,7 @@ func imageExists(g *library.Gallery, id int64) (bool, error) {
 }
 
 func (h *Handler) applyInitialTags(g *library.Gallery, imgID int64, rawTags []string, via string) (added int, warnings, rejected []string, err error) {
-	// Default "api" so API tags don't read as anonymous UI adds.
-	via = cmp.Or(via, "api")
-	tagIDs, warnings, rejected, err := gallery.ResolveTagNames(g.DB, g.TagSvc, rawTags, via)
-	if err != nil || len(tagIDs) == 0 {
-		return 0, warnings, rejected, err
-	}
-	results, err := g.TagSvc.AddTagsToOneImage(imgID, tagIDs, via)
-	if err != nil {
-		return 0, warnings, rejected, fmt.Errorf("apply tags: %w", err)
-	}
-	for _, r := range results {
-		if r.Added {
-			added++
-		}
-	}
-	return added, warnings, rejected, nil
+	return g.ApplyInitialTags(imgID,rawTags,via)
 }
 
 // A source owns the tags it pushes; tags pushed without one go on add-only.
