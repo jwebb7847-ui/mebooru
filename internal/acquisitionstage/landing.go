@@ -93,6 +93,11 @@ func(a *Allocator)beginLanding(ctx context.Context,grant workerproto.StageAlloca
 	// of a path row to authorize another ingestion attempt.
 	current,err:=observedDB(r,g)
 	if err!=nil||current!=attempt||ctx.Err()!=nil{return ErrStageRecovery}
+	s,err=a.scope(ctx,grant.Request)
+	if err!=nil||!matches(r,s){return ErrStageRefused}
+	places,err=inspectPlacements(ctx,grant,e,p,src,dst)
+	if err!=nil{return err}
+	for _,v:=range places{if v.State!="placed"{return ErrStageRecovery}}
 	return nil
 }
 
@@ -145,6 +150,8 @@ func(a *Allocator)observeLanding(ctx context.Context,grant workerproto.StageAllo
 	if err!=nil||!matches(r,s){return nil,ErrStageRefused}
 	current,err=observedDB(r,g)
 	if err!=nil||current!=attempt{return nil,ErrStageRecovery}
-	if _,err:=inspectPlacements(ctx,grant,e,p,src,dst);err!=nil{return nil,err}
+	places,err=inspectPlacements(ctx,grant,e,p,src,dst)
+	if err!=nil{return nil,err}
+	for _,v:=range places{if v.State!="placed"{return nil,ErrStageRecovery}}
 	return rows,nil
 }
