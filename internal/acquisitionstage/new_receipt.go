@@ -268,7 +268,7 @@ func(a *Allocator)newReceiptLocked(ctx context.Context,grant workerproto.StageAl
 	rows,err:=newOnlyRows(e,snapshot)
 	if err!=nil{return zero,err}
 	l,err:=readLandingAttempt(p,r)
-	if err!=nil||!l.NewOnly{return zero,ErrStageRecovery}
+	if err!=nil||!l.NewOnly||l.PlanSHA256!=""{return zero,ErrStageRecovery}
 	m,err:=readMetadataAttempt(p,l,e)
 	if err!=nil{return zero,err}
 	result,err:=readMetadataResult(p,m)
