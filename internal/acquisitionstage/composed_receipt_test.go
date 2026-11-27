@@ -133,6 +133,7 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 			})
 			if mode=="no authority"{extras=nil}
 			if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("receipt without explicit extras witness")}
+			if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("terminal witness before receipt")}
 			err=a.applyClientExtras(ctx,grant,g,naming,extras)
 			preRefusal:=mode=="collection changed after move"||mode=="rating alias"||mode=="source label collision"||mode=="unrated rating"||mode=="rating implication"||mode=="custom via"||mode=="commentary"||mode=="source override"||mode=="no authority"
 			partial:=mode=="revoked after attempt"||mode=="DB failure"||mode=="revoked after write"
@@ -155,6 +156,7 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 				if _,err:=os.Stat(result);!os.IsNotExist(err){t.Fatal("unexpected extras result",err)}
 				if mode=="revoked after write"{if clientCount!=1{t.Fatal("write boundary not reached")}}else if clientCount!=0{t.Fatal("unauthorized client tag")}
 				if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("partial receipt")}
+				if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("partial terminal witness")}
 				if err:=a.applyClientExtras(ctx,grant,g,naming,extras);err==nil{t.Fatal("partial replay")}
 				return
 			}
@@ -204,6 +206,13 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 				mode=="missing client owner"||mode=="unexpected tag"||mode=="changed implication"||mode=="damaged receipt"||
 				mode=="collection changed after receipt"||mode=="collection extra member"||mode=="collection lost result"||mode=="collection damaged result"
 			if (err!=nil)!=bad||(!bad&&recovered!=stored){t.Fatal("unexpected receipt recovery",err)}
+			witness,werr:=a.observeTerminalReceipt(ctx,grant,g,naming,extras)
+			if (werr!=nil)!=bad{t.Fatal("common terminal witness recovery",werr)}
+			if !bad{
+				body,err:=os.ReadFile(receipt)
+				wantRow:=stored.Row
+				if err!=nil||witness.Kind!=stored.Kind||witness.Allocation!=grant||witness.GalleryIdentity!=stored.GalleryIdentity||witness.PolicySHA256!=stored.PolicySHA256||witness.ReceiptSHA256!=digestBytes(body)||witness.Row!=wantRow||witness.PathID<=0||witness.FileIdentity!=stored.FileIdentity{t.Fatal("common witness differs",witness,err)}
+			}
 			if err:=a.applyClientExtras(ctx,grant,g,naming,extras);err==nil{t.Fatal("replayed extras")}
 			for _,path:=range []string{final,filepath.Join(dir,"media",f.RelativeName),filepath.Join(stage,grant.Request.OperationID,"sealed","media",f.RelativeName)}{
 				b,err:=os.ReadFile(path);if err!=nil||!bytes.Equal(b,buf.Bytes()){t.Fatal("media evidence lost",path,err)}
