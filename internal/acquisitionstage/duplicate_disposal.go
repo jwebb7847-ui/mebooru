@@ -10,6 +10,7 @@ import(
 	"io"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/monbooru/monbooru/internal/library"
 	"github.com/monbooru/monbooru/internal/db"
 )
@@ -55,6 +56,8 @@ func(a *Allocator)observeDuplicateDisposalLocked(ctx context.Context,grant worke
 	if err!=nil||current!=l{return zero,ErrStageRecovery}
 	m,err:=readMetadataAttempt(p,l,e)
 	if err!=nil{return zero,err}
+	_,hash,err:=acquisitionplan.EncodeApprovedPolicy(snapshot.Transfer,snapshot.Rows)
+	if err!=nil||hash!=m.PolicySHA256{return zero,ErrStageRecovery}
 	result,err:=readMetadataResult(p,m)
 	if err!=nil{return zero,err}
 	d,err:=readDuplicateAttempt(p,e,result)
@@ -84,11 +87,30 @@ func(a *Allocator)observeDuplicateDisposalLocked(ctx context.Context,grant worke
 	if err:=tx.Commit();err!=nil{return zero,ErrStageRecovery}
 	s,err:=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s)||g.WatcherRunning(){return zero,ErrStageRefused}
+	current,err=observedDB(r,g)
+	if err!=nil||current!=l||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRecovery}
+	places,err=inspectPlacements(ctx,grant,e,p,src,dst)
+	if err!=nil||len(places)!=1||places[0].State!="absent"{return zero,ErrStageRecovery}
+	id,err=verifyHeldCanonical(ctx,dst,h.CanonicalPath,f)
+	if err!=nil||id!=h.CanonicalIdentity{return zero,ErrStageRecovery}
 	return h,nil
 }
 func(a *Allocator)observeDuplicateDisposal(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)(heldDuplicate,error){
 	a.mu.Lock();defer a.mu.Unlock()
 	return a.observeDuplicateDisposalLocked(ctx,grant,g)
+}
+// Compare retained handles to the current owner-selected roots. Point-in-
+// time under cooperative owner exclusion, not a hostile-writer defense.
+func(a *Allocator)livePublicationRoots(grant workerproto.StageAllocation,r record,p,src,dst *os.Root)bool{
+	if !a.live(){return false}
+	base:=filepath.Join(a.path,grant.Request.OperationID,"publication")
+	for _,v:=range []struct{path string;root *os.Root}{{base,p},{filepath.Join(base,"media"),src},{r.GalleryRoot,dst}}{
+		_,current,err:=directory(v.path)
+		if err!=nil{return false}
+		opened,err:=v.root.Stat(".")
+		if err!=nil||!os.SameFile(current,opened){return false}
+	}
+	return true
 }
 func(a *Allocator)disposeHeldDuplicate(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)(heldDuplicate,error){
 	var zero heldDuplicate
@@ -116,6 +138,11 @@ func(a *Allocator)disposeHeldDuplicate(ctx context.Context,grant workerproto.Sta
 	if err!=nil||len(again)!=1||again[0]!=d.Held{return zero,ErrStageRecovery}
 	f:=e.Files[0]
 	name:=finalName(grant,f)
+	if !a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRecovery}
+	places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
+	if err!=nil||len(places)!=1||places[0].State!="placed"{return zero,ErrStageRecovery}
+	canonicalID,err:=verifyHeldCanonical(ctx,dst,d.Held.CanonicalPath,f)
+	if err!=nil||canonicalID!=d.Held.CanonicalIdentity{return zero,ErrStageRecovery}
 	// Only the deterministic operation-owned second link is removed.
 	// Filesystem first; a failed DB delete leaves an uncertain attempt
 	// and retained private bytes. No automated recovery mutation.
@@ -126,6 +153,9 @@ func(a *Allocator)disposeHeldDuplicate(ctx context.Context,grant workerproto.Sta
 	if err!=nil||id!=d.Held.CanonicalIdentity{return zero,ErrStageRecovery}
 	s,err:=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s)||g.WatcherRunning(){return zero,ErrStageRefused}
+	current,err:=observedDB(r,g)
+	if err!=nil||current!=l||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRecovery}
+	if _,err:=dst.Lstat(name);!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
 	err=g.Edit(func(database *db.DB)error{
 		res,err:=database.Write.ExecContext(ctx,`DELETE FROM image_paths WHERE image_id=? AND path=? AND is_canonical=0
 			AND EXISTS (SELECT 1 FROM images WHERE id=? AND canonical_path=? AND sha256=? AND is_missing=0)`,

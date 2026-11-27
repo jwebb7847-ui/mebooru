@@ -331,3 +331,6 @@ Workflow adoption [PR #30](https://github.com/jwebb7847-ui/mebooru/pull/30) merg
 
 
 **II.6.4c isolated held duplicate disposal candidate:** exact single-held duplicate after verified mapped phase, synced attempt bound to result and separately verified canonical identity. Recheck before removing only operation-owned alias link, retain private copy, conditional exact noncanonical DB row deletion, observe actual absence of both alias path/row and retained canonical plus mapped metadata. No retry on uncertain deletion; no terminal receipt or reclamation. Tests successful disposal/lost response, injected DB failure after link removal and changed canonical after disposal. Hosted verification pending.
+
+
+**II.6.4c held disposal recheck candidate:** compare retained roots against current owner-selected directories, explicitly rebind policy digest, reverify placement/canonical before unlink and DB identity/absence before conditional deletion; verify again after authority checks on observation. Test preserving operator-owned alias bytes and row, and revocation after synced attempt before unlink (no automatic replay). Hosted verification pending.
