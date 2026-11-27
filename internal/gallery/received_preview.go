@@ -57,13 +57,20 @@ func PreviewReceivedNaming(ctx context.Context, database *db.DB, b *Boundary, id
 	if received=="" || received=="." || received!=filepath.Base(received) || !filepath.IsLocal(received) || len(received)>255 {
 		return zero,errors.New("invalid received filename")
 	}
-	// The legacy config parser logs invalid settings and can fall back.
-	// A managed preview needs a determinate valid policy before planning.
+	// Actual row must still name a present regular in-gallery file.
+	// This is a point-in-time prerequisite, not a byte-identity witness.
+	canonical,_,err:=loadMoveSource(database,b,id)
+	if err!=nil{return zero,err}
+	actual,err:=os.Lstat(canonical)
+	if err!=nil||!actual.Mode().IsRegular(){return zero,errors.New("landed row has no regular canonical file")}
+	// HTTP trims the request folder before choosing defaults. Legacy
+	// invalid settings log/fall back; a managed preview refuses them.
+	requestFolder:=strings.TrimSpace(req.RequestFolder)
 	if _,err:=ParseNameTemplate(req.DefaultName,ScopeUploadName);err!=nil{return zero,err}
-	if req.RequestFolder=="" {
+	if requestFolder=="" {
 		if _,err:=ParseNameTemplate(req.DefaultFolder,ScopeUploadFolder);err!=nil{return zero,err}
 	}
-	writeDir,n:=ReceivedNaming(req.Gallery,req.RequestFolder,req.DefaultFolder,req.DefaultName)
+	writeDir,n:=ReceivedNaming(req.Gallery,requestFolder,req.DefaultFolder,req.DefaultName)
 	dir,err:=b.ResolveSubdir(writeDir)
 	if err!=nil{return zero,err}
 	if err:=b.Check(filepath.Join(dir,received));err!=nil{return zero,err}
@@ -71,7 +78,7 @@ func PreviewReceivedNaming(ctx context.Context, database *db.DB, b *Boundary, id
 	if err!=nil{return zero,err}
 	facts,err:=readNameFacts(ctx,database,req.Gallery,id)
 	if err!=nil{return zero,err}
-	if filepath.Ext(facts.Base)=="" || !strings.EqualFold(filepath.Ext(facts.Base),filepath.Ext(received)) {
+	if facts.Base!=filepath.Base(canonical)||facts.Size!=actual.Size()||filepath.Ext(facts.Base)=="" || !strings.EqualFold(filepath.Ext(facts.Base),filepath.Ext(received)) {
 		return zero,errors.New("received extension disagrees with landed row")
 	}
 	if facts.MD5=="" && readsMD5([]*NameTemplate{n.Folder,n.Name}) {
@@ -82,7 +89,7 @@ func PreviewReceivedNaming(ctx context.Context, database *db.DB, b *Boundary, id
 	facts.Name=strings.TrimSuffix(facts.Base,ext)
 	facts.Ext=strings.ToLower(strings.TrimPrefix(ext,"."))
 	facts.Folder=FolderPath(b.Root(),initial)
-	folder,name,err:=n.renderArrival(facts,req.Source,req.PostID)
+	folder,name,err:=n.renderArrival(facts,strings.TrimSpace(req.Source),strings.TrimSpace(req.PostID))
 	if err!=nil{return zero,err}
 	base,err:=placementBase(name)
 	if err!=nil{return zero,err}
@@ -101,6 +108,7 @@ func PreviewReceivedNaming(ctx context.Context, database *db.DB, b *Boundary, id
 // stat error as absence. A stale path row at a free filename refuses;
 // the managed path must not silently adopt any pre-existing alias.
 func previewAvailablePath(ctx context.Context,database *db.DB,b *Boundary,dir,base,hypothetical string,suffix func(string,string,int)string)(string,bool,error){
+	if err:=previewDirectory(b,dir);err!=nil{return "",false,err}
 	ext:=filepath.Ext(base)
 	stem:=strings.TrimSuffix(base,ext)
 	for i:=0;i<maxPreviewCandidates;i++{
@@ -123,4 +131,23 @@ func previewAvailablePath(ctx context.Context,database *db.DB,b *Boundary,dir,ba
 		return path,i>0,nil
 	}
 	return "",false,errors.New("naming collision limit exceeded")
+}
+
+// Inspect all extant ancestors. ENOTDIR can be reported as not-exist
+// by some platforms; do not plan beneath an ordinary file or symlink.
+// This still does not reserve a directory or eliminate later races.
+func previewDirectory(b *Boundary,dir string)error{
+	root:=filepath.Clean(b.Root())
+	for at:=filepath.Clean(dir);;at=filepath.Dir(at){
+		if !PathInside(root,at){return errors.New("planned directory escapes gallery")}
+		info,err:=os.Lstat(at)
+		if err==nil{
+			if !info.IsDir()||info.Mode()&os.ModeSymlink!=0{return errors.New("planned directory has non-directory ancestor")}
+		}else if !errors.Is(err,os.ErrNotExist){return err}
+		if pathKey(at)==pathKey(root){
+			if err!=nil{return err}
+			return nil
+		}
+		if filepath.Dir(at)==at{return errors.New("planned directory escapes gallery")}
+	}
 }
