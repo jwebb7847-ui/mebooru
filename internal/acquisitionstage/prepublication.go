@@ -24,6 +24,7 @@ type newPublicationPlan struct {
 	PolicySHA256 string
 	File acquisitionplan.VerifiedTransferFile
 	FileIdentity string
+	DestinationIdentity [2]string
 	Naming gallery.ReceivedNamingRequest
 	Preview gallery.ReceivedNamingPreview
 	Job contract.JobExtras
@@ -65,20 +66,22 @@ func(a *Allocator)newPublicationPlanLocked(ctx context.Context,grant workerproto
 	if err!=nil||!validNamingRequest(req)||req.Gallery!=g.Name||req.ReceivedName!=f.RelativeName||req.Source!=row.SourceLabel||req.PostID!=row.PostID{return zero,ErrStageRefused}
 	preview,err:=gallery.PreviewUnlandedReceivedNaming(ctx,g.DB,g.Boundary(),req,f.SHA256,f.Size)
 	if err!=nil{return zero,ErrStageRefused}
-	for _,path:=range []string{preview.InitialPath,preview.FinalPath}{
+	var destinations [2]string
+	for i,path:=range []string{preview.InitialPath,preview.FinalPath}{
 		rel,err:=namingRelative(r.GalleryRoot,path)
 		if err!=nil||strings.EqualFold(rel,finalName(grant,f)){return zero,ErrStageRefused}
 		parent,_,err:=namingParent(dst,rel)
 		if err!=nil{return zero,err}
 		live:=namingParentLive(r,dst,parent,rel)
+		destinations[i],err=rootIdentity(parent)
 		parent.Close()
-		if !live{return zero,ErrStageRefused}
+		if err!=nil||!live{return zero,ErrStageRefused}
 	}
 	job,err:=extras(ctx,grant)
 	if err!=nil{return zero,ErrStageRefused}
 	// Match the existing extras context: empty tags are represented
 	// explicitly, never by omitting the owner job decision.
-	if job.Tags==nil{job.Tags=[]string{}}
+	job.Tags=append([]string{},job.Tags...)
 	client,err:=inspectClientResolution(ctx,g,row,job)
 	if err!=nil{return zero,err}
 	current,err:=observedDB(r,g)
@@ -86,7 +89,7 @@ func(a *Allocator)newPublicationPlanLocked(ctx context.Context,grant workerproto
 	if err!=nil||!sameLandingDB(db,current)||scopeErr!=nil||!matches(r,s)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRefused}
 	currentID,err:=namingFile(ctx,src,f.RelativeName,f,1)
 	if err!=nil||identity!=currentID{return zero,ErrStageRecovery}
-	return newPublicationPlan{DB:db,PolicySHA256:hash,File:f,FileIdentity:identity,Naming:req,Preview:preview,Job:job,Client:client},nil
+	return newPublicationPlan{DB:db,PolicySHA256:hash,File:f,FileIdentity:identity,DestinationIdentity:destinations,Naming:req,Preview:preview,Job:job,Client:client},nil
 }
 
 // Bind the caller's read-only preview to the exact current plan at both
