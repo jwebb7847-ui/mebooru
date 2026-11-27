@@ -92,15 +92,15 @@ func validMappedRow(r acquisitionplan.ApprovedPolicyRow)bool{
 		len(r.UnknownTargets)==0&&canonicalRating(r.Rating)
 }
 // Apply the existing import normalization to exact source claims.
-// Collection and relationship application are distinct later stages;
-// do not silently accept collection requests in this diagnostic path.
+// Collection application remains a separate nonterminal phase. Only
+// explicit positive source order is supported; no inferred job index.
 func normalizedMappedSource(r acquisitionplan.ApprovedPolicyRow)(gallery.SourceInput,string,error){
 	var zero gallery.SourceInput
 	f:=contract.PostFields{Source:r.SourceLabel,PostID:r.PostID,URL:r.PostURL,Tags:r.Tags,
 		WithheldCategories:r.WithheldCategories,WithheldTags:r.WithheldTags}
 	var md5 string
 	if p:=r.Provenance;p!=nil{
-		if p.Collection!=""||p.CollectionOrder!=0{return zero,"",ErrStageRefused}
+		if !validCollectionClaim(p){return zero,"",ErrStageRefused}
 		md5=strings.TrimSpace(p.SourceMD5)
 		f.ParentURL=p.ParentURL;f.Original=p.Original;f.Commentary=p.Commentary;f.CommentaryDText=p.CommentaryDText
 		f.CommentaryTranslated=p.CommentaryTranslated;f.CommentaryTranslatedDText=p.CommentaryTranslatedDText
