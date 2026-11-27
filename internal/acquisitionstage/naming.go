@@ -175,6 +175,13 @@ func namingRows(ctx context.Context,g *library.Gallery,r record,f acquisitionpla
 }
 // Independently verify upstream evidence without assuming the old
 // diagnostic path is still canonical. No new receipt is issued here.
+func matchesPlanNaming(r record,plan newPublicationPlan,m namingAttempt)bool{
+	initial,err:=namingRelative(r.GalleryRoot,plan.Preview.InitialPath)
+	final,otherErr:=namingRelative(r.GalleryRoot,plan.Preview.FinalPath)
+	return err==nil&&otherErr==nil&&m.Request==plan.Naming&&m.Initial==initial&&m.Final==final&&
+		m.InitialSuffixed==plan.Preview.InitialSuffixed&&m.FinalSuffixed==plan.Preview.FinalSuffixed&&m.FileIdentity==plan.FileIdentity
+}
+
 func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p *os.Root,auth namingAuthority,client *clientTagState,restore extrasAuthority,retired bool)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){
 	var l landingAttempt;var result metadataResult;var q gallery.ReceivedNamingRequest
 	fail:=func(err error)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){return l,result,q,err}
@@ -223,6 +230,8 @@ func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllo
 	q,err=auth(ctx,grant)
 	if err!=nil||!validNamingRequest(q)||q.Gallery!=g.Name||q.ReceivedName!=e.Files[0].RelativeName||
 		q.Source!=rows[0].SourceLabel||q.PostID!=rows[0].PostID{return fail(ErrStageRefused)}
+	plan,_,err:=readPublicationAttempt(p,grant)
+	if err!=nil||(plan!=nil&&(restore!=nil||q!=plan.Naming)){return fail(ErrStageRefused)}
 	return l,result,q,nil
 }
 func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p,src,dst,parent *os.Root,m namingAttempt,auth namingAuthority,client *clientTagState,restore extrasAuthority,retired bool)error{
@@ -244,6 +253,9 @@ func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAlloc
 	if err!=nil||!matches(r,s)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst)||!namingParentLive(r,dst,parent,m.Final){return ErrStageRefused}
 	current,err:=observedDB(r,g)
 	if err!=nil||!sameLandingDB(current,l){return ErrStageRecovery}
+	plan,_,err:=readPublicationAttempt(p,grant)
+	if err!=nil||(plan!=nil&&!matchesPlanNaming(r,*plan,m)){return ErrStageRecovery}
+	if err:=verifyPlanDestinations(r,dst,plan);err!=nil{return err}
 	if g.Boundary().Check(filepath.Join(r.GalleryRoot,m.Final))!=nil||g.Boundary().Check(filepath.Join(r.GalleryRoot,m.Old))!=nil{return ErrStageRefused}
 	if restore!=nil{
 		if _,err:=dst.Lstat(l.RestorePath);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
@@ -269,6 +281,9 @@ func(a *Allocator)applyNamingModeLocked(ctx context.Context,grant workerproto.St
 	f:=e.Files[0]
 	preview,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),result.Rows[0].ImageID,q)
 	if err!=nil{return ErrStageRefused}
+	plan,_,err:=readPublicationAttempt(p,grant)
+	if err!=nil||(plan!=nil&&preview!=plan.Preview){return ErrStageRefused}
+	if err:=verifyPlanDestinations(r,dst,plan);err!=nil{return err}
 	initial,err:=namingRelative(r.GalleryRoot,preview.InitialPath)
 	if err!=nil{return err}
 	final,err:=namingRelative(r.GalleryRoot,preview.FinalPath)
