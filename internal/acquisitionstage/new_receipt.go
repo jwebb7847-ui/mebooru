@@ -42,20 +42,25 @@ type newReceipt struct{
 	Rows []newReceiptRow `json:"rows"`
 }
 func newOnlyRows(e SealedEvidence,snapshot acquisitionplan.ApprovedPolicySnapshot)([]acquisitionplan.ApprovedPolicyRow,error){
+	return newOnlyRowsMode(e,snapshot,false)
+}
+// Explicit ordered collections may land for separate phase diagnostics,
+// but the old new-only terminal receipt and restore path remain unchanged.
+func newOnlyRowsMode(e SealedEvidence,snapshot acquisitionplan.ApprovedPolicySnapshot,allowCollection bool)([]acquisitionplan.ApprovedPolicyRow,error){
 	if len(e.Files)==0||len(e.Files)!=len(snapshot.Rows){return nil,ErrStageRefused}
 	rows,err:=selectMappedRows(snapshot,e)
 	if err!=nil{return nil,err}
 	seen:=map[string]bool{}
 	urls:=map[string]bool{}
 	for i,r:=range rows{
-		if r.SourceLabel==models.TagSourceMonbooru||r.Provenance==nil||r.Provenance.ParentURL!=""||r.Provenance.Collection!=""||r.Provenance.CollectionOrder!=0||
+		if r.SourceLabel==models.TagSourceMonbooru||r.Provenance==nil||r.Provenance.ParentURL!=""||(!allowCollection&&(r.Provenance.Collection!=""||r.Provenance.CollectionOrder!=0))||
 			filepath.Ext(e.Files[i].RelativeName)!=".png"||seen[e.Files[i].SHA256]||urls[r.PostURL]{return nil,ErrStageRefused}
 		seen[e.Files[i].SHA256]=true;urls[r.PostURL]=true
 	}
 	return rows,nil
 }
 func verifyNewOnlyEligibility(ctx context.Context,g *library.Gallery,e SealedEvidence,snapshot acquisitionplan.ApprovedPolicySnapshot)error{
-	rows,err:=newOnlyRows(e,snapshot)
+	rows,err:=newOnlyRowsMode(e,snapshot,true)
 	if err!=nil{return err}
 	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
 	if err!=nil{return ErrStageRecovery}
