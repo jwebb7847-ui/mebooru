@@ -58,8 +58,12 @@ func readComposedReceipt(p *os.Root,r record,e SealedEvidence,l landingAttempt,m
 	return want,nil
 }
 func(a *Allocator)composedReceiptLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,write bool)(composedReceipt,error){
+	return a.composedReceiptModeLocked(ctx,grant,g,naming,extras,write,false)
+}
+func(a *Allocator)composedReceiptModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,write,released bool)(composedReceipt,error){
 	var zero composedReceipt
-	actual,err:=a.observeClientExtrasLocked(ctx,grant,g,naming,extras)
+	if write&&released{return zero,ErrStageRefused}
+	actual,err:=a.observeClientExtrasAfterReleaseLocked(ctx,grant,g,naming,extras,released)
 	if err!=nil{return zero,err}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return zero,err}
