@@ -23,6 +23,7 @@ type landingAttempt struct{
 	GalleryIdentity string `json:"gallery_identity"`
 	DBPath string `json:"db_path"`
 	DBFileIdentity string `json:"db_file_identity"`
+	NewOnly bool `json:"new_only,omitempty"`
 }
 type landingObservation struct{
 	PostID string
@@ -68,6 +69,9 @@ func observedDB(r record,g *library.Gallery)(landingAttempt,error){
 // Neither a closed watcher nor the allocator lock proves global exclusion.
 func(a *Allocator)beginLanding(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)error{
 	a.mu.Lock();defer a.mu.Unlock()
+	return a.beginLandingLocked(ctx,grant,g,false)
+}
+func(a *Allocator)beginLandingLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,newOnly bool)error{
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return err}
 	defer p.Close();defer src.Close();defer dst.Close()
@@ -83,6 +87,12 @@ func(a *Allocator)beginLanding(ctx context.Context,grant workerproto.StageAlloca
 	observations,err:=readLandingRows(ctx,g,r,e)
 	if err!=nil{return err}
 	for _,v:=range observations{if v.State!="absent"{return ErrStageRecovery}}
+	if newOnly{
+		snapshot,err:=a.boundPolicyLocked(ctx,grant)
+		if err!=nil{return err}
+		if err:=verifyNewOnlyEligibility(ctx,g,e,snapshot);err!=nil{return err}
+		attempt.NewOnly=true
+	}
 	s,err:=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s){return ErrStageRefused}
 	body,err:=json.Marshal(attempt)
@@ -92,6 +102,7 @@ func(a *Allocator)beginLanding(ctx context.Context,grant workerproto.StageAlloca
 	// Once this marker exists a crash is uncertain. Never use absence
 	// of a path row to authorize another ingestion attempt.
 	current,err:=observedDB(r,g)
+	current.NewOnly=attempt.NewOnly
 	if err!=nil||current!=attempt||ctx.Err()!=nil{return ErrStageRecovery}
 	s,err=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s){return ErrStageRefused}
@@ -143,6 +154,7 @@ func(a *Allocator)observeLandingLocked(ctx context.Context,grant workerproto.Sta
 	attempt,err:=readLandingAttempt(p,r)
 	if err!=nil{return nil,err}
 	current,err:=observedDB(r,g)
+	current.NewOnly=attempt.NewOnly
 	if err!=nil||current!=attempt{return nil,ErrStageRecovery}
 	places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
 	if err!=nil{return nil,err}
@@ -152,6 +164,7 @@ func(a *Allocator)observeLandingLocked(ctx context.Context,grant workerproto.Sta
 	s,err:=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s){return nil,ErrStageRefused}
 	current,err=observedDB(r,g)
+	current.NewOnly=attempt.NewOnly
 	if err!=nil||current!=attempt{return nil,ErrStageRecovery}
 	places,err=inspectPlacements(ctx,grant,e,p,src,dst)
 	if err!=nil{return nil,err}

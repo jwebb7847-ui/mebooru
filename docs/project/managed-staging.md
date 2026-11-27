@@ -73,3 +73,8 @@ Approved source detail capture: preserve original mapped commentary/DText/transl
 
 
 Shared gallery.NormalizeSourceInput preserves ordinary API normalization and is used by the managed mapped phase to apply exact approved source claims through existing MergeSource and ApplySourceProvenance. Read-only verification checks supplied fields/notes, not empty fields that preserve existing values. Source size and MD5 are claims, never measured local facts. Parent URL stored but graph relations, collections, job extras, actual duplicate-drop and final terminal receipt not yet integrated. No production dispatch.
+
+
+## Narrow new-only terminal diagnostic
+
+Exercise actual existing LandInPlace and mapped metadata services through durable one-attempt markers; refuse duplicate/missing-row SHA, preexisting source/parent references, missing provenance, parent/collection claims, non-PNG or partial approved window. Issue immutable new-receipt.json only for exact complete isolated new-only scope, after verification of actual file, DB, provenance, tags and exact single path/origin. Reopen verifies receipt against current evidence rather than authorizing replay. Not a production receipt, not a deletion grant; retain all evidence. Existing legacy behavior, duplicate drop/restore, relation handling, naming/job extras and real scanner exclusion still need qualification.

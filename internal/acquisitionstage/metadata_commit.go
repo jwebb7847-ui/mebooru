@@ -183,6 +183,7 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 	landing,err:=readLandingAttempt(p,r)
 	if err!=nil{return nil,err}
 	current,err:=observedDB(r,g)
+	current.NewOnly=landing.NewOnly
 	if err!=nil||current!=landing{return nil,ErrStageRecovery}
 	observed,err:=a.observeLandingLocked(ctx,grant,g)
 	if err!=nil||len(observed)!=len(e.Files){return nil,ErrStageRecovery}
@@ -203,6 +204,7 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 		s,err:=a.scope(ctx,grant.Request)
 		if err!=nil||!matches(r,s)||g.WatcherRunning(){return false}
 		c,err:=observedDB(r,g)
+		c.NewOnly=landing.NewOnly
 		return err==nil&&c==landing
 	}
 	if !stillCurrent(){return nil,ErrStageRefused}
