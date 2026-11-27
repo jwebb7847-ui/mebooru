@@ -356,6 +356,9 @@ func(a *Allocator)observeNamingWithClientLocked(ctx context.Context,grant worker
 	return a.observeNamingModeLocked(ctx,grant,g,auth,client,nil)
 }
 func(a *Allocator)observeNamingModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority,client *clientTagState,restore extrasAuthority)error{
+	return a.observeNamingAfterReleaseLocked(ctx,grant,g,auth,client,restore,false)
+}
+func(a *Allocator)observeNamingAfterReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority,client *clientTagState,restore extrasAuthority,released bool)error{
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return err}
 	defer p.Close();defer src.Close();defer dst.Close()
@@ -371,6 +374,8 @@ func(a *Allocator)observeNamingModeLocked(ctx context.Context,grant workerproto.
 	f:=e.Files[0]
 	pid,err:=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old,l)
 	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
-	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,false,true);err!=nil{return err}
+	if released{
+		if err:=verifyReleasedNamingFiles(ctx,src,dst,parent,f,m);err!=nil{return err}
+	}else if err:=checkNamingFiles(ctx,src,dst,parent,f,m,false,true);err!=nil{return err}
 	return a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,client,restore)
 }
