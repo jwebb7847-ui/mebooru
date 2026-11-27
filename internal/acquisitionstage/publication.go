@@ -66,7 +66,8 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		(names["extras-attempt.json"]&&!names["naming-result.json"])||
 		(names["extras-result.json"]&&!names["extras-attempt.json"])||
 		(names["composed-receipt.json"]&&!names["extras-result.json"])||
-		(names["naming-attempt.json"]&&(names["collection-attempt.json"]||names["new-receipt.json"]||names["duplicate-attempt.json"]))||
+		(names["naming-attempt.json"]&&(names["new-receipt.json"]||names["duplicate-attempt.json"]))||
+		(names["naming-attempt.json"]&&names["collection-attempt.json"]&&!names["collection-result.json"])||
 		(names["collection-attempt.json"]&&(names["new-receipt.json"]||names["duplicate-attempt.json"]))||
 		((names["new-receipt.json"]||names["duplicate-attempt.json"])&&!names["metadata-result.json"])||
 		(names["new-receipt.json"]&&names["duplicate-attempt.json"])||
