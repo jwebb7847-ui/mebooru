@@ -131,6 +131,9 @@ func retainedHeldState(ctx context.Context,g *library.Gallery,r record,dst *os.R
 }
 
 func(a *Allocator)heldCompositionContext(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,h heldDuplicate,placed bool,expectedPathID int64)(heldComposition,*os.Root,error){
+	return a.heldCompositionContextMode(ctx,grant,g,extras,h,placed,expectedPathID,false)
+}
+func(a *Allocator)heldCompositionContextMode(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,h heldDuplicate,placed bool,expectedPathID int64,released bool)(heldComposition,*os.Root,error){
 	var zero heldComposition
 	if g==nil||g.WatcherRunning()||extras==nil{return zero,nil,ErrStageRefused}
 	job,err:=extras(ctx,grant)
@@ -172,9 +175,14 @@ func(a *Allocator)heldCompositionContext(ctx context.Context,grant workerproto.S
 	meta,err:=json.Marshal(result)
 	if err!=nil{return fail(ErrStageRecovery)}
 	f:=e.Files[0]
-	places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
-	want:="absent";if placed{want="placed"}
-	if err!=nil||len(places)!=1||places[0].State!=want{return fail(ErrStageRecovery)}
+	if released{
+		if placed{return fail(ErrStageRefused)}
+		if err:=verifyCompletedHeldPlacement(ctx,grant,e,p,src,dst,true);err!=nil{return fail(err)}
+	}else{
+		places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
+		want:="absent";if placed{want="placed"}
+		if err!=nil||len(places)!=1||places[0].State!=want{return fail(ErrStageRecovery)}
+	}
 	var n,own int
 	var pathID int64
 	alias:=filepath.Join(r.GalleryRoot,finalName(grant,f))
@@ -192,6 +200,9 @@ func(a *Allocator)heldCompositionContext(ctx context.Context,grant workerproto.S
 }
 
 func(a *Allocator)observeHeldCompositionLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,placed bool)(heldComposition,error){
+	return a.observeHeldCompositionModeLocked(ctx,grant,g,extras,placed,false)
+}
+func(a *Allocator)observeHeldCompositionModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,placed,released bool)(heldComposition,error){
 	var zero heldComposition
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return zero,err}
@@ -204,7 +215,7 @@ func(a *Allocator)observeHeldCompositionLocked(ctx context.Context,grant workerp
 	if err!=nil{return zero,err}
 	stored,err:=readHeldComposition(p,r,e,l,result)
 	if err!=nil{return zero,err}
-	actual,check,err:=a.heldCompositionContext(ctx,grant,g,extras,stored.Held,placed,stored.ManagedPathID)
+	actual,check,err:=a.heldCompositionContextMode(ctx,grant,g,extras,stored.Held,placed,stored.ManagedPathID,released)
 	if err!=nil{return zero,err}
 	same:=sameRelationshipRoot(p,check);check.Close()
 	if !same||!reflect.DeepEqual(stored,actual){return zero,ErrStageRecovery}
@@ -248,10 +259,14 @@ func readHeldReceipt(p *os.Root,r record,e SealedEvidence,l landingAttempt,m met
 	return want,nil
 }
 func(a *Allocator)heldReceiptLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,write bool)(heldReceipt,error){
+	return a.heldReceiptModeLocked(ctx,grant,g,extras,write,false)
+}
+func(a *Allocator)heldReceiptModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,write,released bool)(heldReceipt,error){
 	var zero heldReceipt
-	h,err:=a.observeDuplicateDisposalLocked(ctx,grant,g)
+	if write&&released{return zero,ErrStageRefused}
+	h,err:=a.observeDuplicateDisposalModeLocked(ctx,grant,g,released)
 	if err!=nil{return zero,err}
-	composition,err:=a.observeHeldCompositionLocked(ctx,grant,g,extras,false)
+	composition,err:=a.observeHeldCompositionModeLocked(ctx,grant,g,extras,false,released)
 	if err!=nil||composition.Held!=h{return zero,ErrStageRecovery}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return zero,err}
