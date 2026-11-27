@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monloader/internal/kwdict"
@@ -182,6 +183,7 @@ func(w *ManagedTaxonomyWindow)Run(caller context.Context,request workerproto.Met
 // Source responses can contain additional API fields, but ambiguous JSON
 // keys (including case variants accepted by encoding/json) are refused.
 func validateManagedTagJSON(data []byte)bool{
+	if !utf8.Valid(data){return false}
 	d:=json.NewDecoder(bytes.NewReader(data));d.UseNumber()
 	first,err:=d.Token()
 	if err!=nil||first!=json.Delim('{'){return false}

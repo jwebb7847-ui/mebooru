@@ -123,6 +123,7 @@ func TestManagedTaxonomyRejectsStaleGenerationAndUnconfirmedClose(t *testing.T){
 }
 
 func TestManagedTaxonomyRejectsAmbiguousSourceJSON(t *testing.T){
+	if validateManagedTagJSON([]byte{'{','"','x','"',':','"',0xff,'"','}'}){t.Fatal("invalid UTF-8 normalized into source evidence")}
 	for _,bad:=range []string{`{"tags":[{"id":1,"id":2}]}`,`{"tags":[{"id":1,"ID":2}]}`,`{"tags":[]} {"tag":{}}`,`null`,`{"tags":[`+strings.Repeat("[",33)+strings.Repeat("]",33)+`]}`}{
 		if validateManagedTagJSON([]byte(bad)){t.Fatalf("ambiguous response accepted %s",bad)}
 	}
