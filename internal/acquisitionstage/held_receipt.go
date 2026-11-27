@@ -31,6 +31,7 @@ type retainedPath struct {
 type heldComposition struct {
 	Version int `json:"version"`
 	Held heldDuplicate `json:"held"`
+	ManagedPathID int64 `json:"managed_path_id"`
 	MetadataSHA256 string `json:"metadata_sha256"`
 	RelationshipSHA256 string `json:"relationship_sha256"`
 	CollectionSHA256 string `json:"collection_sha256,omitempty"`
@@ -59,7 +60,7 @@ func readHeldComposition(p *os.Root,r record,e SealedEvidence,l landingAttempt,r
 	if err!=nil{return zero,err}
 	var m heldComposition
 	meta,err:=json.Marshal(result)
-	if err!=nil||l.NewOnly||l.RestoreImageID!=0||len(e.Files)!=1||len(result.Rows)!=1||json.Unmarshal(raw,&m)!=nil||m.Version!=1||
+	if err!=nil||l.NewOnly||l.RestoreImageID!=0||len(e.Files)!=1||len(result.Rows)!=1||json.Unmarshal(raw,&m)!=nil||m.Version!=1||m.ManagedPathID<=0||
 		m.MetadataSHA256!=digestBytes(meta)||!validDigest(m.RetainedStateSHA256)||len(m.Retained)==0||len(m.Retained)>maxHeldAliases{return zero,ErrStageRecovery}
 	f:=e.Files[0];h:=m.Held
 	if h.PostID!=f.ID||h.ImageID!=result.Rows[0].ImageID||h.Size!=f.Size||h.SHA256!=f.SHA256||
@@ -67,7 +68,7 @@ func readHeldComposition(p *os.Root,r record,e SealedEvidence,l landingAttempt,r
 	canon:=0
 	seen:=map[string]bool{}
 	for i,v:=range m.Retained{
-		if v.ID<=0||(i>0&&v.ID<=m.Retained[i-1].ID)||!validNamingRelative(v.Relative)||strings.EqualFold(v.Relative,finalName(r.Allocation,f))||v.Identity==""||len(v.Identity)>128||seen[v.Identity]{return zero,ErrStageRecovery}
+		if v.ID<=0||v.ID==m.ManagedPathID||(i>0&&v.ID<=m.Retained[i-1].ID)||!validNamingRelative(v.Relative)||strings.EqualFold(v.Relative,finalName(r.Allocation,f))||v.Identity==""||len(v.Identity)>128||seen[v.Identity]{return zero,ErrStageRecovery}
 		seen[v.Identity]=true
 		if v.Canonical{
 			canon++
@@ -148,7 +149,7 @@ func retainedHeldState(ctx context.Context,g *library.Gallery,r record,dst *os.R
 	return digestBytes(buf.Bytes()),paths,nil
 }
 
-func(a *Allocator)heldCompositionContext(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,h heldDuplicate,placed bool)(heldComposition,*os.Root,error){
+func(a *Allocator)heldCompositionContext(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,h heldDuplicate,placed bool,expectedPathID int64)(heldComposition,*os.Root,error){
 	var zero heldComposition
 	if g==nil||g.WatcherRunning()||extras==nil{return zero,nil,ErrStageRefused}
 	job,err:=extras(ctx,grant)
@@ -194,8 +195,10 @@ func(a *Allocator)heldCompositionContext(ctx context.Context,grant workerproto.S
 	want:="absent";if placed{want="placed"}
 	if err!=nil||len(places)!=1||places[0].State!=want{return fail(ErrStageRecovery)}
 	var n,own int
+	var pathID int64
 	alias:=filepath.Join(r.GalleryRoot,finalName(grant,f))
-	if err:=g.DB.Read.QueryRowContext(ctx,`SELECT COUNT(*),COALESCE(SUM(CASE WHEN image_id=? AND is_canonical=0 THEN 1 ELSE 0 END),0) FROM image_paths WHERE path=?`,h.ImageID,alias).Scan(&n,&own);err!=nil||n!=own||n>1||(placed&&n!=1){return fail(ErrStageRecovery)}
+	if err:=g.DB.Read.QueryRowContext(ctx,`SELECT COUNT(*),COALESCE(SUM(CASE WHEN image_id=? AND is_canonical=0 THEN 1 ELSE 0 END),0),COALESCE(MIN(id),0) FROM image_paths WHERE path=?`,h.ImageID,alias).Scan(&n,&own,&pathID);err!=nil||n!=own||n>1||(placed&&n!=1)||(n==1&&(pathID<=0||(expectedPathID>0&&pathID!=expectedPathID)))||(n==0&&expectedPathID<=0){return fail(ErrStageRecovery)}
+	if n==0{pathID=expectedPathID}
 	var path string
 	if err:=g.DB.Read.QueryRowContext(ctx,`SELECT canonical_path FROM images WHERE id=? AND sha256=? AND file_size=? AND is_missing=0`,h.ImageID,f.SHA256,f.Size).Scan(&path);err!=nil||path!=filepath.Join(r.GalleryRoot,h.CanonicalPath){return fail(ErrStageRecovery)}
 	state,retained,err:=retainedHeldState(ctx,g,r,dst,f,h)
@@ -204,7 +207,7 @@ func(a *Allocator)heldCompositionContext(ctx context.Context,grant workerproto.S
 	current,dbErr:=observedDB(r,g)
 	job,jobErr:=extras(ctx,grant)
 	if err!=nil||!matches(r,s)||dbErr!=nil||!sameLandingDB(current,l)||jobErr!=nil||!job.Empty()||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst){return fail(ErrStageRefused)}
-	return heldComposition{Version:1,Held:h,MetadataSHA256:digestBytes(meta),RelationshipSHA256:digestBytes(relResult),CollectionSHA256:collection,RetainedStateSHA256:state,Retained:retained},p,nil
+	return heldComposition{Version:1,Held:h,ManagedPathID:pathID,MetadataSHA256:digestBytes(meta),RelationshipSHA256:digestBytes(relResult),CollectionSHA256:collection,RetainedStateSHA256:state,Retained:retained},p,nil
 }
 
 func(a *Allocator)observeHeldCompositionLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,placed bool)(heldComposition,error){
@@ -220,7 +223,7 @@ func(a *Allocator)observeHeldCompositionLocked(ctx context.Context,grant workerp
 	if err!=nil{return zero,err}
 	stored,err:=readHeldComposition(p,r,e,l,result)
 	if err!=nil{return zero,err}
-	actual,check,err:=a.heldCompositionContext(ctx,grant,g,extras,stored.Held,placed)
+	actual,check,err:=a.heldCompositionContext(ctx,grant,g,extras,stored.Held,placed,stored.ManagedPathID)
 	if err!=nil{return zero,err}
 	same:=sameRelationshipRoot(p,check);check.Close()
 	if !same||!reflect.DeepEqual(stored,actual){return zero,ErrStageRecovery}
@@ -231,7 +234,7 @@ func(a *Allocator)disposeComposedHeld(ctx context.Context,grant workerproto.Stag
 	var zero heldDuplicate
 	held,err:=a.observeHeldDuplicatesLocked(ctx,grant,g)
 	if err!=nil||len(held)!=1{return zero,ErrStageRecovery}
-	m,p,err:=a.heldCompositionContext(ctx,grant,g,extras,held[0],true)
+	m,p,err:=a.heldCompositionContext(ctx,grant,g,extras,held[0],true,0)
 	if err!=nil{return zero,err}
 	defer p.Close()
 	for _,name:=range []string{"held-composition.json","duplicate-attempt.json","held-receipt.json"}{
