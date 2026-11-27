@@ -222,20 +222,10 @@ type NameFacts struct {
 // caller. A template reading {md5} computes and stores an empty one, unless
 // the file is over md5Cap (0: no cap), when {md5} renders empty.
 func LoadNameFacts(ctx context.Context, database *db.DB, galleryName string, id int64, md5Cap int64, tmpls ...*NameTemplate) (f NameFacts, stored bool, err error) {
-	f = NameFacts{ID: id, Gallery: galleryName}
-	var canonical, ingestedAt string
-	if err := database.Read.QueryRowContext(ctx,
-		`SELECT canonical_path, folder_path, file_type, sha256, md5, origin, file_size,
-		        COALESCE(width, 0), COALESCE(height, 0), ingested_at
-		 FROM images WHERE id = ?`, id,
-	).Scan(&canonical, &f.Folder, &f.Type, &f.SHA256, &f.MD5, &f.Origin, &f.Size, &f.Width, &f.Height, &ingestedAt); err != nil {
-		return f, false, fmt.Errorf("name facts for image %d: %w", id, err)
+	f, err = readNameFacts(ctx, database, galleryName, id)
+	if err != nil {
+		return f, false, err
 	}
-	ext := filepath.Ext(canonical)
-	f.Base = filepath.Base(canonical)
-	f.Name = strings.TrimSuffix(f.Base, ext)
-	f.Ext = strings.ToLower(strings.TrimPrefix(ext, "."))
-	f.IngestedAt, _ = time.Parse(time.RFC3339, ingestedAt)
 	if f.MD5 == "" && readsMD5(tmpls) && (md5Cap <= 0 || f.Size <= md5Cap) {
 		sum, err := ComputeAndStoreMD5(ctx, database, id)
 		if err != nil {
@@ -245,6 +235,25 @@ func LoadNameFacts(ctx context.Context, database *db.DB, galleryName string, id 
 		stored = true
 	}
 	return f, stored, nil
+}
+
+// readNameFacts has no lazy MD5 write; managed previews must be read-only.
+func readNameFacts(ctx context.Context, database *db.DB, galleryName string, id int64) (f NameFacts, err error) {
+	f = NameFacts{ID: id, Gallery: galleryName}
+	var canonical, ingestedAt string
+	if err := database.Read.QueryRowContext(ctx,
+		`SELECT canonical_path, folder_path, file_type, sha256, md5, origin, file_size,
+		        COALESCE(width, 0), COALESCE(height, 0), ingested_at
+		 FROM images WHERE id = ?`, id,
+	).Scan(&canonical, &f.Folder, &f.Type, &f.SHA256, &f.MD5, &f.Origin, &f.Size, &f.Width, &f.Height, &ingestedAt); err != nil {
+		return f, fmt.Errorf("name facts for image %d: %w", id, err)
+	}
+	ext := filepath.Ext(canonical)
+	f.Base = filepath.Base(canonical)
+	f.Name = strings.TrimSuffix(f.Base, ext)
+	f.Ext = strings.ToLower(strings.TrimPrefix(ext, "."))
+	f.IngestedAt, _ = time.Parse(time.RFC3339, ingestedAt)
+	return f, nil
 }
 
 // Render falls back to the root or the id when an arriving file renders
@@ -413,27 +422,36 @@ func (n Naming) Apply(ctx context.Context, database *db.DB, b *Boundary, id int6
 	if err != nil {
 		return "", err
 	}
-	facts.Source, facts.PostID = site, postID
-	var folder, name *string
-	if n.Folder != nil {
-		rendered, renderErr := n.Folder.Render(facts)
-		if renderErr != nil {
-			return "", renderErr
-		}
-		folder = &rendered
-	}
-	if n.Name != nil {
-		rendered, renderErr := n.Name.Render(facts)
-		if renderErr != nil {
-			return "", renderErr
-		}
-		name = &rendered
+	folder, name, err := n.renderArrival(facts, site, postID)
+	if err != nil {
+		return "", err
 	}
 	res, err := PlaceImage(database, b, id, folder, name)
 	if err != nil {
 		return "", err
 	}
 	return res.NewCanonicalPath, nil
+}
+
+// renderArrival is shared by the ordinary naming path and a read-only
+// preview. The caller supplies actual (or explicitly projected) facts.
+func (n Naming) renderArrival(facts NameFacts, site, postID string) (folder, name *string, err error) {
+	facts.Source, facts.PostID = site, postID
+	if n.Folder != nil {
+		rendered, renderErr := n.Folder.Render(facts)
+		if renderErr != nil {
+			return nil, nil, renderErr
+		}
+		folder = &rendered
+	}
+	if n.Name != nil {
+		rendered, renderErr := n.Name.Render(facts)
+		if renderErr != nil {
+			return nil, nil, renderErr
+		}
+		name = &rendered
+	}
+	return folder, name, nil
 }
 
 // Existing renders n for a row already in the gallery. A half that renders
