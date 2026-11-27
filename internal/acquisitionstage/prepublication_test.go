@@ -20,7 +20,7 @@ import (
 )
 
 func TestPlannedNewPublication(t *testing.T){
-	for _,mode:=range []string{"plain","template","collision","nested","unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","changed naming","changed job","changed collision","changed directory","forged plan","revoked after intent","changed after intent"}{
+	for _,mode:=range []string{"plain","template","collision","nested","unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","changed naming","changed job","changed collision","changed directory","forged plan","revoked after intent","changed after intent","DB reopen","changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt","changed after landing","changed job after naming","changed client after landing","shared source tag","legacy marker substitution","lost attempt after receipt","full closure"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -28,7 +28,7 @@ func TestPlannedNewPublication(t *testing.T){
 			data:=buf.Bytes();ext:="png"
 			if mode=="bad PNG"{data=[]byte("not a PNG")}
 			if mode=="wrong extension"{ext="jpg"}
-			a,stage,s,grant,_,f:=publicationFixtureData(t,ext,data)
+			a,stage,s,grant,authority,f:=publicationFixtureData(t,ext,data)
 			defer func(){if err:=a.Close();err!=nil{t.Error(err)}}()
 			row:=acquisitionplan.ApprovedPolicyRow{PostID:f.ID,NativeSHA256:strings.Repeat("a",64),MediaURL:"https://example.invalid/42."+ext,
 				SourceLabel:"derpibooru",PostURL:"https://derpibooru.org/images/42",Rating:"general",Tags:[]string{"fixture","rating:general"},Provenance:&acquisitionplan.ApprovedProvenance{}}
@@ -42,7 +42,7 @@ func TestPlannedNewPublication(t *testing.T){
 			cfg:=config.Gallery{Name:"A",GalleryPath:s.GalleryRoot,DBPath:filepath.Join(filepath.Dir(stage),"gallery.sqlite"),ThumbnailsPath:filepath.Join(filepath.Dir(stage),"thumbs")}
 			g,err:=library.Open(cfg)
 			if err!=nil{t.Fatal(err)}
-			defer g.Close()
+			defer func(){g.Close()}()
 			if mode=="existing image"{
 				res,err:=g.Land(ctx,s.GalleryRoot,"existing.png",library.FromReader(bytes.NewReader(data)),library.LandSpec{Origin:"fixture"})
 				if err!=nil||res.Image==nil||res.Duplicate{t.Fatal("existing fixture",err)}
@@ -50,6 +50,7 @@ func TestPlannedNewPublication(t *testing.T){
 			req:=gallery.ReceivedNamingRequest{Gallery:g.Name,ReceivedName:f.RelativeName,Source:row.SourceLabel,PostID:row.PostID}
 			job:=contract.JobExtras{Tags:[]string{"client tag"}}
 			switch mode{
+			case "shared source tag":job.Tags=append(job.Tags,"fixture")
 			case "template":req.DefaultName="{source}-{post_id}-{hash:8}"
 			case "collision":
 				if err:=os.WriteFile(filepath.Join(s.GalleryRoot,f.RelativeName),[]byte("operator"),0600);err!=nil{t.Fatal(err)}
@@ -74,11 +75,15 @@ func TestPlannedNewPublication(t *testing.T){
 			if err:=a.preparePublication(ctx,grant);err!=nil{t.Fatal(err)}
 			intent:=filepath.Join(stage,grant.Request.OperationID,"publication","attempt")
 			diagnostic:=filepath.Join(s.GalleryRoot,finalName(grant,f))
+			landingPath:=filepath.Join(stage,grant.Request.OperationID,"publication","landing-attempt.json")
 			injected:=false
 			naming:=namingAuthority(func(context.Context,workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){
 				if _,err:=os.Stat(intent);err==nil{
 					if mode=="revoked after intent"{injected=true;return req,ErrStageRefused}
 					if mode=="changed after intent"{injected=true;changed:=req;changed.DefaultName="late";return changed,nil}
+				}
+				if mode=="revoked after landing intent"{
+					if _,err:=os.Stat(landingPath);err==nil{injected=true;return req,ErrStageRefused}
 				}
 				return req,nil
 			})
@@ -131,18 +136,82 @@ func TestPlannedNewPublication(t *testing.T){
 			if err!=nil||len(places)!=1||places[0].State!="placed"{t.Fatal("publish",places,err)}
 			if count()!=before{t.Fatal("publication wrote DB rows")}
 			if _,err:=a.publishPlannedNew(ctx,grant,g,naming,extras,plan);err==nil{t.Fatal("publication replayed")}
-			if err:=a.landNewPrepared(ctx,grant,g);err!=nil{t.Fatal("land",err)}
+			if err:=a.landNewPrepared(ctx,grant,g);err==nil{t.Fatal("diagnostic landing bypassed guarded plan")}
+			if _,err:=os.Stat(landingPath);!os.IsNotExist(err){t.Fatal("diagnostic landing wrote intent",err)}
+			if mode=="DB reopen"||mode=="full closure"{
+				if err:=a.Close();err!=nil{t.Fatal(err)}
+				g.Close()
+				a,err=Open(stage,2,4096,authority);if err!=nil{t.Fatal(err)}
+				g,err=library.Open(cfg);if err!=nil{t.Fatal(err)}
+			}
+			switch mode{
+			case "changed after publish":req.DefaultName="changed"
+			case "changed job after publish":job.Tags=[]string{"changed"}
+			case "changed collision after publish":
+				if err:=os.WriteFile(plan.Preview.InitialPath,[]byte("operator"),0600);err!=nil{t.Fatal(err)}
+			case "damaged attempt":
+				if err:=os.WriteFile(intent,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+			}
+			err=a.landPlannedNew(ctx,grant,g,naming,extras)
+			switch mode{
+			case "changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt":
+				if err==nil||count()!=before{t.Fatal("unsafe planned landing",err)}
+				_,statErr:=os.Stat(landingPath)
+				if mode=="revoked after landing intent"{if statErr!=nil||!injected{t.Fatal("landing boundary injection not reached",statErr)}}else if !os.IsNotExist(statErr){t.Fatal("unexpected landing intent",statErr)}
+				if got,err:=os.ReadFile(diagnostic);err!=nil||!bytes.Equal(got,data){t.Fatal("published diagnostic lost",err)}
+				return
+			}
+			if err!=nil{t.Fatal("planned land",err)}
+			if mode=="legacy marker substitution"{
+				if err:=os.WriteFile(intent,[]byte(grant.TransferID),0600);err!=nil{t.Fatal(err)}
+				if _,err:=a.applyMappedMetadata(ctx,grant,g);err==nil{t.Fatal("legacy marker replaced plan")}
+				if _,err:=os.Stat(filepath.Join(filepath.Dir(intent),"metadata-attempt.json"));!os.IsNotExist(err){t.Fatal("unexpected metadata attempt",err)}
+				return
+			}
 			mapped,err:=a.applyMappedMetadata(ctx,grant,g)
 			if err!=nil||len(mapped)!=1{t.Fatal("metadata",err)}
 			if err:=a.applyRelationships(ctx,grant,g);err!=nil{t.Fatal(err)}
+			if _,err:=a.finishNewReceipt(ctx,grant,g);err==nil{t.Fatal("narrow receipt bypassed guarded plan")}
+			if mode=="changed after landing"{
+				req.DefaultName="changed"
+				if err:=a.applyNaming(ctx,grant,g,naming);err==nil{t.Fatal("changed naming accepted")}
+				if _,err:=os.Stat(filepath.Join(filepath.Dir(intent),"naming-attempt.json"));!os.IsNotExist(err){t.Fatal("unexpected naming attempt",err)}
+				return
+			}
 			preview,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),mapped[0].ImageID,req)
 			if err!=nil||!reflect.DeepEqual(preview,plan.Preview){t.Fatal("prepublication and actual landed naming diverged",preview,plan.Preview,err)}
 			if err:=a.applyNaming(ctx,grant,g,naming);err!=nil{t.Fatal(err)}
-			if err:=a.applyClientExtras(ctx,grant,g,naming,extras);err!=nil{t.Fatal(err)}
+			if mode=="changed job after naming"{job.Tags=[]string{"changed"}}
+			if mode=="changed client after landing"{
+				cat,bare,err:=gallery.ResolveCategoryTag(g.DB,"client_tag")
+				if err!=nil{t.Fatal(err)}
+				if _,err:=g.TagSvc.GetOrCreateTag(bare,cat);err!=nil{t.Fatal(err)}
+			}
+			err=a.applyClientExtras(ctx,grant,g,naming,extras)
+			if mode=="changed job after naming"||mode=="changed client after landing"{
+				if err==nil{t.Fatal("unplanned client mutation accepted")}
+				if _,err:=os.Stat(filepath.Join(filepath.Dir(intent),"extras-attempt.json"));!os.IsNotExist(err){t.Fatal("unexpected extras attempt",err)}
+				return
+			}
+			if err!=nil{t.Fatal(err)}
 			if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err!=nil{t.Fatal(err)}
 			if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err!=nil{t.Fatal(err)}
 			if got,err:=os.ReadFile(preview.FinalPath);err!=nil||!bytes.Equal(got,data){t.Fatal("canonical bytes",err)}
 			if mode=="collision"{if got,err:=os.ReadFile(filepath.Join(s.GalleryRoot,f.RelativeName));err!=nil||string(got)!="operator"{t.Fatal("operator bytes changed",err)}}
+			if mode=="lost attempt after receipt"{
+				if err:=os.Remove(intent);err!=nil{t.Fatal(err)}
+				if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("lost guarded marker accepted")}
+				return
+			}
+			if mode=="full closure"{
+				auth:=func(context.Context,workerproto.StageAllocation,terminalReceiptWitness)error{return nil}
+				if _,err:=a.reclaimWorkspace(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("reclaim",err)}
+				if _,err:=a.releasePrepared(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("release",err)}
+				if _,err:=a.retireSealedMedia(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("retire",err)}
+				if _,err:=a.closeRetiredOperation(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("close",err)}
+				if _,err:=a.observeClosedOperation(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("observe closed",err)}
+				if got,err:=os.ReadFile(preview.FinalPath);err!=nil||!bytes.Equal(got,data){t.Fatal("canonical bytes after closure",err)}
+			}
 		})
 	}
 }
