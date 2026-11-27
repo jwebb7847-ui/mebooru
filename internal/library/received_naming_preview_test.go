@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/monbooru/monbooru/internal/config"
@@ -16,9 +17,9 @@ import (
 )
 
 func TestReceivedNamingPreviewMatchesLegacyArrival(t *testing.T){
-	for _,mode:=range []string{"plain","default folder","explicit folder","template folder","upload collision",
+	for _,mode:=range []string{"plain","default folder","blank request","explicit folder","template folder","upload collision",
 		"rename collision","folder collision","empty token","local md5","missing md5","invalid template",
-		"escaping folder","stale path row","case only","extension mismatch"}{
+		"escaping folder","stale path row","case only","extension mismatch","directory file","missing media","marked missing"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -27,6 +28,7 @@ func TestReceivedNamingPreviewMatchesLegacyArrival(t *testing.T){
 			var occupied string
 			switch mode{
 			case "default folder":req.DefaultFolder="incoming"
+			case "blank request":req.DefaultFolder="incoming";req.RequestFolder="  "
 			case "explicit folder":
 				req.RequestFolder="literal-{source}";req.DefaultFolder="{gallery}";req.DefaultName="{source}-{post_id}"
 			case "template folder":
@@ -44,6 +46,7 @@ func TestReceivedNamingPreviewMatchesLegacyArrival(t *testing.T){
 			case "escaping folder":req.RequestFolder="../outside"
 			case "case only":req.DefaultName="ORIGINAL"
 			case "extension mismatch":req.ReceivedName="original.jpg"
+			case "directory file":req.RequestFolder="blocked/sub";occupied="blocked"
 			}
 			open:=func()*Gallery{
 				t.Helper()
@@ -66,6 +69,8 @@ func TestReceivedNamingPreviewMatchesLegacyArrival(t *testing.T){
 			landed,err:=g.LandInPlace(ctx,diag,LandSpec{Origin:"fixture"})
 			if err!=nil||landed.Image==nil||landed.Duplicate{t.Fatal("fixture land",err)}
 			id:=landed.Image.ID
+			if mode=="missing media"{if err:=os.Remove(diag);err!=nil{t.Fatal(err)}}
+			if mode=="marked missing"{if _,err:=gallery.SetMissing(g.DB,id,true);err!=nil{t.Fatal(err)}}
 			if mode=="missing md5"{
 				if _,err:=g.DB.Write.Exec(`UPDATE images SET md5='' WHERE id=?`,id);err!=nil{t.Fatal(err)}
 			}
@@ -89,7 +94,7 @@ func TestReceivedNamingPreviewMatchesLegacyArrival(t *testing.T){
 			if err:=g.DB.Read.QueryRow(`SELECT canonical_path,md5 FROM images WHERE id=?`,id).Scan(&beforePath,&beforeMD5);err!=nil{t.Fatal(err)}
 			if err:=g.DB.Read.QueryRow(`SELECT COUNT(*) FROM image_paths WHERE image_id=?`,id).Scan(&beforeRows);err!=nil{t.Fatal(err)}
 			preview,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),id,req)
-			bad:=mode=="missing md5"||mode=="invalid template"||mode=="escaping folder"||mode=="stale path row"||mode=="case only"||mode=="extension mismatch"
+			bad:=mode=="missing md5"||mode=="invalid template"||mode=="escaping folder"||mode=="stale path row"||mode=="case only"||mode=="extension mismatch"||mode=="directory file"||mode=="missing media"||mode=="marked missing"
 			if (err!=nil)!=bad{t.Fatalf("unexpected preview %+v %v",preview,err)}
 			var afterPath,afterMD5 string
 			var afterRows int
@@ -98,7 +103,7 @@ func TestReceivedNamingPreviewMatchesLegacyArrival(t *testing.T){
 			if beforePath!=afterPath||beforeMD5!=afterMD5||beforeRows!=afterRows||!reflect.DeepEqual(before,inventory()){t.Fatal("preview changed gallery")}
 			if bad{return}
 			legacy:=open()
-			folder,naming:=gallery.ReceivedNaming(req.Gallery,req.RequestFolder,req.DefaultFolder,req.DefaultName)
+			folder,naming:=gallery.ReceivedNaming(req.Gallery,strings.TrimSpace(req.RequestFolder),req.DefaultFolder,req.DefaultName)
 			dest,err:=legacy.Boundary().ResolveSubdir(folder)
 			if err!=nil{t.Fatal(err)}
 			res,err:=legacy.Land(ctx,dest,gallery.SanitizeReceivedName(req.ReceivedName),FromReader(bytes.NewReader(buf.Bytes())),
