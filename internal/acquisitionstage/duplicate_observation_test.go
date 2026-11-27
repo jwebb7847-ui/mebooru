@@ -22,7 +22,7 @@ func TestHeldDuplicateCanonicalObservation(t *testing.T){
 			var buf bytes.Buffer
 			if err:=png.Encode(&buf,image.NewRGBA(image.Rect(0,0,16,16)));err!=nil{t.Fatal(err)}
 			a,stage,s,grant,_,f:=publicationFixtureData(t,"png",buf.Bytes())
-			defer a.Close()
+			defer func(){if err:=a.Close();err!=nil{t.Error(err)}}()
 			row:=acquisitionplan.ApprovedPolicyRow{PostID:f.ID,NativeSHA256:strings.Repeat("a",64),MediaURL:"https://example.invalid/42.png",
 				SourceLabel:"derpibooru",PostURL:"https://derpibooru.org/images/42",Rating:"general",Tags:[]string{"fixture","rating:general"},
 				Provenance:&acquisitionplan.ApprovedProvenance{Original:"https://example.invalid/upstream"}}
