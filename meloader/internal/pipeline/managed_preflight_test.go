@@ -39,14 +39,14 @@ func managedPreflightFixture(t *testing.T,rule string)(*ManagedPreflight,*config
 		}
 		return &http.Response{StatusCode:200,Header:make(http.Header),Body:io.NopCloser(strings.NewReader(data))},nil
 	})
-	w,err:=NewManagedEvidenceWindow(q,"search",body,gate,gate.CurrentGeneration(),func(context.Context,workerproto.MetadataPlanRequest)bool{return true},mapper,transport)
+	w,err:=newManagedEvidenceWindow(q,"search",body,gate,gate.CurrentGeneration(),func(context.Context,workerproto.MetadataPlanRequest)bool{return true},mapper,transport)
 	if err!=nil{t.Fatal(err)}
 	c:=acquisitionplan.MetadataConfig{Generation:1,Source:q.Source}
 	ci,err:=c.Identity()
 	if err!=nil{t.Fatal(err)}
 	id:=acquisitionplan.MetadataIdentity{Runtime:acquisitionplan.RuntimeIdentity{Generation:1,Version:acquisitionplan.StrictQualifiedVersion,ArtifactSHA256:strings.Repeat("a",64),ManifestSHA256:strings.Repeat("b",64)},Config:ci}
 	generation:=uint64(1)
-	p,err:=NewManagedPreflight(w,id,c,generation,func(context.Context)(acquisitionplan.MetadataIdentity,uint64,error){return id,generation,nil})
+	p,err:=newManagedPreflight(w,id,c,generation,func(context.Context)(acquisitionplan.MetadataIdentity,uint64,error){return id,generation,nil})
 	if err!=nil{t.Fatal(err)}
 	return p,provider,gate,q,&generation
 }

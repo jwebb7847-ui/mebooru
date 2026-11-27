@@ -88,3 +88,6 @@ Combined pinned-runtime pipeline test uses real alias-aware policy evaluator rat
 
 
 Initial b.5 review: catalog authorization must check configured membership as well as pinned resolver identity; validate discovery exact result set. Actual private-session tests verify scoped reads, malformed, cross-gallery, unsupported mutation and role-direction refusals; diagnostic broker refuses reserved acquisition plans (no launch). No production enablement. Additional route/sink and durable scope coverage remains open.
+
+
+b.4 isolated scope completed at bb99bde2a011d2d0ef78321f45d05b8f87c1f301, run 45900774155 (both actual composed runtime tests passed). b.5 hardens metadata handoff: opaque completion binds actual classified subcategory, bytes, job/gallery/source/window, runtime/config and original gate epoch, shared one-use state even on copy. The exported composed preflight constructor accepts that completion rather than arbitrary raw evidence. Production authority, IPC, rooted staging, ordinary operation dispatch and full acceptance remain outstanding.

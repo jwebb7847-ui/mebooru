@@ -3,12 +3,14 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync/atomic"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/jwebb7847-ui/mebooru/shared/processguard"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monloader/internal/mapping"
+	"github.com/monbooru/monloader/internal/taxonomy"
 )
 
 var ErrManagedPreflight = errors.New("managed strict preflight refused")
@@ -29,7 +31,7 @@ type ManagedPreflight struct{
 	used atomic.Bool
 }
 
-func NewManagedPreflight(w *ManagedEvidenceWindow,identity acquisitionplan.MetadataIdentity,
+func newManagedPreflight(w *ManagedEvidenceWindow,identity acquisitionplan.MetadataIdentity,
 	config acquisitionplan.MetadataConfig,policyGeneration uint64,observe TransferObserver)(*ManagedPreflight,error){
 	if w==nil||w.mapper==nil||observe==nil||policyGeneration==0||config.Source!=w.grant.Source{return nil,ErrManagedPreflight}
 	cfg,err:=config.Identity()
@@ -134,4 +136,21 @@ func(a *ManagedTransferApproval)runTransferCandidate(caller context.Context,q wo
 	if a==nil||a.preflight==nil||a.plan==nil{return nil,ErrManagedPreflight}
 	p:=a.preflight
 	return processguard.RunStrictTransfer(caller,set,q,p.config,root,a.admit,p.current,start)
+}
+
+
+// NewManagedPreflightFromCompletion is the only exported constructor
+// for the composed preflight candidate. Callers cannot substitute raw
+// evidence, a classified subcategory or an independently acquired epoch.
+// Scope, runtime observer and policy generation are still trusted
+// local owner seams, not production cross-process authority.
+func NewManagedPreflightFromCompletion(ctx context.Context,completion *processguard.MetadataCompletion,
+	q workerproto.MetadataPlanRequest,identity acquisitionplan.MetadataIdentity,config acquisitionplan.MetadataConfig,
+	gate *workerproto.DrainGate,scope taxonomy.ManagedTaxonomyScope,mapper *mapping.Mapper,transport http.RoundTripper,
+	policyGeneration uint64,observe TransferObserver)(*ManagedPreflight,error){
+	sub,body,generation,err:=completion.Consume(ctx,q,identity,gate)
+	if err!=nil{return nil,ErrManagedPreflight}
+	window,err:=newManagedEvidenceWindow(q,sub,body,gate,generation,scope,mapper,transport)
+	if err!=nil{return nil,err}
+	return newManagedPreflight(window,identity,config,policyGeneration,observe)
 }

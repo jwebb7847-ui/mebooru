@@ -142,10 +142,8 @@ func TestManagedStrictTransferPinnedRuntime(t *testing.T){
 	metadata,err:=processguard.NewMetadataOperation(set,gate,q,r,c,func(context.Context)(acquisitionplan.MetadataIdentity,error){return id,nil},
 		func(ctx context.Context,_ workerproto.MetadataKind,args []string)(processguard.StreamProbeChild,error){return start(ctx,args)})
 	if err!=nil{t.Fatal(err)}
-	out,epoch,err:=metadata.RunBound(ctx,q)
+	completion,err:=metadata.RunCompletion(ctx,q)
 	if err!=nil{t.Fatalf("metadata: %v",err)}
-	posts,err:=workerproto.DecodeMetadataEvidence(out,q,"search")
-	if err!=nil||len(posts)!=4{t.Fatalf("metadata rows: %d %v",len(posts),err)}
 	lock.Lock()
 	before:=len(requests)
 	lock.Unlock()
@@ -168,9 +166,7 @@ func TestManagedStrictTransferPinnedRuntime(t *testing.T){
 		}
 		return &http.Response{StatusCode:200,Header:make(http.Header),Body:io.NopCloser(strings.NewReader(data))},nil
 	})
-	w,err:=NewManagedEvidenceWindow(q,"search",out,gate,epoch,func(_ context.Context,req workerproto.MetadataPlanRequest)bool{return req==q},mapper,transport)
-	if err!=nil{t.Fatal(err)}
-	p,err:=NewManagedPreflight(w,id,c,1,func(context.Context)(acquisitionplan.MetadataIdentity,uint64,error){return id,1,nil})
+	p,err:=NewManagedPreflightFromCompletion(ctx,completion,q,id,c,gate,func(_ context.Context,req workerproto.MetadataPlanRequest)bool{return req==q},mapper,transport,1,func(context.Context)(acquisitionplan.MetadataIdentity,uint64,error){return id,1,nil})
 	if err!=nil{t.Fatal(err)}
 	result,err:=p.Run(ctx,q)
 	if err!=nil||result.Approval==nil||!slices.Equal(result.BlockedIDs,[]string{"41"}){t.Fatalf("preflight: %+v %v",result,err)}

@@ -42,7 +42,7 @@ type ManagedEvidenceWindow struct{
 	used atomic.Bool
 }
 
-func NewManagedEvidenceWindow(grant workerproto.MetadataPlanRequest, subcategory string, body []byte,
+func newManagedEvidenceWindow(grant workerproto.MetadataPlanRequest, subcategory string, body []byte,
 	gate *workerproto.DrainGate,generation workerproto.DrainGeneration,scope taxonomy.ManagedTaxonomyScope,
 	mapper *mapping.Mapper,transport http.RoundTripper)(*ManagedEvidenceWindow,error){
 	if gate==nil||scope==nil||mapper==nil{return nil,ErrManagedMetadataEvidence}

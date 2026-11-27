@@ -32,7 +32,7 @@ func TestManagedEvidenceNativeRatingAndCategoryParity(t *testing.T){
 			q:=workerproto.MetadataPlanRequest{JobID:1,Gallery:"A",Kind:workerproto.MetadataStrictResolve,Source:tc.source,URL:tc.url,First:1,Last:1}
 			body:=`[[3,"https://example.invalid/1.jpg",{"id":1,"category":"`+tc.source+`","subcategory":"post","rating":"s","tags":["fixture"],"tags_artist":[],"tags_character":[],"tags_copyright":[],"tags_general":["fixture"],"tags_meta":[]}]]`
 			makeWindow:=func(raw string)*ManagedEvidenceWindow{
-				w,err:=NewManagedEvidenceWindow(q,"post",[]byte(raw),gate,gate.CurrentGeneration(),scope,mapper,nil)
+				w,err:=newManagedEvidenceWindow(q,"post",[]byte(raw),gate,gate.CurrentGeneration(),scope,mapper,nil)
 				if err!=nil{t.Fatal(err)}
 				return w
 			}
@@ -78,7 +78,7 @@ func TestManagedEvidenceDerpibooruTaxonomyAndGeneration(t *testing.T){
 	})
 	epoch:=gate.CurrentGeneration()
 	newWindow:=func(g workerproto.DrainGeneration)*ManagedEvidenceWindow{
-		w,err:=NewManagedEvidenceWindow(q,"post",body,gate,g,scope,mapper,transport)
+		w,err:=newManagedEvidenceWindow(q,"post",body,gate,g,scope,mapper,transport)
 		if err!=nil{t.Fatal(err)}
 		return w
 	}

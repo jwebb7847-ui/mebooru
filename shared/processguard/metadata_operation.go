@@ -119,18 +119,52 @@ func (o *MetadataOperation) Run(caller context.Context,q workerproto.MetadataPla
 	return out,err
 }
 
+// RunBound is a diagnostic compatibility seam, not the preflight handoff.
+// RunCompletion is required by the composed candidate.
 // RunBound returns the originating opaque online generation with the
 // validated native output. A subsequent local taxonomy candidate must
 // use AdmitBound on that same gate and token, not acquire a fresh grant
 // based on old metadata. Not a wire DTO or durable job authorization.
 func (o *MetadataOperation) RunBound(caller context.Context,q workerproto.MetadataPlanRequest)([]byte,workerproto.DrainGeneration,error){
 	if o==nil{return nil,workerproto.DrainGeneration{},ErrMetadataOperation}
-	out,err:=o.run(caller,q)
+	completion,err:=o.RunCompletion(caller,q)
 	if err!=nil{return nil,workerproto.DrainGeneration{},err}
-	return out,o.generation,nil
+	return bytes.Clone(completion.state.body),completion.state.generation,nil
 }
 
-func (o *MetadataOperation) run(caller context.Context,q workerproto.MetadataPlanRequest)([]byte,error){
+// MetadataCompletion is an opaque, single-use, in-process handoff of
+// actual contained metadata evidence. Copying the outer value does not
+// duplicate its use state. Only successful owned execution mints one.
+// It is not a wire DTO, durable receipt or production runtime attestation.
+type MetadataCompletion struct{state *metadataCompletionState}
+type metadataCompletionState struct{
+	request workerproto.MetadataPlanRequest
+	identity acquisitionplan.MetadataIdentity
+	gate *workerproto.DrainGate
+	generation workerproto.DrainGeneration
+	subcategory string
+	body []byte
+	used atomic.Bool
+}
+
+// Consume refuses mismatched job/source/gallery/window, runtime/config,
+// foreign gate or stale online generation. The receiving adapter must
+// still use AdmitBound with the returned original generation; this
+// check is not permission to start network work.
+func(c *MetadataCompletion)Consume(ctx context.Context,q workerproto.MetadataPlanRequest,
+	id acquisitionplan.MetadataIdentity,gate *workerproto.DrainGate)(string,[]byte,workerproto.DrainGeneration,error){
+	if c==nil||c.state==nil||gate==nil{return "",nil,workerproto.DrainGeneration{},ErrMetadataOperation}
+	s:=c.state
+	if q!=s.request||id!=s.identity||gate!=s.gate||!s.used.CompareAndSwap(false,true){
+		return "",nil,workerproto.DrainGeneration{},ErrMetadataOperation
+	}
+	if ctx.Err()!=nil||gate.CurrentGeneration()!=s.generation{return "",nil,workerproto.DrainGeneration{},ErrMetadataOperation}
+	return s.subcategory,bytes.Clone(s.body),s.generation,nil
+}
+
+// RunCompletion keeps request, classification, identity and native bytes
+// together until the receiving trusted adapter consumes them.
+func (o *MetadataOperation) RunCompletion(caller context.Context,q workerproto.MetadataPlanRequest)(*MetadataCompletion,error){
 	if o==nil||o.sequence==nil||q!=o.request||!o.used.CompareAndSwap(false,true){return nil,ErrMetadataOperation}
 	defer o.sequence.Invalidate()
 	ctx,finish,err:=o.gate.AdmitBound(caller,o.generation)
@@ -164,5 +198,5 @@ func (o *MetadataOperation) run(caller context.Context,q workerproto.MetadataPla
 	if err!=nil||!o.current(ctx)||caller.Err()!=nil{return nil,ErrMetadataOperation}
 	if _,err:=workerproto.DecodeMetadataEvidence(out,q,subcategory);err!=nil{return nil,ErrMetadataOperation}
 	if ctx.Err()!=nil||caller.Err()!=nil{return nil,ErrMetadataOperation}
-	return out,nil
+	return &MetadataCompletion{state:&metadataCompletionState{request:q,identity:o.identity,gate:o.gate,generation:o.generation,subcategory:subcategory,body:bytes.Clone(out)}},nil
 }

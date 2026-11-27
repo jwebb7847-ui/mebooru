@@ -233,3 +233,48 @@ func TestMetadataOperationStaleGrantCannotStartAfterReopen(t *testing.T){
 	if err:=gate.Open();err!=nil{t.Fatal(err)}
 	if out,_,err:=o.RunBound(ctx,q);out!=nil||!errors.Is(err,workerproto.ErrOffline)||starts!=0{t.Fatalf("stale metadata grant %q %v %d",out,err,starts)}
 }
+
+
+func TestMetadataCompletionBoundHandoff(t *testing.T){
+	ctx:=context.Background()
+	q,r,c,id:=metadataGrant(t)
+	gate:=workerproto.NewDrainGate(ctx)
+	foreign:=workerproto.NewDrainGate(ctx)
+	if err:=gate.Open();err!=nil{t.Fatal(err)}
+	if err:=foreign.Open();err!=nil{t.Fatal(err)}
+	set:=NewOperationSet(1)
+	makeCompletion:=func()*MetadataCompletion{
+		t.Helper()
+		o,err:=NewMetadataOperation(set,gate,q,r,c,func(context.Context)(acquisitionplan.MetadataIdentity,error){return id,nil},
+			func(_ context.Context,k workerproto.MetadataKind,_ []string)(StreamProbeChild,error){
+				if k==workerproto.MetadataClassify{return &metadataChildFixture{data:fixtureClassification},nil}
+				return &metadataChildFixture{data:fixtureMetadata},nil
+			})
+		if err!=nil{t.Fatal(err)}
+		got,err:=o.RunCompletion(ctx,q)
+		if err!=nil{t.Fatal(err)}
+		return got
+	}
+	refuse:=func(completion *MetadataCompletion,req workerproto.MetadataPlanRequest,i acquisitionplan.MetadataIdentity,g *workerproto.DrainGate){
+		t.Helper()
+		if sub,body,epoch,err:=completion.Consume(ctx,req,i,g);err==nil||sub!=""||body!=nil||epoch!=(workerproto.DrainGeneration{}){t.Fatal("invalid completion published")}
+	}
+	refuse(&MetadataCompletion{},q,id,gate)
+	completion:=makeCompletion()
+	bad:=q;bad.Gallery="B";refuse(completion,bad,id,gate)
+	bad=q;bad.JobID++;refuse(completion,bad,id,gate)
+	bad=q;bad.Last++;refuse(completion,bad,id,gate)
+	changed:=id;changed.Runtime.Generation++;refuse(completion,q,changed,gate)
+	changed=id;changed.Config.Generation++;refuse(completion,q,changed,gate)
+	refuse(completion,q,id,foreign)
+	copyOfCompletion:=*completion
+	sub,body,epoch,err:=completion.Consume(ctx,q,id,gate)
+	if err!=nil||sub!="post"||string(body)!=fixtureMetadata||epoch!=gate.CurrentGeneration(){t.Fatalf("handoff: %s %s %v",sub,body,err)}
+	body[0]='!'
+	refuse(&copyOfCompletion,q,id,gate)
+	stale:=makeCompletion()
+	if err:=gate.Drain(ctx);err!=nil{t.Fatal(err)}
+	if err:=gate.Open();err!=nil{t.Fatal(err)}
+	refuse(stale,q,id,gate)
+	if err:=set.SealAndStop(ctx);err!=nil{t.Fatal(err)}
+}
