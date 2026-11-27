@@ -20,7 +20,7 @@ import (
 )
 
 func TestComposedNewReceiptWithClientExtras(t *testing.T){
-	for _,mode:=range []string{"new tags","empty job","shared ownership","rejected tag","implication","rated filter","DB reopen",
+	for _,mode:=range []string{"new tags","empty job","shared ownership","rejected tag","implication","rated filter","DB reopen","alias","rating alias","source label collision",
 		"unrated rating","rating implication","custom via","commentary","source override","no authority",
 		"revoked after attempt","DB failure","revoked after write","changed job","changed naming",
 		"lost extras result","damaged extras result","missing client owner","unexpected tag","changed implication","damaged receipt","receipt revocation"}{
@@ -34,6 +34,7 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 				SourceLabel:"derpibooru",PostURL:"https://derpibooru.org/images/42",Rating:"general",
 				Tags:[]string{"fixture","rating:general"},Provenance:&acquisitionplan.ApprovedProvenance{}}
 			if mode=="unrated rating"{row.Rating="";row.Tags=[]string{"fixture"}}
+			if mode=="source label collision"{row.SourceLabel=contract.Via}
 			body,hash,err:=acquisitionplan.EncodeApprovedPolicy(grant.Request.Transfer,[]acquisitionplan.ApprovedPolicyRow{row})
 			if err!=nil{t.Fatal(err)}
 			if err:=a.BindPolicy(ctx,grant,func(context.Context,workerproto.StageAllocation)([]byte,string,error){return body,hash,nil});err!=nil{t.Fatal(err)}
@@ -78,6 +79,12 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 				child=tag("implied_child")
 				if mode=="rating implication"{child=tag("rating:explicit")}
 				if _,err:=g.TagSvc.AddImplication(parent,child);err!=nil{t.Fatal(err)}
+			case "alias","rating alias":
+				canon:=tag("canonical_client")
+				if mode=="rating alias"{canon=tag("rating:explicit")}
+				cat,bare,err:=gallery.ResolveCategoryTag(g.DB,"client_tag")
+				if err!=nil{t.Fatal(err)}
+				if _,err:=g.TagSvc.CreateAlias(bare,cat,canon);err!=nil{t.Fatal(err)}
 			case "rated filter","unrated rating":job.Tags=append(job.Tags,"rating:explicit")
 			case "custom via":job.Via="derpibooru"
 			case "commentary":job.Commentary="client fallback"
@@ -103,7 +110,7 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 			if mode=="no authority"{extras=nil}
 			if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("receipt without explicit extras witness")}
 			err=a.applyClientExtras(ctx,grant,g,naming,extras)
-			preRefusal:=mode=="unrated rating"||mode=="rating implication"||mode=="custom via"||mode=="commentary"||mode=="source override"||mode=="no authority"
+			preRefusal:=mode=="rating alias"||mode=="source label collision"||mode=="unrated rating"||mode=="rating implication"||mode=="custom via"||mode=="commentary"||mode=="source override"||mode=="no authority"
 			partial:=mode=="revoked after attempt"||mode=="DB failure"||mode=="revoked after write"
 			if (err!=nil)!=(preRefusal||partial){t.Fatalf("unexpected extras result %v",err)}
 			count:=func(query string,args ...any)int{
@@ -116,7 +123,8 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 			if err!=nil||rating!=row.Rating{t.Fatal("source rating changed",rating,err)}
 			if preRefusal{
 				if _,err:=os.Stat(attempt);!os.IsNotExist(err){t.Fatal("unexpected extras attempt",err)}
-				if clientCount!=0{t.Fatal("unauthorized tags")}
+				if mode!="source label collision"&&clientCount!=0{t.Fatal("unauthorized tags")}
+				if mode=="source label collision"&&clientCount!=len(mapped[0].TagIDs){t.Fatal("source ledger changed")}
 				return
 			}
 			if partial{
