@@ -134,6 +134,9 @@ func readLandingRows(ctx context.Context,g *library.Gallery,r record,e SealedEvi
 }
 func(a *Allocator)observeLanding(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)([]landingObservation,error){
 	a.mu.Lock();defer a.mu.Unlock()
+	return a.observeLandingLocked(ctx,grant,g)
+}
+func(a *Allocator)observeLandingLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)([]landingObservation,error){
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return nil,err}
 	defer p.Close();defer src.Close();defer dst.Close()

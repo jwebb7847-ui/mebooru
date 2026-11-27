@@ -42,8 +42,8 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	p,err:=openDir(operation,"publication")
 	if err!=nil{return zero,err}
 	defer p.Close()
-	entries,err:=list(p,4)
-	if err!=nil||len(entries)<2||len(entries)>4{return zero,ErrStageRecovery}
+	entries,err:=list(p,5)
+	if err!=nil||len(entries)<2||len(entries)>5{return zero,ErrStageRecovery}
 	raw,err:=boundedRegularBytes(p,"intent.json",maxSealRecordBytes)
 	if err!=nil{return zero,err}
 	var intent publicationIntent
@@ -67,8 +67,12 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		marker,err:=boundedRegularBytes(p,"attempt",64)
 		if err!=nil||string(marker)!=r.Allocation.TransferID{return zero,ErrStageRecovery}
 	}
-	if len(entries)==4{
-		if _,err:=readLandingAttempt(p,r);err!=nil{return zero,ErrStageRecovery}
+	if len(entries)>=4{
+		landing,err:=readLandingAttempt(p,r)
+		if err!=nil{return zero,ErrStageRecovery}
+		if len(entries)==5{
+			if _,err:=readMetadataAttempt(p,landing,e);err!=nil{return zero,ErrStageRecovery}
+		}
 	}
 	return intent,nil
 }

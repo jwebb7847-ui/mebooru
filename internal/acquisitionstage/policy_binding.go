@@ -121,8 +121,11 @@ func(a *Allocator)BindPolicy(ctx context.Context,g workerproto.StageAllocation,o
 // BoundPolicy rechecks current scope, sealed bytes and the exact durable
 // binding. Does not authorize publication or database mutation.
 func(a *Allocator)BoundPolicy(ctx context.Context,g workerproto.StageAllocation)(acquisitionplan.ApprovedPolicySnapshot,error){
-	var zero acquisitionplan.ApprovedPolicySnapshot
 	a.mu.Lock();defer a.mu.Unlock()
+	return a.boundPolicyLocked(ctx,g)
+}
+func(a *Allocator)boundPolicyLocked(ctx context.Context,g workerproto.StageAllocation)(acquisitionplan.ApprovedPolicySnapshot,error){
+	var zero acquisitionplan.ApprovedPolicySnapshot
 	e,err:=a.sealedLocked(ctx,g)
 	if err!=nil{return zero,err}
 	s,err:=a.scope(ctx,g.Request)
