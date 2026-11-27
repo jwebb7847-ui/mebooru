@@ -19,7 +19,7 @@ import (
 )
 
 func TestManagedNamingRelocation(t *testing.T){
-	for _,mode:=range []string{"plain","template","upload collision","rename collision","nested",
+	for _,mode:=range []string{"plain","DB reopen","template","upload collision","rename collision","nested",
 		"missing directory","wrong received name","terminal already","revoked after attempt",
 		"collision after attempt","revoked after link","DB write failure","revoked after DB",
 		"lost result","damaged result","changed file","same bytes replacement","changed DB","changed metadata","changed settings","old path returns","extra link"}{
@@ -37,7 +37,7 @@ func TestManagedNamingRelocation(t *testing.T){
 			if err:=a.BindPolicy(ctx,grant,func(context.Context,workerproto.StageAllocation)([]byte,string,error){return body,hash,nil});err!=nil{t.Fatal(err)}
 			g,err:=library.Open(config.Gallery{Name:"A",GalleryPath:s.GalleryRoot,DBPath:filepath.Join(filepath.Dir(stage),"gallery.sqlite"),ThumbnailsPath:filepath.Join(filepath.Dir(stage),"thumbs")})
 			if err!=nil{t.Fatal(err)}
-			defer g.Close()
+			defer func(){g.Close()}()
 			if err:=a.preparePublication(ctx,grant);err!=nil{t.Fatal(err)}
 			if _,err:=a.publishPrepared(ctx,grant);err!=nil{t.Fatal(err)}
 			if err:=a.landNewPrepared(ctx,grant,g);err!=nil{t.Fatal(err)}
@@ -124,6 +124,11 @@ func TestManagedNamingRelocation(t *testing.T){
 			if err:=a.Close();err!=nil{t.Fatal(err)}
 			a,err=Open(stage,2,4096,auth);if err!=nil{t.Fatal(err)}
 			if err:=a.applyNaming(ctx,grant,g,namingAuth);err==nil{t.Fatal("replayed move")}
+			if mode=="DB reopen"{
+				g.Close()
+				g,err=library.Open(config.Gallery{Name:"A",GalleryPath:s.GalleryRoot,DBPath:filepath.Join(filepath.Dir(stage),"gallery.sqlite"),ThumbnailsPath:filepath.Join(filepath.Dir(stage),"thumbs")})
+				if err!=nil{t.Fatal(err)}
+			}
 			switch mode{
 			case "lost result":if err:=os.Remove(result);err!=nil{t.Fatal(err)}
 			case "damaged result":if err:=os.WriteFile(result,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
@@ -144,6 +149,7 @@ func TestManagedNamingRelocation(t *testing.T){
 			if mode=="old path returns"{checkBytes(old,[]byte("operator"))}
 			if mode=="collision after attempt"{checkBytes(final,[]byte("late operator"))}
 			if mode!="changed file"{checkBytes(private,buf.Bytes())}
+			checkBytes(filepath.Join(stage,grant.Request.OperationID,"sealed","media",f.RelativeName),buf.Bytes())
 			if _,err:=os.Stat(filepath.Join(stage,grant.Request.OperationID));errors.Is(err,os.ErrNotExist){t.Fatal("evidence removed")}
 		})
 	}
