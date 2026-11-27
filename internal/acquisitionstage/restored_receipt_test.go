@@ -21,7 +21,7 @@ func TestComposedRestoredReceipt(t *testing.T){
 	for _,mode:=range []string{"marked missing","unmarked missing","DB reopen","unrated prior","nested destination","collision","missing relationships",
 		"nonempty extras","no authority","old path requested","old path returns before move","changed state after intent","revoked after intent","revoked after link",
 		"DB move failure","revoked after DB move","lost naming result","damaged naming result","changed canonical","same bytes replacement",
-		"old path returns after receipt","changed old row","changed note","changed rating","changed membership","changed job","changed naming","damaged receipt","receipt revoked"}{
+		"old path returns after receipt","changed old row","changed final row","changed note","changed rating","changed membership","changed source","changed job","changed naming","damaged receipt","receipt revoked"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -59,6 +59,8 @@ func TestComposedRestoredReceipt(t *testing.T){
 			metadata,err:=a.applyMappedMetadata(ctx,grant,g)
 			if err!=nil||len(metadata)!=1||metadata[0].ImageID!=id||metadata[0].Rating!=wantRating{t.Fatal("metadata",err,metadata)}
 			if mode!="missing relationships"{if err:=a.applyRelationships(ctx,grant,g);err!=nil{t.Fatal(err)}}
+			var origin string
+			if err:=g.DB.Read.QueryRow(`SELECT origin FROM images WHERE id=?`,id).Scan(&origin);err!=nil{t.Fatal(err)}
 			dir:=filepath.Join(stage,grant.Request.OperationID,"publication")
 			attempt:=filepath.Join(dir,"naming-attempt.json");result:=filepath.Join(dir,"naming-result.json");receipt:=filepath.Join(dir,"restored-receipt.json")
 			diag:=filepath.Join(s.GalleryRoot,finalName(grant,f))
@@ -130,7 +132,7 @@ func TestComposedRestoredReceipt(t *testing.T){
 			checkBytes(final,buf.Bytes())
 			if _,err:=os.Stat(diag);!os.IsNotExist(err){t.Fatal("diagnostic path remains",err)}
 			if _,err:=os.Stat(old);!os.IsNotExist(err){t.Fatal("old missing path recreated",err)}
-			if count(`SELECT COUNT(*) FROM images WHERE id=? AND canonical_path=? AND is_missing=0 AND note='operator note' AND series='original-home' AND series_order=3`,id,final)!=1{t.Fatal("restored identity or state changed")}
+			if count(`SELECT COUNT(*) FROM images WHERE id=? AND canonical_path=? AND is_missing=0 AND note='operator note' AND series='original-home' AND series_order=3 AND origin=?`,id,final,origin)!=1{t.Fatal("restored identity or state changed")}
 			wantOld:=0;if marked{wantOld=1}
 			if count(`SELECT COUNT(*) FROM image_paths WHERE path=? AND image_id=? AND is_canonical=0`,old,id)!=wantOld{t.Fatal("old missing row disposition")}
 			if count(`SELECT COUNT(*) FROM image_tags it JOIN tags t ON t.id=it.tag_id WHERE it.image_id=? AND t.name='prior'`,id)!=1{t.Fatal("prior tag lost")}
@@ -145,6 +147,8 @@ func TestComposedRestoredReceipt(t *testing.T){
 			if err!=nil||relErr!=nil||stored.Kind!=restoredReceiptKind||stored.Row.ImageID!=id||stored.Row.Name!=rel||stored.PriorRating!=priorRating||stored.OldMarkedMissing!=marked{t.Fatal("receipt",stored,err)}
 			if _,err:=a.finishRestoredReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("receipt overwritten")}
 			if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("wrong new-image receipt")}
+			if _,err:=a.finishHeldReceipt(ctx,grant,g,extras);err==nil{t.Fatal("wrong held receipt")}
+			if err:=a.applyClientExtras(ctx,grant,g,naming,extras);err==nil{t.Fatal("new-only extras accepted restoration")}
 			if err:=a.Close();err!=nil{t.Fatal(err)}
 			a,err=Open(stage,2,4096,authority);if err!=nil{t.Fatal(err)}
 			if mode=="DB reopen"{g.Close();g,err=library.Open(cfg);if err!=nil{t.Fatal(err)}}
@@ -157,6 +161,8 @@ func TestComposedRestoredReceipt(t *testing.T){
 				if err:=os.WriteFile(final,buf.Bytes(),0600);err!=nil{t.Fatal(err)}
 			case "old path returns after receipt":if err:=os.WriteFile(old,[]byte("operator"),0600);err!=nil{t.Fatal(err)}
 			case "changed old row":if _,err:=g.DB.Write.Exec(`UPDATE image_paths SET id=id+10000 WHERE path=?`,old);err!=nil{t.Fatal(err)}
+			case "changed final row":if _,err:=g.DB.Write.Exec(`UPDATE image_paths SET id=id+10000 WHERE path=?`,final);err!=nil{t.Fatal(err)}
+			case "changed source":if _,err:=g.DB.Write.Exec(`UPDATE image_sources SET commentary='changed' WHERE image_id=? AND site='other'`,id);err!=nil{t.Fatal(err)}
 			case "changed note":if _,err:=g.DB.Write.Exec(`UPDATE images SET note='changed' WHERE id=?`,id);err!=nil{t.Fatal(err)}
 			case "changed rating":if _,err:=g.DB.Write.Exec(`DELETE FROM image_tags WHERE image_id=? AND tag_id IN(SELECT t.id FROM tags t JOIN tag_categories c ON c.id=t.category_id WHERE c.name='rating')`,id);err!=nil{t.Fatal(err)}
 			case "changed membership":if _,err:=g.DB.Write.Exec(`UPDATE image_collections SET position=9 WHERE image_id=?`,id);err!=nil{t.Fatal(err)}
