@@ -1,0 +1,318 @@
+package acquisitionstage
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/monbooru/monbooru/internal/db"
+	"github.com/monbooru/monbooru/internal/gallery"
+	"github.com/monbooru/monbooru/internal/library"
+)
+
+// Isolated single-new-PNG, existing destination directory, no collection.
+// The trusted caller supplies an independent current naming decision,
+// never a worker-supplied destination. No production authority yet.
+// Retain both private copies and refuse replay after any attempt.
+type namingAuthority func(context.Context,workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error)
+const maxNamingRecord = 128 << 10
+
+type namingAttempt struct {
+	Version int `json:"version"`
+	MetadataSHA256 string `json:"metadata_sha256"`
+	RelationshipSHA256 string `json:"relationship_sha256"`
+	Request gallery.ReceivedNamingRequest `json:"request"`
+	ImageID int64 `json:"image_id"`
+	PathID int64 `json:"path_id"`
+	Old string `json:"old"`
+	Initial string `json:"initial"`
+	Final string `json:"final"`
+	FileIdentity string `json:"file_identity"`
+	InitialSuffixed bool `json:"initial_suffixed"`
+	FinalSuffixed bool `json:"final_suffixed"`
+}
+type namingResult struct {
+	Version int `json:"version"`
+	AttemptSHA256 string `json:"attempt_sha256"`
+}
+func validNamingRelative(s string)bool{
+	return s!=""&&s!="."&&len(s)<=4096&&filepath.IsLocal(s)&&filepath.Clean(s)==s&&!strings.ContainsAny(s,"\x00:")
+}
+func validNamingRequest(q gallery.ReceivedNamingRequest)bool{
+	for _,s:=range []string{q.Gallery,q.ReceivedName,q.RequestFolder,q.DefaultFolder,q.DefaultName,q.Source,q.PostID}{
+		if len(s)>4096||strings.ContainsRune(s,0){return false}
+	}
+	return q.Gallery!=""&&q.ReceivedName!=""&&q.Source!=""&&q.PostID!=""
+}
+func readNamingAttempt(p *os.Root,r record,e SealedEvidence,result metadataResult)(namingAttempt,[]byte,error){
+	var zero namingAttempt
+	raw,err:=boundedRegularBytes(p,"naming-attempt.json",maxNamingRecord)
+	if err!=nil{return zero,nil,err}
+	var m namingAttempt
+	meta,err:=json.Marshal(result)
+	if err!=nil||len(e.Files)!=1||len(result.Rows)!=1||json.Unmarshal(raw,&m)!=nil||m.Version!=1||
+		m.MetadataSHA256!=digestBytes(meta)||m.ImageID!=result.Rows[0].ImageID||m.PathID<=0||
+		m.Old!=finalName(r.Allocation,e.Files[0])||!validNamingRelative(m.Initial)||!validNamingRelative(m.Final)||
+		strings.EqualFold(m.Old,m.Final)||m.FileIdentity==""||len(m.FileIdentity)>128||
+		!validNamingRequest(m.Request)||m.Request.Gallery!=r.Allocation.Request.Transfer.Metadata.Gallery||
+		m.Request.ReceivedName!=e.Files[0].RelativeName||m.Request.PostID!=e.Files[0].ID{return zero,nil,ErrStageRecovery}
+	rel,err:=boundedRegularBytes(p,"relationship-result.json",maxRelationshipRecord)
+	if err!=nil||m.RelationshipSHA256!=digestBytes(rel){return zero,nil,ErrStageRecovery}
+	canonical,err:=json.Marshal(m)
+	if err!=nil||!bytes.Equal(raw,canonical){return zero,nil,ErrStageRecovery}
+	return m,raw,nil
+}
+func validateNamingRecords(p *os.Root,r record,e SealedEvidence,l landingAttempt,result metadataResult,hasResult bool)error{
+	if !l.NewOnly||l.RestoreImageID!=0{return ErrStageRecovery}
+	_,raw,err:=readNamingAttempt(p,r,e,result)
+	if err!=nil{return err}
+	if !hasResult{return nil}
+	body,err:=boundedRegularBytes(p,"naming-result.json",maxNamingRecord)
+	want,e2:=json.Marshal(namingResult{Version:1,AttemptSHA256:digestBytes(raw)})
+	if err!=nil||e2!=nil||!bytes.Equal(body,want){return ErrStageRecovery}
+	return nil
+}
+func namingRelative(root,path string)(string,error){
+	rel,err:=filepath.Rel(root,path)
+	if err!=nil||!validNamingRelative(rel){return "",ErrStageRefused}
+	return rel,nil
+}
+func namingParent(dst *os.Root,rel string)(*os.Root,string,error){
+	if !validNamingRelative(rel){return nil,"",ErrStageRefused}
+	parent,err:=dst.OpenRoot(".")
+	if err!=nil{return nil,"",ErrStageRecovery}
+	dir:=filepath.Dir(rel)
+	if dir!="."{
+		for _,part:=range strings.Split(dir,string(os.PathSeparator)){
+			next,err:=openDir(parent,part)
+			parent.Close()
+			if err!=nil{return nil,"",err}
+			parent=next
+		}
+	}
+	return parent,filepath.Base(rel),nil
+}
+func namingParentLive(r record,dst,parent *os.Root,rel string)bool{
+	_,info,err:=directory(filepath.Join(r.GalleryRoot,filepath.Dir(rel)))
+	if err!=nil{return false}
+	held,err:=parent.Stat(".")
+	if err!=nil||!os.SameFile(info,held){return false}
+	reopened,_,err:=namingParent(dst,rel)
+	if err!=nil{return false}
+	defer reopened.Close()
+	return sameRelationshipRoot(parent,reopened)
+}
+func namingFile(ctx context.Context,root *os.Root,name string,f acquisitionplan.VerifiedTransferFile,links uint64)(string,error){
+	if err:=readCheckedLinks(ctx,root,name,f.Size,f.SHA256,io.Discard,links);err!=nil{return "",err}
+	info,err:=root.Lstat(name)
+	if err!=nil||!info.Mode().IsRegular(){return "",ErrStageRecovery}
+	file,err:=root.Open(name)
+	if err!=nil{return "",ErrStageRecovery}
+	defer file.Close()
+	actual,err:=file.Stat()
+	if err!=nil||!os.SameFile(info,actual)||!exactLinks(file,actual,links){return "",ErrStageRecovery}
+	id,ok:=diskFileIdentity(file,actual)
+	if !ok{return "",ErrStageRecovery}
+	return id,nil
+}
+func checkNamingFiles(ctx context.Context,src,dst,parent *os.Root,f acquisitionplan.VerifiedTransferFile,m namingAttempt,old,new bool)error{
+	links:=uint64(1)
+	if old{links++}
+	if new{links++}
+	id,err:=namingFile(ctx,src,f.RelativeName,f,links)
+	if err!=nil||id!=m.FileIdentity{return ErrStageRecovery}
+	for _,v:=range []struct{root *os.Root;name string;exists bool}{
+		{dst,m.Old,old},{parent,filepath.Base(m.Final),new},
+	}{
+		if v.exists{
+			id,err:=namingFile(ctx,v.root,v.name,f,links)
+			if err!=nil||id!=m.FileIdentity{return ErrStageRecovery}
+		}else if _,err:=v.root.Lstat(v.name);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
+	}
+	return nil
+}
+// The exact single canonical path row is preserved, including its ID.
+// No alias adoption, missing-state edits, or blanket updates.
+func namingRows(ctx context.Context,g *library.Gallery,r record,f acquisitionplan.VerifiedTransferFile,id int64,rel,absent string)(int64,error){
+	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
+	if err!=nil{return 0,ErrStageRecovery}
+	defer tx.Rollback()
+	path:=filepath.Join(r.GalleryRoot,rel)
+	var pid int64
+	if err:=tx.QueryRowContext(ctx,`SELECT ip.id FROM image_paths ip JOIN images i ON i.id=ip.image_id
+		WHERE i.id=? AND i.sha256=? AND i.file_size=? AND i.is_missing=0 AND i.origin=? AND i.canonical_path=?
+		AND i.folder_path=? AND ip.path=? AND ip.is_canonical=1`,id,f.SHA256,f.Size,newReceiptOrigin,path,
+		gallery.FolderPath(r.GalleryRoot,path),path).Scan(&pid);err!=nil||pid<=0{return 0,ErrStageRecovery}
+	for _,q:=range []struct{sql string;arg any;want int}{
+		{`SELECT COUNT(*) FROM image_paths WHERE image_id=?`,id,1},
+		{`SELECT COUNT(*) FROM image_paths WHERE path=?`,filepath.Join(r.GalleryRoot,absent),0},
+	}{
+		var n int
+		if err:=tx.QueryRowContext(ctx,q.sql,q.arg).Scan(&n);err!=nil||n!=q.want{return 0,ErrStageRecovery}
+	}
+	if tx.Commit()!=nil||ctx.Err()!=nil{return 0,ErrStageRecovery}
+	return pid,nil
+}
+// Independently verify upstream evidence without assuming the old
+// diagnostic path is still canonical. No new receipt is issued here.
+func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p *os.Root,auth namingAuthority)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){
+	var l landingAttempt;var result metadataResult;var q gallery.ReceivedNamingRequest
+	fail:=func(err error)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){return l,result,q,err}
+	if g==nil||g.WatcherRunning()||auth==nil||len(e.Files)!=1{return fail(ErrStageRefused)}
+	snapshot,err:=a.boundPolicyLocked(ctx,grant)
+	if err!=nil{return fail(err)}
+	rows,err:=newOnlyRows(e,snapshot)
+	if err!=nil||len(rows)!=1{return fail(ErrStageRefused)}
+	l,err=readLandingAttempt(p,r)
+	if err!=nil||!l.NewOnly{return fail(ErrStageRefused)}
+	current,err:=observedDB(r,g)
+	if err!=nil||!sameLandingDB(current,l){return fail(ErrStageRecovery)}
+	m,err:=readMetadataAttempt(p,l,e)
+	if err!=nil{return fail(err)}
+	_,hash,err:=acquisitionplan.EncodeApprovedPolicy(snapshot.Transfer,snapshot.Rows)
+	if err!=nil||hash!=m.PolicySHA256{return fail(ErrStageRecovery)}
+	result,err=readMetadataResult(p,m)
+	if err!=nil{return fail(err)}
+	v,err:=verifyMappedRow(ctx,g,m.Targets[0],rows[0],result.Rows[0].Rejected)
+	if err!=nil||!sameMetadataObservation(v,result.Rows[0]){return fail(ErrStageRecovery)}
+	relRaw,err:=boundedRegularBytes(p,"relationship-attempt.json",maxRelationshipRecord)
+	var rel relationshipAttempt
+	if err!=nil||json.Unmarshal(relRaw,&rel)!=nil||rel.ImageID!=v.ImageID||rel.URL!=rows[0].PostURL||rel.ParentURL!=""{return fail(ErrStageRecovery)}
+	if err:=validateRelationshipRecords(p,result,true);err!=nil{return fail(err)}
+	graph,err:=inspectRelationships(ctx,g,v.ImageID,rel.URL,rel.ParentURL)
+	if err!=nil||!sameRelationships(expectedRelationships(rel.Before),graph){return fail(ErrStageRecovery)}
+	for _,name:=range []string{"collection-attempt.json","new-receipt.json","duplicate-attempt.json"}{
+		if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return fail(ErrStageRecovery)}
+	}
+	q,err=auth(ctx,grant)
+	if err!=nil||!validNamingRequest(q)||q.Gallery!=g.Name||q.ReceivedName!=e.Files[0].RelativeName||
+		q.Source!=rows[0].SourceLabel||q.PostID!=rows[0].PostID{return fail(ErrStageRefused)}
+	return l,result,q,nil
+}
+func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p,src,dst,parent *os.Root,m namingAttempt,auth namingAuthority)error{
+	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth)
+	if err!=nil||q!=m.Request||len(result.Rows)!=1||result.Rows[0].ImageID!=m.ImageID{return ErrStageRecovery}
+	meta,err:=json.Marshal(result)
+	rel,relErr:=boundedRegularBytes(p,"relationship-result.json",maxRelationshipRecord)
+	if err!=nil||relErr!=nil||digestBytes(meta)!=m.MetadataSHA256||digestBytes(rel)!=m.RelationshipSHA256{return ErrStageRecovery}
+	s,err:=a.scope(ctx,grant.Request)
+	if err!=nil||!matches(r,s)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst)||!namingParentLive(r,dst,parent,m.Final){return ErrStageRefused}
+	current,err:=observedDB(r,g)
+	if err!=nil||!sameLandingDB(current,l){return ErrStageRecovery}
+	if g.Boundary().Check(filepath.Join(r.GalleryRoot,m.Final))!=nil||g.Boundary().Check(filepath.Join(r.GalleryRoot,m.Old))!=nil{return ErrStageRefused}
+	return nil
+}
+func(a *Allocator)applyNaming(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority)error{
+	a.mu.Lock();defer a.mu.Unlock()
+	if err:=a.observeRelationshipsLocked(ctx,grant,g);err!=nil{return err}
+	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	if err!=nil{return err}
+	defer p.Close();defer src.Close();defer dst.Close()
+	for _,name:=range []string{"naming-attempt.json","naming-result.json"}{
+		if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
+	}
+	_,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth)
+	if err!=nil{return err}
+	f:=e.Files[0]
+	preview,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),result.Rows[0].ImageID,q)
+	if err!=nil{return ErrStageRefused}
+	initial,err:=namingRelative(r.GalleryRoot,preview.InitialPath)
+	if err!=nil{return err}
+	final,err:=namingRelative(r.GalleryRoot,preview.FinalPath)
+	if err!=nil{return err}
+	m:=namingAttempt{Version:1,Request:q,ImageID:result.Rows[0].ImageID,Old:finalName(grant,f),Initial:initial,Final:final,
+		InitialSuffixed:preview.InitialSuffixed,FinalSuffixed:preview.FinalSuffixed}
+	if strings.EqualFold(m.Old,m.Final){return ErrStageRefused}
+	parent,_,err:=namingParent(dst,m.Final)
+	if err!=nil{return err}
+	defer parent.Close()
+	m.PathID,err=namingRows(ctx,g,r,f,m.ImageID,m.Old,m.Final)
+	if err!=nil{return err}
+	m.FileIdentity,err=namingFile(ctx,src,f.RelativeName,f,2)
+	if err!=nil{return err}
+	meta,err:=json.Marshal(result)
+	rel,relErr:=boundedRegularBytes(p,"relationship-result.json",maxRelationshipRecord)
+	if err!=nil||relErr!=nil{return ErrStageRecovery}
+	m.MetadataSHA256=digestBytes(meta);m.RelationshipSHA256=digestBytes(rel)
+	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,false);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	raw,err:=json.Marshal(m)
+	if err!=nil||len(raw)>maxNamingRecord{return ErrStageLimit}
+	if err:=writeOwnerBytes(ctx,p,"naming-attempt.json",raw);err!=nil{return err}
+	syncDirectory(p)
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	again,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),m.ImageID,q)
+	if err!=nil||again!=preview{return ErrStageRecovery}
+	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,false);err!=nil{return err}
+	// No placeholder or copy fallback. Link to the exact free path;
+	// even interruption here leaves the old canonical and private bytes.
+	if err:=dst.Link(m.Old,m.Final);err!=nil{return ErrStageRecovery}
+	syncDirectory(parent)
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,true);err!=nil{return err}
+	pid,err:=namingRows(ctx,g,r,f,m.ImageID,m.Old,m.Final)
+	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
+	oldPath:=filepath.Join(r.GalleryRoot,m.Old);newPath:=filepath.Join(r.GalleryRoot,m.Final)
+	err=g.Edit(func(d *db.DB)error{
+		return db.InWriteTx(d.Write,func(tx *sql.Tx)error{
+			res,err:=tx.ExecContext(ctx,`UPDATE images SET canonical_path=?,folder_path=? WHERE id=? AND canonical_path=?
+				AND sha256=? AND file_size=? AND is_missing=0 AND origin=?`,newPath,gallery.FolderPath(r.GalleryRoot,newPath),m.ImageID,oldPath,f.SHA256,f.Size,newReceiptOrigin)
+			if err!=nil{return err}
+			n,err:=res.RowsAffected();if err!=nil||n!=1{return ErrStageRecovery}
+			res,err=tx.ExecContext(ctx,`UPDATE image_paths SET path=? WHERE id=? AND image_id=? AND path=? AND is_canonical=1
+				AND NOT EXISTS(SELECT 1 FROM image_paths WHERE path=?)`,newPath,m.PathID,m.ImageID,oldPath,newPath)
+			if err!=nil{return err}
+			n,err=res.RowsAffected();if err!=nil||n!=1{return ErrStageRecovery}
+			return nil
+		})
+	})
+	if err!=nil{return ErrStageRecovery}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	pid,err=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old)
+	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
+	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,true);err!=nil{return err}
+	// Only remove the operation-owned old link after proving the new
+	// canonical row AND complete new bytes. No compensating rename.
+	if err:=dst.Remove(m.Old);err!=nil{return ErrStageRecovery}
+	syncDirectory(dst)
+	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,false,true);err!=nil{return err}
+	pid,err=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old)
+	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	body,err:=json.Marshal(namingResult{Version:1,AttemptSHA256:digestBytes(raw)})
+	if err!=nil{return ErrStageRecovery}
+	if err:=writeOwnerBytes(ctx,p,"naming-result.json",body);err!=nil{return err}
+	syncDirectory(p)
+	return a.observeNamingLocked(ctx,grant,g,auth)
+}
+func(a *Allocator)observeNaming(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority)error{
+	a.mu.Lock();defer a.mu.Unlock()
+	return a.observeNamingLocked(ctx,grant,g,auth)
+}
+func(a *Allocator)observeNamingLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority)error{
+	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	if err!=nil{return err}
+	defer p.Close();defer src.Close();defer dst.Close()
+	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth)
+	if err!=nil{return err}
+	if err:=validateNamingRecords(p,r,e,l,result,true);err!=nil{return err}
+	m,_,err:=readNamingAttempt(p,r,e,result)
+	if err!=nil||m.Request!=q{return ErrStageRecovery}
+	parent,_,err:=namingParent(dst,m.Final)
+	if err!=nil{return err}
+	defer parent.Close()
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth);err!=nil{return err}
+	f:=e.Files[0]
+	pid,err:=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old)
+	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
+	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,false,true);err!=nil{return err}
+	return a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth)
+}
