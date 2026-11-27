@@ -111,7 +111,6 @@ func namingParentLive(r record,dst,parent *os.Root,rel string)bool{
 	return sameRelationshipRoot(parent,reopened)
 }
 func namingFile(ctx context.Context,root *os.Root,name string,f acquisitionplan.VerifiedTransferFile,links uint64)(string,error){
-	if err:=readCheckedLinks(ctx,root,name,f.Size,f.SHA256,io.Discard,links);err!=nil{return "",err}
 	info,err:=root.Lstat(name)
 	if err!=nil||!info.Mode().IsRegular(){return "",ErrStageRecovery}
 	file,err:=root.Open(name)
@@ -121,6 +120,9 @@ func namingFile(ctx context.Context,root *os.Root,name string,f acquisitionplan.
 	if err!=nil||!os.SameFile(info,actual)||!exactLinks(file,actual,links){return "",ErrStageRecovery}
 	id,ok:=diskFileIdentity(file,actual)
 	if !ok{return "",ErrStageRecovery}
+	if err:=readCheckedLinks(ctx,root,name,f.Size,f.SHA256,io.Discard,links);err!=nil{return "",err}
+	after,err:=root.Lstat(name)
+	if err!=nil||!os.SameFile(info,after)||!exactLinks(file,after,links)||after.ModTime()!=info.ModTime(){return "",ErrStageRecovery}
 	return id,nil
 }
 func checkNamingFiles(ctx context.Context,src,dst,parent *os.Root,f acquisitionplan.VerifiedTransferFile,m namingAttempt,old,new bool)error{
@@ -183,6 +185,7 @@ func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllo
 	if err!=nil{return fail(err)}
 	v,err:=verifyMappedRow(ctx,g,m.Targets[0],rows[0],result.Rows[0].Rejected)
 	if err!=nil||!sameMetadataObservation(v,result.Rows[0]){return fail(ErrStageRecovery)}
+	if err:=verifyNewMetadataState(ctx,g,rows,m,result);err!=nil{return fail(err)}
 	relRaw,err:=boundedRegularBytes(p,"relationship-attempt.json",maxRelationshipRecord)
 	var rel relationshipAttempt
 	if err!=nil||json.Unmarshal(relRaw,&rel)!=nil||rel.ImageID!=v.ImageID||rel.URL!=rows[0].PostURL||rel.ParentURL!=""{return fail(ErrStageRecovery)}
