@@ -58,7 +58,7 @@ func RunStrictTransfer(caller context.Context,set *OperationSet,q workerproto.Tr
 		out,err,proofErr:=captureOwnedStream(ctx,set,func(c context.Context)(StreamProbeChild,error){
 			if !allowed()||!commands.VerifyFiles(){return nil,ErrStrictTransferOperation}
 			return start(c,step.stage,step.args)
-		},limit)
+		},limit,func(context.Context)bool{return allowed()&&commands.VerifyFiles()})
 		cleanupErr=proofErr
 		if proofErr!=nil{return nil,ErrOperationUnconfirmed}
 		if err!=nil||!allowed()||!commands.VerifyFiles(){return nil,ErrStrictTransferOperation}

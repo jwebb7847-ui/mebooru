@@ -24,7 +24,7 @@ func transferOperationFixture(t *testing.T)(workerproto.TransferPlanRequest,acqu
 }
 
 func TestStrictTransferOperationRequiresEveryProbe(t *testing.T){
-	for _,mode:=range []string{"success","wrong version","negative allowed","positive empty","warning","unconfirmed","revocation"}{
+	for _,mode:=range []string{"success","wrong version","negative allowed","positive empty","warning","unconfirmed","revocation","dormant revocation"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			q,c,manifest,root:=transferOperationFixture(t)
@@ -55,7 +55,9 @@ func TestStrictTransferOperationRequiresEveryProbe(t *testing.T){
 				case TransferPositive:
 					f.data=`[[2,{}],[3,"x",{}]]`
 					if mode=="positive empty"{f.data=`[[2,{}]]`}
-				case TransferMedia:f.data=""
+				case TransferMedia:
+					f.data=""
+					if mode=="dormant revocation"{allowed=false}
 				}
 				previous=f
 				return f,nil
@@ -63,7 +65,10 @@ func TestStrictTransferOperationRequiresEveryProbe(t *testing.T){
 			if mode=="success"{
 				if err!=nil||len(out)!=0||!slices.Equal(stages,[]StrictTransferStage{TransferVersion,TransferNegative,TransferPositive,TransferMedia}){t.Fatalf("success: %v %v %v",out,err,stages)}
 			}else{
-				if err==nil||out!=nil||slices.Contains(stages,TransferMedia){t.Fatalf("failed probe launched transfer: %v %v",err,stages)}
+				if err==nil||out!=nil{t.Fatalf("failed operation published result: %v %v",err,stages)}
+				if mode=="dormant revocation"{
+					if !slices.Contains(stages,TransferMedia)||previous.armed.Load()||!previous.stopped.Load(){t.Fatal("revoked dormant transfer activated or leaked")}
+				}else if slices.Contains(stages,TransferMedia){t.Fatalf("failed probe launched transfer: %v %v",err,stages)}
 			}
 			if mode=="unconfirmed"{
 				if !errors.Is(err,ErrOperationUnconfirmed)||!errors.Is(gate.Drain(ctx),workerproto.ErrDrainUnconfirmed)||gate.Open()==nil{t.Fatal("lost cleanup uncertainty")}

@@ -62,3 +62,22 @@ func TestOperationSetSealCannotMissConcurrentLaunch(t *testing.T){
 	if err:=<-stopped;err!=nil{t.Fatal(err)}
 	if !c.armed.Load()||!c.stopped.Load(){t.Fatal("seal missed concurrent start")}
 }
+
+
+func TestOperationSetExplicitMissingHandleUncertaintySeals(t *testing.T){
+	ctx:=context.Background()
+	s:=NewOperationSet(1)
+	if l,err:=s.Start(ctx,func(context.Context)(OperationChild,error){return nil,ErrOperationUnconfirmed});l!=nil||!errors.Is(err,ErrOperationUnconfirmed){t.Fatal("missing uncertainty")}
+	if _,err:=s.Start(ctx,startOperationFixture(new(operationFixture)));!errors.Is(err,ErrOperationsSealed){t.Fatal("uncertain set admitted another child")}
+	if err:=s.SealAndStop(ctx);!errors.Is(err,ErrOperationUnconfirmed){t.Fatal("missing handle converted to proof")}
+}
+
+func TestOperationSetRefusedDormantChildRemainsOwned(t *testing.T){
+	ctx:=context.Background()
+	s:=NewOperationSet(1)
+	child:=new(operationFixture)
+	l,err:=s.startChecked(ctx,startOperationFixture(child),func(context.Context)bool{return false})
+	if err==nil||l==nil||child.armed.Load(){t.Fatal("refused dormant child activated or lost")}
+	if err:=l.Stop(ctx);err!=nil||!child.stopped.Load(){t.Fatal("refused child not cleaned")}
+	if err:=s.SealAndStop(ctx);err!=nil{t.Fatal(err)}
+}

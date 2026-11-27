@@ -29,6 +29,7 @@ func TestStrictTransferPlanImmutableSubset(t *testing.T){
 		if _,err:=NewStrictTransferPlan(q,"search",posts,bad,7,id,c);err==nil{t.Fatalf("accepted subset %v",bad)}
 	}
 	p:=makePlan()
+	copyOfPlan:=*p
 	request:=p.Request()
 	for _,mutate:=range []func(*workerproto.TransferPlanRequest){
 		func(r *workerproto.TransferPlanRequest){r.Metadata.JobID++},
@@ -60,4 +61,6 @@ func TestStrictTransferPlanImmutableSubset(t *testing.T){
 	digest:=sha256.Sum256(manifest)
 	if hex.EncodeToString(digest[:])!=request.ManifestSHA256{t.Fatal("wrong digest")}
 	if _,err:=p.Consume(request,id,7);err==nil{t.Fatal("replayed grant")}
+	if _,err:=copyOfPlan.Consume(request,id,7);err==nil{t.Fatal("copied grant replayed")}
+	if _,err:=new(StrictTransferPlan).Consume(request,id,7);err==nil{t.Fatal("zero-value grant accepted")}
 }

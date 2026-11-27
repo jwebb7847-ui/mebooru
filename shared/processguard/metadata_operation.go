@@ -58,16 +58,16 @@ func NewMetadataOperation(set *OperationSet, gate *workerproto.DrainGate,
 // process result alone cannot release the lease. Missing-handle startup
 // uncertainty permanently poisons the gate, as does failed Stop.
 func (o *MetadataOperation) capture(ctx context.Context,kind workerproto.MetadataKind,args []string,limit int)([]byte,error,error){
-	return captureOwnedStream(ctx,o.set,func(start context.Context)(StreamProbeChild,error){return o.start(start,kind,args)},limit)
+	return captureOwnedStream(ctx,o.set,func(start context.Context)(StreamProbeChild,error){return o.start(start,kind,args)},limit,o.current)
 }
-func captureOwnedStream(ctx context.Context,set *OperationSet,startChild StreamProbeStarter,limit int) (out []byte, resultErr error, cleanupErr error) {
+func captureOwnedStream(ctx context.Context,set *OperationSet,startChild StreamProbeStarter,limit int,check func(context.Context)bool) (out []byte, resultErr error, cleanupErr error) {
 	var child StreamProbeChild
-	lease,err:=set.Start(ctx,func(start context.Context)(OperationChild,error){
+	lease,err:=set.startChecked(ctx,func(start context.Context)(OperationChild,error){
 		var err error
 		child,err=startChild(start)
 		if child==nil{return nil,err}
 		return child,err
-	})
+	},check)
 	if lease!=nil{
 		defer func(){
 			cleanup,done:=context.WithTimeout(context.WithoutCancel(ctx),probeCleanupTimeout)

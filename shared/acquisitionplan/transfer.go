@@ -23,7 +23,8 @@ func StrictEvidenceField(key string)bool{
 // subset approved by the trusted evaluator. Construct ONLY from the
 // owner-validated metadata window and policy verdict, never requester
 // lists. It is not a launch permission, durable receipt or staging grant.
-type StrictTransferPlan struct{
+type StrictTransferPlan struct{state *strictTransferState}
+type strictTransferState struct{
 	request workerproto.TransferPlanRequest
 	identity MetadataIdentity
 	manifest []byte
@@ -75,12 +76,12 @@ func NewStrictTransferPlan(q workerproto.MetadataPlanRequest,subcategory string,
 	sum:=sha256.Sum256(manifest)
 	request:=workerproto.TransferPlanRequest{Metadata:q,Subcategory:subcategory,PolicyGeneration:policyGeneration,ManifestSHA256:hex.EncodeToString(sum[:])}
 	if !workerproto.ValidTransferPlan(request){return nil,ErrStrictTransferPlan}
-	return &StrictTransferPlan{request:request,identity:identity,manifest:manifest},nil
+	return &StrictTransferPlan{state:&strictTransferState{request:request,identity:identity,manifest:manifest}},nil
 }
 
 func(p *StrictTransferPlan) Request()workerproto.TransferPlanRequest{
-	if p==nil{return workerproto.TransferPlanRequest{}}
-	return p.request
+	if p==nil||p.state==nil{return workerproto.TransferPlanRequest{}}
+	return p.state.request
 }
 
 // Consume returns an independent manifest copy once, only for the exact
@@ -89,7 +90,9 @@ func(p *StrictTransferPlan) Request()workerproto.TransferPlanRequest{
 // generation, reserve rooted staging, run predicate probes and prove
 // containment cleanup. A failed matching attempt cannot be retried.
 func(p *StrictTransferPlan)Consume(q workerproto.TransferPlanRequest,observed MetadataIdentity,policyGeneration uint64)([]byte,error){
-	if p==nil||q!=p.request||!p.used.CompareAndSwap(false,true){return nil,ErrStrictTransferPlan}
-	if observed!=p.identity||policyGeneration!=p.request.PolicyGeneration{return nil,ErrStrictTransferPlan}
-	return append([]byte(nil),p.manifest...),nil
+	if p==nil||p.state==nil{return nil,ErrStrictTransferPlan}
+	s:=p.state
+	if q!=s.request||!s.used.CompareAndSwap(false,true){return nil,ErrStrictTransferPlan}
+	if observed!=s.identity||policyGeneration!=s.request.PolicyGeneration{return nil,ErrStrictTransferPlan}
+	return append([]byte(nil),s.manifest...),nil
 }

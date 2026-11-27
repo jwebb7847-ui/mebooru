@@ -50,6 +50,14 @@ type OperationLease struct{
 // guarantees no process was created or remains. Failed activation still
 // returns an owned lease; caller must stop it or seal the entire set.
 func(s *OperationSet)Start(ctx context.Context,start func(context.Context)(OperationChild,error))(*OperationLease,error){
+	return s.startChecked(ctx,start,nil)
+}
+
+// startChecked rechecks current trusted authority after dormant launch and
+// registration, immediately before activation. check must be bounded and
+// cannot reenter the set. This narrows a revocation race, not an atomic
+// policy transaction. A refused dormant handle is still owned for Stop.
+func(s *OperationSet)startChecked(ctx context.Context,start func(context.Context)(OperationChild,error),check func(context.Context)bool)(*OperationLease,error){
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.sealed||s.uncertain{return nil,ErrOperationsSealed}
@@ -58,13 +66,15 @@ func(s *OperationSet)Start(ctx context.Context,start func(context.Context)(Opera
 	if start==nil{return nil,ErrOperationUnconfirmed}
 	child,err:=start(ctx)
 	if child==nil{
-		if err==nil{s.uncertain=true;s.sealed=true;return nil,ErrOperationUnconfirmed}
+		if err==nil||errors.Is(err,ErrOperationUnconfirmed){s.uncertain=true;s.sealed=true;return nil,ErrOperationUnconfirmed}
 		return nil,err
 	}
 	l:=&OperationLease{set:s,child:child,token:make(chan struct{},1)}
 	l.token<-struct{}{}
 	s.children[l]=struct{}{}
 	if err!=nil{return l,err}
+	if err:=ctx.Err();err!=nil{return l,err}
+	if check!=nil&&!check(ctx){return l,ErrOperationsSealed}
 	if err:=ctx.Err();err!=nil{return l,err}
 	return l,child.Activate()
 }
