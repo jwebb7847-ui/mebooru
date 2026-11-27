@@ -82,7 +82,7 @@ func readSeal(operation *os.Root,g workerproto.StageAllocation)(SealedEvidence,e
 	media,err:=openDir(dir,"media")
 	if err!=nil{return zero,err}
 	defer media.Close()
-	if !exactInventory(media,e.Files){return zero,ErrStageRecovery}
+	if err:=checkSealedInventory(operation,media,g,e);err!=nil{return zero,err}
 	if len(entries)==4{
 		if _,err:=readPolicyBinding(dir,e);err!=nil{return zero,ErrStageRecovery}
 	}
@@ -174,6 +174,9 @@ func(a *Allocator)Sealed(ctx context.Context,g workerproto.StageAllocation)(Seal
 	return a.sealedLocked(ctx,g)
 }
 func(a *Allocator)sealedLocked(ctx context.Context,g workerproto.StageAllocation)(SealedEvidence,error){
+	return a.sealedModeLocked(ctx,g,false)
+}
+func(a *Allocator)sealedModeLocked(ctx context.Context,g workerproto.StageAllocation,retired bool)(SealedEvidence,error){
 	var zero SealedEvidence
 	if !workerproto.ValidStageAllocation(g){return zero,ErrStageRefused}
 	s,err:=a.scope(ctx,g.Request)
@@ -202,9 +205,14 @@ func(a *Allocator)sealedLocked(ctx context.Context,g workerproto.StageAllocation
 		var meta bytes.Buffer
 		if err:=readChecked(ctx,media,f.RelativeName+".json",f.SidecarSize,f.SidecarSHA256,&meta);err!=nil{return zero,err}
 		if err:=verifier.VerifySidecar(f.ID,meta.Bytes());err!=nil{return zero,ErrStageRecovery}
-		if err:=readChecked(ctx,media,f.RelativeName,f.Size,f.SHA256,io.Discard);err!=nil{return zero,err}
+		if retired{
+			if _,err:=media.Lstat(f.RelativeName);!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
+		}else if err:=readChecked(ctx,media,f.RelativeName,f.Size,f.SHA256,io.Discard);err!=nil{return zero,err}
 	}
 	current,err:=a.scope(ctx,g.Request)
-	if err!=nil||!matches(r,current)||!exactInventory(media,e.Files){return zero,ErrStageRefused}
+	if err!=nil||!matches(r,current){return zero,ErrStageRefused}
+	if retired{
+		if err:=checkRetiredSeal(operation,media,r,e);err!=nil{return zero,err}
+	}else if !exactInventory(media,e.Files){return zero,ErrStageRecovery}
 	return e,nil
 }
