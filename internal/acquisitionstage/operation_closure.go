@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/monbooru/monbooru/internal/library"
 )
 
@@ -66,6 +67,17 @@ func(a *Allocator)closedCharge(ctx context.Context,r record)(bool,uint64,error){
 	media,err:=openDir(sealed,"media")
 	if err!=nil{return false,0,err};defer media.Close()
 	if err:=verifySealedRetirementInventory(ctx,media,m,true,true);err!=nil{return false,0,err}
+	manifest,err:=boundedRegularBytes(sealed,"manifest.json",workerproto.MaxMetadataOutputBytes)
+	if err!=nil{return false,0,err}
+	verifier,err:=acquisitionplan.NewStrictManifestVerifier(r.Allocation.Request.Transfer,manifest)
+	if err!=nil{return false,0,ErrStageRecovery}
+	snapshot,err:=verifyBoundPolicy(sealed,e,manifest)
+	if err!=nil{return false,0,err}
+	_,hash,err:=acquisitionplan.EncodeApprovedPolicy(snapshot.Transfer,snapshot.Rows)
+	if err!=nil||hash!=c.Witness.PolicySHA256{return false,0,ErrStageRecovery}
+	native,err:=boundedRegularBytes(media,m.Sidecar.Name,workerproto.MaxMetadataPostBytes)
+	if err!=nil||digestBytes(native)!=m.Sidecar.SHA256||verifier.VerifySidecar(m.Witness.Row.PostID,native)!=nil{return false,0,ErrStageRecovery}
+	if ctx.Err()!=nil||!a.liveSealedMedia(r.Allocation,media){return false,0,ErrStageRefused}
 	return true,c.RetainedPayloadBytes,nil
 }
 func(a *Allocator)closeRetiredOperation(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize closureAuthority)(operationClosure,error){
