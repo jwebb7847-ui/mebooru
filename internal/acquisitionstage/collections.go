@@ -288,7 +288,12 @@ func validateCollectionRecords(p *os.Root,l landingAttempt,metadata metadataResu
 // result and current actual home/memberships must all agree. This does
 // not observe files or confer permission to mutate them.
 func newCollectionProof(ctx context.Context,g *library.Gallery,p *os.Root,l landingAttempt,metadata metadataResult,row acquisitionplan.ApprovedPolicyRow)(*collectionState,error){
-	if !l.NewOnly||len(metadata.Rows)!=1||row.Provenance==nil||!validCollectionClaim(row.Provenance){return nil,ErrStageRecovery}
+	if !l.NewOnly{return nil,ErrStageRecovery}
+	return collectionProof(ctx,g,p,l,metadata,row)
+}
+
+func collectionProof(ctx context.Context,g *library.Gallery,p *os.Root,l landingAttempt,metadata metadataResult,row acquisitionplan.ApprovedPolicyRow)(*collectionState,error){
+	if l.RestoreImageID!=0||len(metadata.Rows)!=1||row.Provenance==nil||!validCollectionClaim(row.Provenance){return nil,ErrStageRecovery}
 	if row.Provenance.Collection==""{
 		for _,name:=range []string{"collection-attempt.json","collection-result.json"}{
 			if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return nil,ErrStageRecovery}
@@ -298,7 +303,7 @@ func newCollectionProof(ctx context.Context,g *library.Gallery,p *os.Root,l land
 	if err:=validateCollectionRecords(p,l,metadata,true);err!=nil{return nil,err}
 	raw,err:=boundedRegularBytes(p,"collection-attempt.json",maxCollectionRecord)
 	var m collectionAttempt
-	if err!=nil||json.Unmarshal(raw,&m)!=nil||!m.NewOnly||m.Name!=row.Provenance.Collection||m.Order!=row.Provenance.CollectionOrder||m.ImageID!=metadata.Rows[0].ImageID{return nil,ErrStageRecovery}
+	if err!=nil||json.Unmarshal(raw,&m)!=nil||m.NewOnly!=l.NewOnly||m.Name!=row.Provenance.Collection||m.Order!=row.Provenance.CollectionOrder||m.ImageID!=metadata.Rows[0].ImageID{return nil,ErrStageRecovery}
 	expected,err:=expectedCollection(m)
 	if err!=nil{return nil,err}
 	actual,err:=inspectCollection(ctx,g,m.ImageID,m.Name)
