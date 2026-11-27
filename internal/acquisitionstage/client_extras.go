@@ -279,6 +279,9 @@ func(a *Allocator)applyClientExtras(ctx context.Context,grant workerproto.StageA
 	return err
 }
 func(a *Allocator)observeClientExtrasLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,auth extrasAuthority)(extrasResult,error){
+	return a.observeClientExtrasAfterReleaseLocked(ctx,grant,g,naming,auth,false)
+}
+func(a *Allocator)observeClientExtrasAfterReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,auth extrasAuthority,released bool)(extrasResult,error){
 	var zero extrasResult
 	current,p,err:=a.extrasContext(ctx,grant,g,auth)
 	if err!=nil{return zero,err}
@@ -290,7 +293,7 @@ func(a *Allocator)observeClientExtrasLocked(ctx context.Context,grant workerprot
 	if err!=nil||json.Unmarshal(raw,&m)!=nil||!sameExtrasScope(m,current){return zero,ErrStageRecovery}
 	result,err:=readExtrasResult(p,m,raw)
 	if err!=nil||!reflect.DeepEqual(result.Resolution,current.Resolution){return zero,ErrStageRecovery}
-	if err:=a.observeNamingWithClientLocked(ctx,grant,g,naming,&result.Client);err!=nil{return zero,err}
+	if err:=a.observeNamingAfterReleaseLocked(ctx,grant,g,naming,&result.Client,nil,released);err!=nil{return zero,err}
 	all,err:=activeClientImageTags(ctx,g,m.ImageID)
 	if err!=nil||!slices.Equal(all,result.AllTags){return zero,ErrStageRecovery}
 	again,check,err:=a.extrasContext(ctx,grant,g,auth)
