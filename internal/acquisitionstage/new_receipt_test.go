@@ -12,8 +12,10 @@ import(
 	"testing"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/config"
+	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/library"
 	"github.com/monbooru/monbooru/internal/models"
 )
@@ -76,6 +78,9 @@ func TestNewOnlyReceiptThroughActualIngest(t *testing.T){
 			receipt,err:=a.finishNewReceipt(ctx,grant,g)
 			if err!=nil||receipt.Kind!=newReceiptKind||len(receipt.Rows)!=1||receipt.Rows[0].ImageID!=v[0].ImageID{t.Fatalf("receipt %+v %v",receipt,err)}
 			if _,err:=a.finishNewReceipt(ctx,grant,g);err==nil{t.Fatal("receipt overwritten")}
+			naming:=func(context.Context,workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){return gallery.ReceivedNamingRequest{Gallery:g.Name,ReceivedName:f.RelativeName,Source:row.SourceLabel,PostID:row.PostID},nil}
+			extras:=func(context.Context,workerproto.StageAllocation)(contract.JobExtras,error){return contract.JobExtras{},nil}
+			if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("legacy receipt accepted as composed terminal witness")}
 			if err:=a.applyRelationships(ctx,grant,g);err==nil{t.Fatal("relationship attempt after terminal receipt")}
 			if _,err:=os.Stat(filepath.Join(p,"relationship-attempt.json"));!os.IsNotExist(err){t.Fatal("post-terminal mutation",err)}
 			if err:=a.Close();err!=nil{t.Fatal(err)}
