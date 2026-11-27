@@ -125,8 +125,11 @@ func(a *Allocator)BoundPolicy(ctx context.Context,g workerproto.StageAllocation)
 	return a.boundPolicyLocked(ctx,g)
 }
 func(a *Allocator)boundPolicyLocked(ctx context.Context,g workerproto.StageAllocation)(acquisitionplan.ApprovedPolicySnapshot,error){
+	return a.boundPolicyModeLocked(ctx,g,false)
+}
+func(a *Allocator)boundPolicyModeLocked(ctx context.Context,g workerproto.StageAllocation,retired bool)(acquisitionplan.ApprovedPolicySnapshot,error){
 	var zero acquisitionplan.ApprovedPolicySnapshot
-	e,err:=a.sealedLocked(ctx,g)
+	e,err:=a.sealedModeLocked(ctx,g,retired)
 	if err!=nil{return zero,err}
 	s,err:=a.scope(ctx,g.Request)
 	if err!=nil{return zero,err}
