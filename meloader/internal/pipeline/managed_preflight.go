@@ -60,6 +60,8 @@ type ManagedPreflightResult struct{
 type ManagedTransferApproval struct{
 	preflight *ManagedPreflight
 	plan *acquisitionplan.StrictTransferPlan
+	projection []byte
+	projectionSHA256 string
 	used atomic.Bool
 }
 
@@ -87,6 +89,7 @@ func(p *ManagedPreflight) Run(caller context.Context,q workerproto.MetadataPlanR
 	if len(rows)!=len(w.posts)||!p.current(ctx)||caller.Err()!=nil{return ManagedPreflightResult{},ErrManagedPreflight}
 	var result ManagedPreflightResult
 	approved:=make([]string,0,len(rows))
+	projections:=make([]approvedPolicyRow,0,len(rows))
 	for i,row:=range rows{
 		if !p.current(ctx)||caller.Err()!=nil||row.Item.ID!=w.posts[i].ID{return ManagedPreflightResult{},ErrManagedPreflight}
 		note,err:=strictListingVerdict(row.Item,rules)
@@ -95,12 +98,21 @@ func(p *ManagedPreflight) Run(caller context.Context,q workerproto.MetadataPlanR
 			note,err=strictInterpretedVerdict(w.mapper,row.Item,row.Interpreted,rules)
 			if err!=nil{return ManagedPreflightResult{},ErrManagedPreflight}
 		}
-		if note!=""{result.BlockedIDs=append(result.BlockedIDs,row.Item.ID)}else{approved=append(approved,row.Item.ID)}
+		if note!=""{
+			result.BlockedIDs=append(result.BlockedIDs,row.Item.ID)
+		}else{
+			projected,err:=policyRow(w.mapper,row,w.posts[i])
+			if err!=nil||!p.current(ctx){return ManagedPreflightResult{},ErrManagedPreflight}
+			approved=append(approved,row.Item.ID)
+			projections=append(projections,projected)
+		}
 	}
 	if len(approved)>0{
 		plan,err:=acquisitionplan.NewStrictTransferPlan(q,w.subcategory,w.posts,approved,p.policyGeneration,p.identity,p.config)
 		if err!=nil{return ManagedPreflightResult{},ErrManagedPreflight}
-		result.Approval=&ManagedTransferApproval{preflight:p,plan:plan}
+		projection,digest,err:=encodeApprovedPolicy(plan.Request(),projections)
+		if err!=nil||!p.current(ctx){return ManagedPreflightResult{},ErrManagedPreflight}
+		result.Approval=&ManagedTransferApproval{preflight:p,plan:plan,projection:projection,projectionSHA256:digest}
 	}
 	if !p.current(ctx)||caller.Err()!=nil{return ManagedPreflightResult{},ErrManagedPreflight}
 	return result,nil

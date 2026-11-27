@@ -2,6 +2,9 @@ package pipeline
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"slices"
 	"encoding/json"
 	"errors"
 	"io"
@@ -60,6 +63,17 @@ func TestManagedPreflightAliasBlacklistAndApprovedNativeManifest(t *testing.T){
 			if err!=nil||len(result.BlockedIDs)!=1||result.BlockedIDs[0]!="41"||result.Approval==nil{t.Fatalf("preflight: %+v %v",result,err)}
 			a:=result.Approval
 			bad:=a.Request();bad.Metadata.Gallery="B"
+			if _,_,err:=a.policyEvidence(ctx,bad);err==nil{t.Fatal("foreign policy evidence")}
+			body,digest,err:=a.policyEvidence(ctx,a.Request())
+			if err!=nil{t.Fatal(err)}
+			sum:=sha256.Sum256(body)
+			if digest!=hex.EncodeToString(sum[:]){t.Fatal("projection digest")}
+			var projection approvedPolicySnapshot
+			if json.Unmarshal(body,&projection)!=nil||projection.Transfer!=a.Request()||len(projection.Rows)!=1{t.Fatalf("projection %s",body)}
+			r:=projection.Rows[0]
+			if r.PostID!="42"||r.Rating!="explicit"||!slices.Contains(r.Tags,"rating:explicit")||!slices.Contains(r.Tags,"character:rainbow_dash")||len(r.Taxonomy)!=1||r.Taxonomy[0].Name!="rainbow dash"{t.Fatalf("mapped evidence %+v",r)}
+			body[0]='!'
+			if again,hash,err:=a.policyEvidence(ctx,a.Request());err!=nil||hash!=digest||again[0]!='{'{t.Fatal("mutable policy snapshot")}
 			if _,_,_,err:=a.admit(ctx,bad);err==nil{t.Fatal("wrong gallery")}
 			_,raw,finish,err:=a.admit(ctx,a.Request())
 			if err!=nil{t.Fatal(err)}
@@ -94,6 +108,7 @@ func TestManagedPreflightAllBlockedAndStalePolicy(t *testing.T){
 				if err:=gate.Drain(ctx);err!=nil{t.Fatal(err)}
 				if err:=gate.Open();err!=nil{t.Fatal(err)}
 			}
+			if b,_,err:=result.Approval.policyEvidence(ctx,result.Approval.Request());b!=nil||err==nil{t.Fatal("stale policy evidence published")}
 			_,raw,finish,err:=result.Approval.admit(ctx,result.Approval.Request())
 			if finish!=nil{finish(nil)}
 			if raw!=nil||err==nil{t.Fatal("stale approval admitted")}
