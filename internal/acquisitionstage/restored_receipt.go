@@ -32,7 +32,8 @@ func restorePreservationDigest(ctx context.Context,tx *sql.Tx,id int64)(string,e
 }
 
 // Exact post-merge state, normalized ONLY for the two path columns in
-// the image row and the canonical path row's path. All path-row IDs,
+// the image row and the canonical path row's path, plus their generated
+// basename_lower columns (SQLite recomputes them from the path). All path-row IDs,
 // old missing alias rows, origin, ratings, notes, source ownership,
 // memberships and relationship edges remain part of the digest.
 func restoreStateDigest(ctx context.Context,g *library.Gallery,id int64)(string,error){
@@ -50,12 +51,12 @@ func restoreStateDigest(ctx context.Context,g *library.Gallery,id int64)(string,
 		{`SELECT * FROM image_paths WHERE image_id=? ORDER BY id LIMIT 8193`,[]any{id}},
 	},func(query string,cols []string,vals []any){
 		if strings.HasPrefix(query,"SELECT * FROM images "){
-			for i,col:=range cols{if col=="canonical_path"||col=="folder_path"{vals[i]=nil}}
+			for i,col:=range cols{if col=="canonical_path"||col=="folder_path"||col=="basename_lower"{vals[i]=nil}}
 		}
 		if strings.HasPrefix(query,"SELECT * FROM image_paths "){
 			canonical:=false
 			for i,col:=range cols{if col=="is_canonical"{v,ok:=vals[i].(int64);canonical=ok&&v==1}}
-			if canonical{for i,col:=range cols{if col=="path"{vals[i]=nil}}}
+			if canonical{for i,col:=range cols{if col=="path"||col=="basename_lower"{vals[i]=nil}}}
 		}
 	})
 	if err!=nil{return "",err}
@@ -75,7 +76,8 @@ func restoredNamingRows(ctx context.Context,g *library.Gallery,r record,f acquis
 	var pid int64
 	if err:=tx.QueryRowContext(ctx,`SELECT ip.id FROM image_paths ip JOIN images i ON i.id=ip.image_id
 		WHERE i.id=? AND i.sha256=? AND i.file_size=? AND i.is_missing=0 AND i.canonical_path=?
-		AND i.folder_path=? AND ip.path=? AND ip.is_canonical=1`,id,f.SHA256,f.Size,path,
+		AND i.folder_path=? AND ip.path=? AND ip.is_canonical=1
+		AND i.basename_lower=lower(basename(i.canonical_path)) AND ip.basename_lower=lower(basename(ip.path))`,id,f.SHA256,f.Size,path,
 		gallery.FolderPath(r.GalleryRoot,path),path).Scan(&pid);err!=nil||pid<=0{return 0,ErrStageRecovery}
 	wantOld,wantTotal:=0,1
 	if l.RestoreMarkedMissing{wantOld,wantTotal=1,2}
