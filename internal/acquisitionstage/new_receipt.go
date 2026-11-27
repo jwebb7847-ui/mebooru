@@ -188,6 +188,8 @@ func(a *Allocator)newReceiptLocked(ctx context.Context,grant workerproto.StageAl
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
+	// The restricted receipt is not authority to skip an uncertain relocation.
+	if _,err:=p.Lstat("naming-attempt.json");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
 	rows,err:=newOnlyRows(e,snapshot)
 	if err!=nil{return zero,err}
 	l,err:=readLandingAttempt(p,r)
