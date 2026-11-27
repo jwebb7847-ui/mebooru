@@ -51,7 +51,9 @@ type record struct {
 // Allocator is local to the single cooperative profile owner. Caller must
 // hold exclusive profile ownership for its lifetime; this mutex is not an
 // interprocess lock. Root must be an existing owner-selected directory.
-// No implicit cleanup or launch occurs here. Ambiguous records reserve capacity and
+// Completed closure can release active capacity; retained records remain bounded
+// by maxAllocations and are never recycled automatically. No implicit cleanup
+// or launch occurs here. Ambiguous records reserve capacity and
 // block further allocation rather than being removed or guessed at.
 type Allocator struct {
 	mu sync.Mutex
@@ -161,7 +163,7 @@ func diskFree(path string)(uint64,error){
 // owner records/probe overhead. Conservative free-space preflight only:
 // existing reservations may already occupy space, and other writers may
 // consume the free bytes later. This does not enforce live disk quotas.
-const reservationOverhead = uint64(3*workerproto.MaxMetadataOutputBytes+8<<20+2*maxRelationshipRecord+2*maxCollectionRecord+2*maxNamingRecord+2*maxExtrasRecord+maxComposedReceipt+maxHeldComposition+maxHeldReceipt+maxRestoredReceipt+2*maxWorkspaceReclaimRecord+2*maxPreparedReleaseRecord+2*maxSealedRetirementRecord)
+const reservationOverhead = uint64(3*workerproto.MaxMetadataOutputBytes+8<<20+2*maxRelationshipRecord+2*maxCollectionRecord+2*maxNamingRecord+2*maxExtrasRecord+maxComposedReceipt+maxHeldComposition+maxHeldReceipt+maxRestoredReceipt+2*maxWorkspaceReclaimRecord+2*maxPreparedReleaseRecord+2*maxSealedRetirementRecord+maxClosureRecord)
 func(a *Allocator)spaceFor(count int,payload uint64)bool{
 	if count<0||count>maxAllocations||payload>maxReservedBytes||a.freeBytes==nil{return false}
 	required:=3*payload+uint64(count)*reservationOverhead
@@ -234,21 +236,29 @@ func(a *Allocator)load(id string)(record,error){
 	return r,nil
 }
 func(a *Allocator)inventory(ctx context.Context)(map[string]record,uint64,error){
+	records,_,reserved,err:=a.inventoryWithClosure(ctx)
+	return records,reserved,err
+}
+func(a *Allocator)inventoryWithClosure(ctx context.Context)(map[string]record,map[string]bool,uint64,error){
 	entries,err:=list(a.root,maxAllocations)
-	if err!=nil{return nil,0,err}
+	if err!=nil{return nil,nil,0,err}
 	records:=make(map[string]record,len(entries))
+	closed:=make(map[string]bool)
 	transfers:=make(map[string]bool,len(entries))
 	var reserved uint64
 	for _,entry:=range entries{
-		if ctx.Err()!=nil{return nil,0,ErrStageRefused}
-		if !entry.IsDir(){return nil,0,ErrStageRecovery}
+		if ctx.Err()!=nil{return nil,nil,0,ErrStageRefused}
+		if !entry.IsDir(){return nil,nil,0,ErrStageRecovery}
 		r,err:=a.load(entry.Name())
-		if err!=nil||transfers[r.Allocation.TransferID]{return nil,0,ErrStageRecovery}
+		if err!=nil||transfers[r.Allocation.TransferID]{return nil,nil,0,ErrStageRecovery}
 		transfers[r.Allocation.TransferID]=true
-		reserved+=r.Allocation.MaxBytes
+		done,charge,err:=a.closedCharge(ctx,r)
+		if err!=nil{return nil,nil,0,err}
+		if done{closed[entry.Name()]=true}
+		reserved+=charge
 		records[entry.Name()]=r
 	}
-	return records,reserved,nil
+	return records,closed,reserved,nil
 }
 func writeRecord(dir *os.Root,r record)error{
 	body,err:=json.Marshal(r)
@@ -276,15 +286,15 @@ func(a *Allocator)Allocate(ctx context.Context,q workerproto.StageAllocateReques
 	defer a.mu.Unlock()
 	s,err:=a.scope(ctx,q)
 	if err!=nil{return workerproto.StageAllocation{},err}
-	records,reserved,err:=a.inventory(ctx)
+	records,closed,reserved,err:=a.inventoryWithClosure(ctx)
 	if err!=nil{return workerproto.StageAllocation{},err}
 	if r,ok:=records[q.OperationID];ok{
-		if r.Allocation.Request!=q||!matches(r,s){return workerproto.StageAllocation{},ErrStageRefused}
+		if closed[q.OperationID]||r.Allocation.Request!=q||!matches(r,s){return workerproto.StageAllocation{},ErrStageRefused}
 		current,err:=a.scope(ctx,q)
 		if err!=nil||!matches(r,current){return workerproto.StageAllocation{},ErrStageRefused}
 		return r.Allocation,nil
 	}
-	if len(records)>=a.maxCount||reserved>a.maxBytes||s.MaxBytes>a.maxBytes-reserved||!a.spaceFor(len(records)+1,reserved+s.MaxBytes){return workerproto.StageAllocation{},ErrStageLimit}
+	if len(records)>=maxAllocations||len(records)-len(closed)>=a.maxCount||reserved>a.maxBytes||s.MaxBytes>a.maxBytes-reserved||!a.spaceFor(len(records)+1,reserved+s.MaxBytes){return workerproto.StageAllocation{},ErrStageLimit}
 	var id [16]byte
 	if _,err:=rand.Read(id[:]);err!=nil{return workerproto.StageAllocation{},ErrStageRefused}
 	grant:=workerproto.StageAllocation{Request:q,TransferID:hex.EncodeToString(id[:]),MaxFiles:s.MaxFiles,MaxBytes:s.MaxBytes}
