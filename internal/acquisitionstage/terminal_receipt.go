@@ -40,7 +40,7 @@ func(a *Allocator)observeTerminalReceiptLocked(ctx context.Context,grant workerp
 	// not interchangeable. No caller-supplied disposition or inference
 	// from an absent alias, an image row or an attempt alone.
 	if _,err:=p.Lstat("new-receipt.json");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRefused}
-	type candidate struct{name string;limit int}
+	type candidate struct{name string;limit int64}
 	var selected candidate
 	for _,c:=range []candidate{
 		{"composed-receipt.json",maxComposedReceipt},
