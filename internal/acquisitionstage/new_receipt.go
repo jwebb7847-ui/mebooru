@@ -189,8 +189,13 @@ func verifyNewMetadataState(ctx context.Context,g *library.Gallery,rows []acquis
 // Client ownership is an independently proven additive ledger, never
 // a replacement for source or locally derived ownership.
 func verifyNewMetadataStateWithClient(ctx context.Context,g *library.Gallery,rows []acquisitionplan.ApprovedPolicyRow,m metadataAttempt,result metadataResult,client *clientTagState)error{
+	return verifyNewMetadataStateFull(ctx,g,rows,m,result,client,nil)
+}
+
+func verifyNewMetadataStateFull(ctx context.Context,g *library.Gallery,rows []acquisitionplan.ApprovedPolicyRow,m metadataAttempt,result metadataResult,client *clientTagState,collection *collectionState)error{
 	if !m.Landing.NewOnly||len(rows)==0||len(rows)!=len(m.Targets)||len(rows)!=len(result.Rows)||
-		(client!=nil&&(len(rows)!=1||client.Via==""||client.Via==rows[0].SourceLabel||client.Via==models.TagSourceMonbooru)){return ErrStageRecovery}
+		(client!=nil&&(len(rows)!=1||client.Via==""||client.Via==rows[0].SourceLabel||client.Via==models.TagSourceMonbooru))||
+		(collection!=nil&&(len(rows)!=1||!validCollectionState(*collection)||len(collection.Members)!=1||collection.Position==nil)){return ErrStageRecovery}
 	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
 	if err!=nil{return ErrStageRecovery}
 	defer tx.Rollback()
@@ -212,6 +217,19 @@ func verifyNewMetadataStateWithClient(ctx context.Context,g *library.Gallery,row
 				if err:=tx.QueryRowContext(ctx,`SELECT COUNT(*) FROM image_tag_sources ts JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.tag_id=? AND ts.source=? AND it.stale=0 AND it.is_implied=0 AND it.is_auto=0`,v.ImageID,id,client.Via).Scan(&count);err!=nil||count!=1{return ErrStageRecovery}
 			}
 		}
+		collectionCount:=0
+		if collection==nil{
+			var count int
+			if err:=tx.QueryRowContext(ctx,`SELECT COUNT(*) FROM images WHERE id=? AND COALESCE(series,'')='' AND series_order IS NULL`,v.ImageID).Scan(&count);err!=nil||count!=1{return ErrStageRecovery}
+		}else{
+			collectionCount=len(collection.Members)
+			var count int
+			if err:=tx.QueryRowContext(ctx,`SELECT COUNT(*) FROM images WHERE id=? AND series=? COLLATE BINARY AND series_order=?`,v.ImageID,collection.Home,*collection.Position).Scan(&count);err!=nil||count!=1{return ErrStageRecovery}
+			for _,member:=range collection.Members{
+				if member.Position==nil{return ErrStageRecovery}
+				if err:=tx.QueryRowContext(ctx,`SELECT COUNT(*) FROM image_collections WHERE image_id=? AND name=? COLLATE BINARY AND position=?`,v.ImageID,member.Name,*member.Position).Scan(&count);err!=nil||count!=1{return ErrStageRecovery}
+			}
+		}
 		var n int
 		// New-only: no extra origins or aliases, no unexpected active
 		// attribution to this source, and no omitted parent/collection.
@@ -222,8 +240,7 @@ func verifyNewMetadataStateWithClient(ctx context.Context,g *library.Gallery,row
 			{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=?`,[]any{v.ImageID},len(v.TagIDs)+len(derived)+clientCount},
 			{`SELECT COUNT(*) FROM image_tag_sources ts JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source=? AND it.stale=0`,[]any{v.ImageID,row.SourceLabel},len(v.TagIDs)},
 			{`SELECT COUNT(*) FROM image_tags WHERE image_id=? AND is_implied=0`,[]any{v.ImageID},len(direct)},
-			{`SELECT COUNT(*) FROM image_collections WHERE image_id=?`,[]any{v.ImageID},0},
-			{`SELECT COUNT(*) FROM images WHERE id=? AND COALESCE(series,'')='' AND series_order IS NULL`,[]any{v.ImageID},1},
+			{`SELECT COUNT(*) FROM image_collections WHERE image_id=?`,[]any{v.ImageID},collectionCount},
 			{`SELECT COUNT(*) FROM derivative_edges WHERE source_image_id=? OR derivative_image_id=?`,[]any{v.ImageID,v.ImageID},0},
 			{`SELECT COUNT(*) FROM image_sources WHERE parent_url=?`,[]any{row.PostURL},0},
 		}{
