@@ -123,6 +123,7 @@ func TestComposedRestoredReceipt(t *testing.T){
 			})
 			if mode=="no authority"{extras=nil}
 			if _,err:=a.finishRestoredReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("receipt before naming")}
+			if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("terminal witness before receipt")}
 			if err:=a.applyNaming(ctx,grant,g,naming);err==nil{t.Fatal("new-only naming accepted restoration")}
 			if _,err:=a.disposeHeldDuplicate(ctx,grant,g);err==nil{t.Fatal("restored canonical disposed")}
 			err=a.applyRestoredNaming(ctx,grant,g,naming,extras)
@@ -145,6 +146,7 @@ func TestComposedRestoredReceipt(t *testing.T){
 			}
 			if partial{
 				if _,err:=a.finishRestoredReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("partial receipt")}
+				if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("partial terminal witness")}
 				if err:=a.applyRestoredNaming(ctx,grant,g,naming,extras);err==nil{t.Fatal("partial naming replay")}
 				checkBytes(diag,buf.Bytes())
 				if mode=="revoked after link"||mode=="DB move failure"||mode=="revoked after DB move"{checkBytes(final,buf.Bytes())}
@@ -200,6 +202,13 @@ func TestComposedRestoredReceipt(t *testing.T){
 			recovered,err:=a.observeRestoredReceipt(ctx,grant,g,naming,extras)
 			bad:=strings.HasPrefix(mode,"changed")||mode=="same bytes replacement"||mode=="old path returns after receipt"||mode=="lost naming result"||mode=="damaged naming result"||mode=="damaged receipt"
 			if (err!=nil)!=bad||(!bad&&recovered!=stored){t.Fatal("unexpected recovery",err)}
+			witness,werr:=a.observeTerminalReceipt(ctx,grant,g,naming,extras)
+			if (werr!=nil)!=bad{t.Fatal("common terminal witness recovery",werr)}
+			if !bad{
+				body,err:=os.ReadFile(receipt)
+				wantRow:=stored.Row
+				if err!=nil||witness.Kind!=stored.Kind||witness.Allocation!=grant||witness.GalleryIdentity!=stored.GalleryIdentity||witness.PolicySHA256!=stored.PolicySHA256||witness.ReceiptSHA256!=digestBytes(body)||witness.Row!=wantRow||witness.PathID<=0||witness.FileIdentity!=stored.FileIdentity{t.Fatal("common witness differs",witness,err)}
+			}
 			if err:=a.applyRestoredNaming(ctx,grant,g,naming,extras);err==nil{t.Fatal("naming replay")}
 			if mode=="old path returns after receipt"{checkBytes(old,[]byte("operator"))}
 			if mode=="collision"{checkBytes(filepath.Join(s.GalleryRoot,"derpibooru-42.png"),[]byte("operator"))}
