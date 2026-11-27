@@ -23,6 +23,7 @@ type duplicateAttempt struct{
 	Version int `json:"version"`
 	MetadataSHA256 string `json:"metadata_sha256"`
 	Held heldDuplicate `json:"held"`
+	CompositionSHA256 string `json:"composition_sha256,omitempty"`
 }
 func readDuplicateAttempt(p *os.Root,e SealedEvidence,result metadataResult)(duplicateAttempt,error){
 	var zero duplicateAttempt
@@ -35,6 +36,8 @@ func readDuplicateAttempt(p *os.Root,e SealedEvidence,result metadataResult)(dup
 	if h.PostID!=f.ID||h.ImageID!=result.Rows[0].ImageID||h.Size!=f.Size||h.SHA256!=f.SHA256||
 		!filepath.IsLocal(h.CanonicalPath)||filepath.Clean(h.CanonicalPath)!=h.CanonicalPath||h.CanonicalPath=="."||
 		h.CanonicalIdentity==""||len(h.CanonicalIdentity)>128{return zero,ErrStageRecovery}
+	composition,err:=heldCompositionDigest(p)
+	if err!=nil||d.CompositionSHA256!=composition{return zero,ErrStageRecovery}
 	canonical,err:=json.Marshal(d)
 	if err!=nil||!bytes.Equal(raw,canonical){return zero,ErrStageRecovery}
 	return d,nil
@@ -65,7 +68,7 @@ func(a *Allocator)observeDuplicateDisposalLocked(ctx context.Context,grant worke
 	if err!=nil{return zero,err}
 	rows,err:=selectMappedRows(snapshot,e)
 	if err!=nil||len(rows)!=1{return zero,ErrStageRecovery}
-	if rows[0].Provenance!=nil&&rows[0].Provenance.Collection!=""{return zero,ErrStageRefused}
+	if rows[0].Provenance!=nil&&rows[0].Provenance.Collection!=""&&d.CompositionSHA256==""{return zero,ErrStageRefused}
 	v,err:=verifyMappedRow(ctx,g,m.Targets[0],rows[0],result.Rows[0].Rejected)
 	if err!=nil||!sameMetadataObservation(v,result.Rows[0]){return zero,ErrStageRecovery}
 	f:=e.Files[0]
@@ -115,14 +118,18 @@ func(a *Allocator)livePublicationRoots(grant workerproto.StageAllocation,r recor
 	return true
 }
 func(a *Allocator)disposeHeldDuplicate(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)(heldDuplicate,error){
-	var zero heldDuplicate
 	a.mu.Lock();defer a.mu.Unlock()
+	return a.disposeHeldDuplicateLocked(ctx,grant,g,nil)
+}
+
+func(a *Allocator)disposeHeldDuplicateLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority)(heldDuplicate,error){
+	var zero heldDuplicate
 	// Until the generalized receipt composes the collection witness
 	// with post-disposal recovery, do not remove the alias for a claim.
 	snapshot,err:=a.boundPolicyLocked(ctx,grant)
 	if err!=nil{return zero,err}
 	for _,row:=range snapshot.Rows{
-		if row.Provenance!=nil&&row.Provenance.Collection!=""{return zero,ErrStageRefused}
+		if row.Provenance!=nil&&row.Provenance.Collection!=""&&extras==nil{return zero,ErrStageRefused}
 	}
 	held,err:=a.observeHeldDuplicatesLocked(ctx,grant,g)
 	if err!=nil||len(held)!=1{return zero,ErrStageRecovery}
@@ -139,6 +146,12 @@ func(a *Allocator)disposeHeldDuplicate(ctx context.Context,grant workerproto.Sta
 	raw,err:=json.Marshal(result)
 	if err!=nil{return zero,ErrStageRecovery}
 	d:=duplicateAttempt{Version:1,MetadataSHA256:digestBytes(raw),Held:held[0]}
+	if extras!=nil{
+		composition,err:=a.observeHeldCompositionLocked(ctx,grant,g,extras,true)
+		if err!=nil||composition.Held!=held[0]{return zero,ErrStageRecovery}
+		d.CompositionSHA256,err=heldCompositionDigest(p)
+		if err!=nil||d.CompositionSHA256==""{return zero,ErrStageRecovery}
+	}else if _,err:=p.Lstat("held-composition.json");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
 	body,err:=json.Marshal(d)
 	if err!=nil||len(body)>maxSealRecordBytes{return zero,ErrStageRecovery}
 	if err:=writeOwnerBytes(ctx,p,"duplicate-attempt.json",body);err!=nil{return zero,err}
@@ -152,6 +165,9 @@ func(a *Allocator)disposeHeldDuplicate(ctx context.Context,grant workerproto.Sta
 	if err!=nil||len(places)!=1||places[0].State!="placed"{return zero,ErrStageRecovery}
 	canonicalID,err:=verifyHeldCanonical(ctx,dst,d.Held.CanonicalPath,f)
 	if err!=nil||canonicalID!=d.Held.CanonicalIdentity{return zero,ErrStageRecovery}
+	if extras!=nil{
+		if _,err:=a.observeHeldCompositionLocked(ctx,grant,g,extras,true);err!=nil{return zero,err}
+	}
 	// Only the deterministic operation-owned second link is removed.
 	// Filesystem first; a failed DB delete leaves an uncertain attempt
 	// and retained private bytes. No automated recovery mutation.
@@ -165,6 +181,9 @@ func(a *Allocator)disposeHeldDuplicate(ctx context.Context,grant workerproto.Sta
 	current,err:=observedDB(r,g)
 	if err!=nil||current!=l||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRecovery}
 	if _,err:=dst.Lstat(name);!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
+	if extras!=nil{
+		if _,err:=a.observeHeldCompositionLocked(ctx,grant,g,extras,false);err!=nil{return zero,err}
+	}
 	err=g.Edit(func(database *db.DB)error{
 		res,err:=database.Write.ExecContext(ctx,`DELETE FROM image_paths WHERE image_id=? AND path=? AND is_canonical=0
 			AND EXISTS (SELECT 1 FROM images WHERE id=? AND canonical_path=? AND sha256=? AND is_missing=0)`,
