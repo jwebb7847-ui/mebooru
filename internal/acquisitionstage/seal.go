@@ -166,9 +166,12 @@ func(a *Allocator)Seal(ctx context.Context,g workerproto.StageAllocation,observe
 // The original writer state must still be reconciled by custody; a
 // successful query is neither cleanup proof nor final commit permission.
 func(a *Allocator)Sealed(ctx context.Context,g workerproto.StageAllocation)(SealedEvidence,error){
-	var zero SealedEvidence
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.sealedLocked(ctx,g)
+}
+func(a *Allocator)sealedLocked(ctx context.Context,g workerproto.StageAllocation)(SealedEvidence,error){
+	var zero SealedEvidence
 	if !workerproto.ValidStageAllocation(g){return zero,ErrStageRefused}
 	s,err:=a.scope(ctx,g.Request)
 	if err!=nil{return zero,err}

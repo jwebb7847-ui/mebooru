@@ -100,6 +100,9 @@ func copySealedMedia(ctx context.Context,grant workerproto.StageAllocation,manif
 // all reads to expected size, hash actual bytes and recheck afterward.
 // This narrows races, but cannot defeat arbitrary same-user mutation.
 func readChecked(ctx context.Context,root *os.Root,name string,size int64,digest string,out io.Writer)error{
+	return readCheckedLinks(ctx,root,name,size,digest,out,1)
+}
+func readCheckedLinks(ctx context.Context,root *os.Root,name string,size int64,digest string,out io.Writer,links uint64)error{
 	if ctx.Err()!=nil||!filepath.IsLocal(name)||filepath.Base(name)!=name||strings.ContainsAny(name,"/\\:")||size<1||!validDigest(digest){return ErrStageRefused}
 	info,err:=root.Lstat(name)
 	if err!=nil||!info.Mode().IsRegular()||info.Size()!=size{return ErrStageRecovery}
@@ -107,7 +110,7 @@ func readChecked(ctx context.Context,root *os.Root,name string,size int64,digest
 	if err!=nil{return ErrStageRecovery}
 	defer f.Close()
 	actual,err:=f.Stat()
-	if err!=nil||!os.SameFile(info,actual)||actual.Size()!=size||!singleLink(f,actual){return ErrStageRecovery}
+	if err!=nil||!os.SameFile(info,actual)||actual.Size()!=size||!exactLinks(f,actual,links){return ErrStageRecovery}
 	h:=sha256.New()
 	writer:=io.MultiWriter(h,out)
 	buf:=make([]byte,64<<10)
@@ -126,7 +129,7 @@ func readChecked(ctx context.Context,root *os.Root,name string,size int64,digest
 	}
 	after,err:=root.Lstat(name)
 	if err!=nil||!after.Mode().IsRegular()||!os.SameFile(info,after)||after.Size()!=size||after.ModTime()!=info.ModTime()||
-		!singleLink(f,after)||n!=size||hex.EncodeToString(h.Sum(nil))!=digest||ctx.Err()!=nil{return ErrStageRecovery}
+		!exactLinks(f,after,links)||n!=size||hex.EncodeToString(h.Sum(nil))!=digest||ctx.Err()!=nil{return ErrStageRecovery}
 	return nil
 }
 func writeChecked(ctx context.Context,root *os.Root,name string,size int64,digest string,write func(io.Writer)error)error{

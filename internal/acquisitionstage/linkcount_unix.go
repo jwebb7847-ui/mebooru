@@ -7,9 +7,10 @@ import(
 	"syscall"
 )
 
-func singleLink(_ *os.File,info os.FileInfo)bool{
+func singleLink(f *os.File,info os.FileInfo)bool{return exactLinks(f,info,1)}
+func exactLinks(_ *os.File,info os.FileInfo,n uint64)bool{
 	s,ok:=info.Sys().(*syscall.Stat_t)
-	return ok&&s.Nlink==1
+	return ok&&uint64(s.Nlink)==n
 }
 
 func sameVolume(a,b *os.File)bool{

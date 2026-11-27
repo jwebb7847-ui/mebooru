@@ -107,13 +107,13 @@ func TestAllocatorRejectsOverlapsAndAmbiguity(t *testing.T){
 	}
 }
 
-func TestAllocatorSpaceReservationAccountsForBothCopies(t *testing.T){
+func TestAllocatorSpaceReservationAccountsForThreeCopies(t *testing.T){
 	ctx:=context.Background()
 	stage,s,q:=fixture(t)
 	a,err:=Open(stage,2,4096,func(context.Context,workerproto.StageAllocateRequest)(Scope,error){return s,nil})
 	if err!=nil{t.Fatal(err)}
 	defer a.Close()
-	needed:=2*s.MaxBytes+reservationOverhead
+	needed:=3*s.MaxBytes+reservationOverhead
 	a.freeBytes=func(string)(uint64,error){return needed-1,nil}
 	if _,err:=a.Allocate(ctx,q);!errors.Is(err,ErrStageLimit){t.Fatal("low space",err)}
 	entries,err:=os.ReadDir(stage)

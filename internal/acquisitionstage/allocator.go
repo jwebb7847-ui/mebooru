@@ -157,14 +157,14 @@ func diskFree(path string)(uint64,error){
 }
 
 // The payload reservation includes media/sidecars. Allow for both the
-// original and sealed copies, two maximum-sized manifests, and bounded
+// original, sealed and publication copies, two maximum-sized manifests, and bounded
 // owner records/probe overhead. Conservative free-space preflight only:
 // existing reservations may already occupy space, and other writers may
 // consume the free bytes later. This does not enforce live disk quotas.
 const reservationOverhead = uint64(2*workerproto.MaxMetadataOutputBytes+4<<20)
 func(a *Allocator)spaceFor(count int,payload uint64)bool{
 	if count<0||count>maxAllocations||payload>maxReservedBytes||a.freeBytes==nil{return false}
-	required:=2*payload+uint64(count)*reservationOverhead
+	required:=3*payload+uint64(count)*reservationOverhead
 	free,err:=a.freeBytes(a.path)
 	return err==nil&&free>=required&&a.live()
 }
@@ -219,10 +219,14 @@ func(a *Allocator)load(id string)(record,error){
 	defer dir.Close()
 	r,err:=readRecord(dir)
 	if err!=nil||r.Allocation.Request.OperationID!=id||r.StageRoot!=a.path{return zero,ErrStageRecovery}
-	entries,err:=list(dir,3)
-	if err!=nil||len(entries)<2||len(entries)>3{return zero,ErrStageRecovery}
-	if len(entries)==3{
-		if _,err:=readSeal(dir,r.Allocation);err!=nil{return zero,ErrStageRecovery}
+	entries,err:=list(dir,4)
+	if err!=nil||len(entries)<2||len(entries)>4{return zero,ErrStageRecovery}
+	if len(entries)>=3{
+		e,err:=readSeal(dir,r.Allocation)
+		if err!=nil{return zero,ErrStageRecovery}
+		if len(entries)==4{
+			if _,err:=readPublication(dir,r,e);err!=nil{return zero,ErrStageRecovery}
+		}
 	}
 	workspace,err:=openDir(dir,r.Allocation.TransferID)
 	if err!=nil{return zero,err}

@@ -6,9 +6,10 @@ import(
 	"golang.org/x/sys/windows"
 )
 
-func singleLink(f *os.File,_ os.FileInfo)bool{
+func singleLink(f *os.File,info os.FileInfo)bool{return exactLinks(f,info,1)}
+func exactLinks(f *os.File,_ os.FileInfo,n uint64)bool{
 	var info windows.ByHandleFileInformation
-	return windows.GetFileInformationByHandle(windows.Handle(f.Fd()),&info)==nil&&info.NumberOfLinks==1
+	return windows.GetFileInformationByHandle(windows.Handle(f.Fd()),&info)==nil&&uint64(info.NumberOfLinks)==n
 }
 
 // Volume serial is a point-in-time check, not a durable globally unique
