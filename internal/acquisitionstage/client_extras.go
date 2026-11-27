@@ -248,6 +248,12 @@ func(a *Allocator)applyClientExtras(ctx context.Context,grant workerproto.StageA
 	if err:=a.observeNamingLocked(ctx,grant,g,naming);err!=nil{return err}
 	before,err:=activeClientImageTags(ctx,g,m.ImageID)
 	if err!=nil||!slices.Equal(m.Before,before){return ErrStageRecovery}
+	// Recheck the actual owner decision after the read-only file/DB
+	// verification, immediately before the first tag creation or add.
+	again,check,err=a.extrasContext(ctx,grant,g,auth)
+	if err!=nil{return err}
+	sameRoot=sameRelationshipRoot(p,check);check.Close()
+	if !sameRoot||!sameExtrasScope(m,again)||!reflect.DeepEqual(m.Resolution,again.Resolution){return ErrStageRecovery}
 	forms:=make([]string,0,len(m.Resolution))
 	for _,v:=range m.Resolution{forms=append(forms,v.Form)}
 	_,warnings,rejected,err:=g.ApplyInitialTags(m.ImageID,forms,contract.Via)
@@ -261,6 +267,10 @@ func(a *Allocator)applyClientExtras(ctx context.Context,grant workerproto.StageA
 	if err:=a.observeNamingWithClientLocked(ctx,grant,g,naming,&result.Client);err!=nil{return err}
 	all,err:=activeClientImageTags(ctx,g,m.ImageID)
 	if err!=nil||!slices.Equal(all,result.AllTags){return ErrStageRecovery}
+	after,check,err=a.extrasContext(ctx,grant,g,auth)
+	if err!=nil{return err}
+	sameRoot=sameRelationshipRoot(p,check);check.Close()
+	if !sameRoot||!sameExtrasScope(m,after)||!reflect.DeepEqual(result.Resolution,after.Resolution){return ErrStageRecovery}
 	body,err:=json.Marshal(result)
 	if err!=nil||len(body)>maxExtrasRecord{return ErrStageLimit}
 	if err:=writeOwnerBytes(ctx,p,"extras-result.json",body);err!=nil{return err}
