@@ -95,8 +95,7 @@ func retainedHeldState(ctx context.Context,g *library.Gallery,r record,dst *os.R
 	if err!=nil{return "",nil,ErrStageRecovery}
 	defer tx.Rollback()
 	alias:=filepath.Join(r.GalleryRoot,finalName(r.Allocation,f))
-	var buf bytes.Buffer
-	for _,q:=range []struct{query string;args []any}{
+	state,err:=boundedStateDigest(ctx,tx,[]stateQuery{
 		{`SELECT * FROM images WHERE id=?`,[]any{h.ImageID}},
 		{`SELECT * FROM image_sources WHERE image_id=? ORDER BY site COLLATE BINARY,post_id COLLATE BINARY LIMIT 8193`,[]any{h.ImageID}},
 		{`SELECT * FROM image_annotations WHERE image_id=? ORDER BY id LIMIT 8193`,[]any{h.ImageID}},
@@ -105,26 +104,8 @@ func retainedHeldState(ctx context.Context,g *library.Gallery,r record,dst *os.R
 		{`SELECT * FROM image_collections WHERE image_id=? ORDER BY name COLLATE BINARY LIMIT 8193`,[]any{h.ImageID}},
 		{`SELECT * FROM derivative_edges WHERE source_image_id=? OR derivative_image_id=? ORDER BY source_image_id,derivative_image_id LIMIT 8193`,[]any{h.ImageID,h.ImageID}},
 		{`SELECT * FROM image_paths WHERE image_id=? AND path<>? ORDER BY id LIMIT 65`,[]any{h.ImageID,alias}},
-	}{
-		rows,err:=tx.QueryContext(ctx,q.query,q.args...)
-		if err!=nil{return "",nil,ErrStageRecovery}
-		cols,err:=rows.Columns()
-		if err!=nil{rows.Close();return "",nil,ErrStageRecovery}
-		buf.WriteString(q.query);buf.WriteByte('\n')
-		count:=0
-		for rows.Next(){
-			count++
-			if count>8192||ctx.Err()!=nil{rows.Close();return "",nil,ErrStageLimit}
-			vals:=make([]any,len(cols));ptrs:=make([]any,len(cols))
-			for i:=range vals{ptrs[i]=&vals[i]}
-			if err:=rows.Scan(ptrs...);err!=nil{rows.Close();return "",nil,ErrStageRecovery}
-			raw,err:=json.Marshal(vals)
-			if err!=nil||len(raw)>maxHeldStateBytes-buf.Len()-1{rows.Close();return "",nil,ErrStageLimit}
-			buf.Write(raw);buf.WriteByte('\n')
-		}
-		err=rows.Err();rows.Close()
-		if err!=nil{return "",nil,ErrStageRecovery}
-	}
+	},nil)
+	if err!=nil{return "",nil,err}
 	rows,err:=tx.QueryContext(ctx,`SELECT id,path,is_canonical FROM image_paths WHERE image_id=? AND path<>? ORDER BY id LIMIT 65`,h.ImageID,alias)
 	if err!=nil{return "",nil,ErrStageRecovery}
 	paths:=[]retainedPath{}
@@ -146,7 +127,7 @@ func retainedHeldState(ctx context.Context,g *library.Gallery,r record,dst *os.R
 		if v.Canonical{canon++;if v.Relative!=h.CanonicalPath||id!=h.CanonicalIdentity{return "",nil,ErrStageRecovery}}
 	}
 	if canon!=1||tx.Commit()!=nil||ctx.Err()!=nil{return "",nil,ErrStageRecovery}
-	return digestBytes(buf.Bytes()),paths,nil
+	return state,paths,nil
 }
 
 func(a *Allocator)heldCompositionContext(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority,h heldDuplicate,placed bool,expectedPathID int64)(heldComposition,*os.Root,error){
@@ -302,4 +283,31 @@ func(a *Allocator)finishHeldReceipt(ctx context.Context,grant workerproto.StageA
 func(a *Allocator)observeHeldReceipt(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority)(heldReceipt,error){
 	a.mu.Lock();defer a.mu.Unlock()
 	return a.heldReceiptLocked(ctx,grant,g,extras,false)
+}
+
+type stateQuery struct{query string;args []any}
+func boundedStateDigest(ctx context.Context,tx *sql.Tx,queries []stateQuery,normalize func(string,[]string,[]any))(string,error){
+	var buf bytes.Buffer
+	for _,q:=range queries{
+		rows,err:=tx.QueryContext(ctx,q.query,q.args...)
+		if err!=nil{return "",ErrStageRecovery}
+		cols,err:=rows.Columns()
+		if err!=nil{rows.Close();return "",ErrStageRecovery}
+		buf.WriteString(q.query);buf.WriteByte('\n')
+		count:=0
+		for rows.Next(){
+			count++
+			if count>8192||ctx.Err()!=nil{rows.Close();return "",ErrStageLimit}
+			vals:=make([]any,len(cols));ptrs:=make([]any,len(cols))
+			for i:=range vals{ptrs[i]=&vals[i]}
+			if err:=rows.Scan(ptrs...);err!=nil{rows.Close();return "",ErrStageRecovery}
+			if normalize!=nil{normalize(q.query,cols,vals)}
+			raw,err:=json.Marshal(vals)
+			if err!=nil||len(raw)>maxHeldStateBytes-buf.Len()-1{rows.Close();return "",ErrStageLimit}
+			buf.Write(raw);buf.WriteByte('\n')
+		}
+		err=rows.Err();rows.Close()
+		if err!=nil{return "",ErrStageRecovery}
+	}
+	return digestBytes(buf.Bytes()),nil
 }
