@@ -1,0 +1,24 @@
+# II.6.4c — Managed staging and durable outcome design
+
+Subordinate technical design for the approved destination-aware staging model in [MEBOORU.md](../../MEBOORU.md). Initial scope is the strict acquisition candidate, not normal/deep acquisition, replacement, archive catch-up or production activation. No existing import route is replaced.
+
+## Authority and identities
+
+- A stable logical operation ID identifies an exact request across a lost response. It is not a pipe frame correlation ID, credential or proof of permission. The library must independently authorize the actual job, item/window, stable gallery identity, manifest, current policy and lifecycle; reject a reused ID with different scope. The initial typed request carries the exact strict transfer plan; it is a narrow first contract, not a grant for every acquisition family.
+- Allocation mints a distinct opaque transfer ID under library ownership and records the exact request and owner-set resource limits. An exact repeated allocation must reconcile against durable allocation state, not create a second workspace. Initial candidate limits are consistent with the isolated strict verifier (512 MiB per file, 1 GiB total, no more files than the window); these are not production default changes. Quotas must ultimately be checked during writing, not only afterward.
+- The worker must receive only a library-allocated workspace and capability, not choose a final destination. The initial allocation DTO intentionally does not encode a filesystem path: the later owner-side workspace resolver must bind a trusted destination root and exact allocation to the opaque ID. No arbitrary filesystem operation or caller-provided cleanup proof.
+- Final authorization is independent of valid DTOs. All stage/grant/commit/status operations require library job/gallery authority; no route to bypass strict evidence, policy revocation, containment or network admission.
+
+## Ordered implementation
+
+1. Typed allocation and abandon contract, exact reply matching, no path/argv/quota or cleanup claim supplied by the requester; reserved operation dispatch stays disconnected.
+2. Library-owned private staging root outside every scanned gallery, exact allocation and bounded resources. Verify actual roots and volume identity, refuse overlap, unavailable/read-only roots and ambiguous lifecycle. Prefer rooted `os.Root` operations; reject symlinks, traversal, unexpected hardlinks/special files and unlisted contents. Directory permissions are not a same-user sandbox.
+3. After independently confirmed writer cleanup and strict result eligibility, copy to a library-owned sealed candidate on destination volume when needed. Verify size/hash and required native sidecar evidence again. No raw worker final path; never overwrite an existing file. Preserve existing duplicate/metadata policy by calling shared service logic at the appropriate point rather than duplicating ingestion.
+4. Durable ledger records allocation, sealed evidence, commit intent and terminal receipt. Once commit intent is durable, an unknown acknowledgement must be reconciled with actual library DB/file identity before any retry or cleanup. Do not claim exactly-once transactions across separate databases or filesystems. Refuse abandonment while writers or commit outcome are uncertain. Receipt contains exact logical operation, transfer and stable gallery identity, media/item evidence and actual terminal outcome, including duplicate resolution.
+5. Disposable cross-platform tests for symlinks/hardlinks/traversal, changed bytes, collision, failed copy/rename, low space/limits, cancellation, unavailable volume, gallery replacement, restart/lost reply and uncertain commit. Only after actual ownership and integrated acceptance may ordinary managed acquisition use this path.
+
+## Existing code to preserve or adapt
+
+`internal/gallery/ingest.go:Ingest/ingestWithHash` owns existing duplicate, alias-path, file facts, generation metadata and database behavior. `internal/gallery/replace.go` has existing replace-specific backup/restore and cross-volume copy semantics; its ordinary rename/copy is **not** a general no-clobber commit primitive, and strict replacement remains refused. `shared/fsx.WriteDurableIn` is rooted durable-file candidate (directory sync is best effort) for owner state, not no-clobber media publication or full cross-platform durability proof. `internal/acquisitionpolicy/custody_receipt.go` verifies a separate generation-bound custody-stop receipt; it is not an import receipt. Do not reuse it as proof of media commit. `shared/acquisitionplan.VerifyTransferResult` verifies point-in-time returned evidence under the original lease, not durable final identity. Separate media authentication limitations (source may mislabel or serve changed bytes at the same URL) remain explicit.
+
+No product decision is requested here; these are incremental engineering constraints within the approved model.
