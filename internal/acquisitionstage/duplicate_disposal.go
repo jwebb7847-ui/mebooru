@@ -65,6 +65,7 @@ func(a *Allocator)observeDuplicateDisposalLocked(ctx context.Context,grant worke
 	if err!=nil{return zero,err}
 	rows,err:=selectMappedRows(snapshot,e)
 	if err!=nil||len(rows)!=1{return zero,ErrStageRecovery}
+	if rows[0].Provenance!=nil&&rows[0].Provenance.Collection!=""{return zero,ErrStageRefused}
 	v,err:=verifyMappedRow(ctx,g,m.Targets[0],rows[0],result.Rows[0].Rejected)
 	if err!=nil||!sameMetadataObservation(v,result.Rows[0]){return zero,ErrStageRecovery}
 	f:=e.Files[0]
@@ -116,6 +117,13 @@ func(a *Allocator)livePublicationRoots(grant workerproto.StageAllocation,r recor
 func(a *Allocator)disposeHeldDuplicate(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)(heldDuplicate,error){
 	var zero heldDuplicate
 	a.mu.Lock();defer a.mu.Unlock()
+	// Until the generalized receipt composes the collection witness
+	// with post-disposal recovery, do not remove the alias for a claim.
+	snapshot,err:=a.boundPolicyLocked(ctx,grant)
+	if err!=nil{return zero,err}
+	for _,row:=range snapshot.Rows{
+		if row.Provenance!=nil&&row.Provenance.Collection!=""{return zero,ErrStageRefused}
+	}
 	held,err:=a.observeHeldDuplicatesLocked(ctx,grant,g)
 	if err!=nil||len(held)!=1{return zero,ErrStageRecovery}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
