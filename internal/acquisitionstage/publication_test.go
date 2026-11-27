@@ -127,3 +127,52 @@ func TestPublicationIntentAndNoClobber(t *testing.T){
 		})
 	}
 }
+
+
+func TestPublicationPartialBatchNeverReplays(t *testing.T){
+	ctx:=context.Background()
+	stage,s,q:=fixture(t)
+	manifest:=[]byte(`{"42":{"category":"derpibooru","subcategory":"search","tags":["safe","fixture"],"meloader_verified_media_url":"https://example.invalid/42.jpg"},"43":{"category":"derpibooru","subcategory":"search","tags":["safe","fixture"],"meloader_verified_media_url":"https://example.invalid/43.jpg"}}`)
+	q.Transfer.ManifestSHA256=digest(manifest)
+	s.MaxBytes=4096
+	auth:=func(context.Context,workerproto.StageAllocateRequest)(Scope,error){return s,nil}
+	a,err:=Open(stage,2,8192,auth)
+	if err!=nil{t.Fatal(err)}
+	defer func(){_ = a.Close()}()
+	g,err:=a.Allocate(ctx,q)
+	if err!=nil{t.Fatal(err)}
+	w,err:=a.Workspace(ctx,g)
+	if err!=nil{t.Fatal(err)}
+	cmd,err:=acquisitionplan.PrepareTransferCommands(q.Transfer,manifest,acquisitionplan.MetadataConfig{Generation:1,Source:q.Transfer.Metadata.Source},w)
+	if err!=nil{t.Fatal(err)}
+	var stdout string
+	for _,id:=range []string{"42","43"}{
+		path:=filepath.Join(w,"media",id+".jpg")
+		meta:=[]byte(`{"id":`+id+`,"category":"derpibooru","subcategory":"search","tags":["safe","fixture"],"meloader_verified_media_url":"https://example.invalid/`+id+`.jpg"}`)
+		if err:=os.WriteFile(path,[]byte("fixture "+id),0600);err!=nil{t.Fatal(err)}
+		if err:=os.WriteFile(path+".json",meta,0600);err!=nil{t.Fatal(err)}
+		stdout+=path+"\n"
+	}
+	files,err:=cmd.VerifyTransferResult(ctx,[]byte(stdout))
+	if err!=nil||len(files)!=2{t.Fatal("verify batch",err)}
+	if _,err:=a.Seal(ctx,g,func(context.Context,workerproto.StageAllocation)([]byte,[]acquisitionplan.VerifiedTransferFile,error){return manifest,files,nil});err!=nil{t.Fatal(err)}
+	if err:=a.preparePublication(ctx,g);err!=nil{t.Fatal(err)}
+	first:=filepath.Join(s.GalleryRoot,finalName(g,files[0]))
+	second:=filepath.Join(s.GalleryRoot,finalName(g,files[1]))
+	// Revoke between actual links, not just before the attempt.
+	a.authority=func(c context.Context,q workerproto.StageAllocateRequest)(Scope,error){
+		if _,err:=os.Lstat(first);err==nil{return Scope{},ErrStageRefused}
+		return auth(c,q)
+	}
+	if out,err:=a.publishPrepared(ctx,g);err==nil||out!=nil{t.Fatal("partial batch succeeded")}
+	if got,err:=os.ReadFile(first);err!=nil||string(got)!="fixture 42"{t.Fatal("first placement lost",err)}
+	if _,err:=os.Lstat(second);!errors.Is(err,os.ErrNotExist){t.Fatal("second placement escaped revocation",err)}
+	if err:=a.Close();err!=nil{t.Fatal(err)}
+	a,err=Open(stage,2,8192,auth)
+	if err!=nil{t.Fatal(err)}
+	out,err:=a.inspectPublication(ctx,g)
+	if err!=nil||len(out)!=2||out[0].State!="placed"||out[1].State!="absent"{t.Fatalf("partial reconciliation %+v %v",out,err)}
+	if _,err:=a.publishPrepared(ctx,g);err==nil{t.Fatal("partial batch replayed")}
+	if _,err:=os.Lstat(second);!errors.Is(err,os.ErrNotExist){t.Fatal("replay wrote second file",err)}
+	if _,err:=a.Sealed(ctx,g);err!=nil{t.Fatal("partial publication damaged sealed evidence",err)}
+}
