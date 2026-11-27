@@ -42,13 +42,13 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	p,err:=openDir(operation,"publication")
 	if err!=nil{return zero,err}
 	defer p.Close()
-	entries,err:=list(p,18)
-	if err!=nil||len(entries)<2||len(entries)>18{return zero,ErrStageRecovery}
+	entries,err:=list(p,19)
+	if err!=nil||len(entries)<2||len(entries)>19{return zero,ErrStageRecovery}
 	names:=map[string]bool{}
 	for _,entry:=range entries{
 		name:=entry.Name()
 		switch name{
-		case "media","intent.json","attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json":
+		case "media","intent.json","attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json":
 			names[name]=true
 		default:return zero,ErrStageRecovery
 		}
@@ -73,6 +73,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		(names["held-composition.json"]&&(!names["relationship-result.json"]||names["naming-attempt.json"]||names["new-receipt.json"]))||
 		(names["held-composition.json"]&&names["collection-attempt.json"]&&!names["collection-result.json"])||
 		(names["held-receipt.json"]&&(!names["held-composition.json"]||!names["duplicate-attempt.json"]))||
+		(names["restored-receipt.json"]&&(!names["naming-result.json"]||names["extras-attempt.json"]||names["held-composition.json"]||names["collection-attempt.json"]||names["new-receipt.json"]||names["duplicate-attempt.json"]))||
 		((names["new-receipt.json"]||names["duplicate-attempt.json"])&&!names["metadata-result.json"])||
 		(names["new-receipt.json"]&&names["duplicate-attempt.json"])||
 		((names["new-receipt.json"]||names["duplicate-attempt.json"])&&names["relationship-attempt.json"]&&!names["relationship-result.json"]){return zero,ErrStageRecovery}
@@ -119,6 +120,9 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 				}
 				if names["extras-attempt.json"]{
 					if err:=validateExtrasRecords(p,landing,result,names["extras-result.json"]);err!=nil{return zero,err}
+				}
+				if names["restored-receipt.json"]{
+					if _,err:=readRestoredReceipt(p,r,e,landing,m,result);err!=nil{return zero,err}
 				}
 				if names["composed-receipt.json"]{
 					if _,err:=readComposedReceipt(p,r,e,landing,m,result);err!=nil{return zero,err}
