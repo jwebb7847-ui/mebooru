@@ -313,3 +313,6 @@ Workflow adoption [PR #30](https://github.com/jwebb7847-ui/mebooru/pull/30) merg
 
 
 **II.6.4c source detail application candidate:** share existing HTTP source input normalization (same limits, DText/HTML conversion and nonnegative declared facts) with isolated managed source merge; actual existing MergeSource + ApplySourceProvenance persist optional exact approved claims, read-only source row/annotation verification during mapped-phase observation. Source claims distinct from actual local bytes, missing fields retain prior values, notes keep manual annotations. Tests source MD5/size/extension/original/note persistence and changed detail/annotation refusal. Parent URL claim recorded, relationship graph/collection/job extras/duplicate-drop/final receipt still separate; nil source detail remains diagnostic only. Hosted verification pending.
+
+
+**Custody readiness cancellation fixture:** actual disposable custodian holds readiness writer open without emitting a byte, cancellation must return while child remains alive, activation refused, then separately release/reap child and confirm never armed. Bounded test fixture; no production launch. Hosted verification pending.

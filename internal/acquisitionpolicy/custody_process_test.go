@@ -5,6 +5,7 @@ import(
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -20,6 +21,20 @@ func TestCustodyLaunchFixture(t *testing.T){
 	mode:=os.Getenv("MEBOORU_TEST_CUSTODY_LAUNCH")
 	if mode==""{return}
 	if mode=="wrong-ready"{_,_=os.Stdout.Write([]byte{99});os.Exit(2)}
+	if mode=="hold-ready"{
+		// Hold stdout open without writing readiness, independently of
+		// parent liveness. Test-only release and a hard lifetime bound.
+		dir:=os.Getenv("MEBOORU_TEST_CUSTODY_DIR")
+		if err:=os.WriteFile(filepath.Join(dir,"fixture-ready-held"),nil,0600);err!=nil{os.Exit(4)}
+		deadline:=time.NewTimer(12*time.Second)
+		defer deadline.Stop()
+		tick:=time.NewTicker(20*time.Millisecond)
+		defer tick.Stop()
+		for{
+			if _,err:=os.Stat(filepath.Join(dir,"fixture-ready-release"));err==nil{os.Exit(0)}
+			select{case <-deadline.C:os.Exit(5);case <-tick.C:}
+		}
+	}
 	ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second)
 	defer cancel()
 	err:=RunCustodianReady(ctx,os.Getenv("MEBOORU_TEST_CUSTODY_DIR"),os.Getenv("MEBOORU_TEST_CUSTODY_GENERATION"),os.Stdin,os.Stdout,func(context.Context)(CustodyChild,error){
@@ -79,4 +94,63 @@ func TestLibraryCustodyProcessReadinessAndProof(t *testing.T){
 			if err:=f.ConfirmStopped();err!=nil{t.Fatal(err)}
 		})
 	}
+}
+
+
+func TestLibraryCustodyReadinessCancellationWhileWriterAlive(t *testing.T){
+	dir:=t.TempDir()
+	l,err:=LockProfile(dir)
+	if err!=nil{t.Fatal(err)}
+	defer l.Close()
+	f,err:=l.PrepareCustody()
+	if err!=nil{t.Fatal(err)}
+	exe,err:=os.Executable()
+	if err!=nil{t.Fatal(err)}
+	cmd:=exec.Command(exe,"-test.run=^TestCustodyLaunchFixture$")
+	cmd.Env=append(os.Environ(),"MEBOORU_TEST_CUSTODY_LAUNCH=hold-ready","MEBOORU_TEST_CUSTODY_DIR="+dir,"MEBOORU_TEST_CUSTODY_GENERATION="+f.Generation())
+	ctx,cancel:=context.WithCancel(context.Background())
+	defer cancel()
+	release:=filepath.Join(dir,"fixture-ready-release")
+	defer os.WriteFile(release,nil,0600)
+	type answer struct{p *CustodyProcess;err error}
+	returned:=make(chan answer,1)
+	go func(){p,err:=StartCustodyProcess(ctx,cmd,f);returned<-answer{p,err}}()
+	tick:=time.NewTicker(20*time.Millisecond)
+	defer tick.Stop()
+	deadline:=time.NewTimer(8*time.Second)
+	defer deadline.Stop()
+	for{
+		if _,err:=os.Stat(filepath.Join(dir,"fixture-ready-held"));err==nil{break}
+		select{
+		case got:=<-returned:
+			if got.p!=nil{_ = os.WriteFile(release,nil,0600);cleanup,stop:=context.WithTimeout(context.Background(),5*time.Second);_ = got.p.Stop(cleanup);stop()}
+			t.Fatalf("fixture returned before readiness wait: %v",got.err)
+		case <-deadline.C:t.Fatal("fixture did not hold readiness")
+		case <-tick.C:
+		}
+	}
+	cancel()
+	var got answer
+	select{
+	case got=<-returned:
+	case <-time.After(3*time.Second):
+		// Release before failing so the old synchronous-close path
+		// can finish and the child is not left behind.
+		_ = os.WriteFile(release,nil,0600)
+		select{
+		case v:=<-returned:
+			if v.p!=nil{cleanup,stop:=context.WithTimeout(context.Background(),5*time.Second);_ = v.p.Stop(cleanup);stop()}
+		case <-time.After(5*time.Second):
+		}
+		t.Fatal("readiness cancellation waited for the live writer")
+	}
+	if got.p==nil||!errors.Is(got.err,context.Canceled){t.Fatalf("canceled readiness: %v",got.err)}
+	select{case <-got.p.Done():t.Fatal("fixture writer exited before cancellation proof");default:}
+	if err:=got.p.Activate();!errors.Is(err,ErrCustodyActivation){t.Fatal("canceled readiness activated",err)}
+	if err:=os.WriteFile(release,nil,0600);err!=nil{t.Fatal(err)}
+	cleanup,stop:=context.WithTimeout(context.Background(),5*time.Second)
+	defer stop()
+	if err:=got.p.Stop(cleanup);err!=nil{t.Fatal(err)}
+	if f.isArmed(){t.Fatal("canceled readiness armed fence")}
+	if err:=f.ConfirmStopped();err!=nil{t.Fatal(err)}
 }
