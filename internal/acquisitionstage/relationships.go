@@ -145,7 +145,7 @@ func(a *Allocator)applyRelationships(ctx context.Context,grant workerproto.Stage
 	m,p,err:=a.relationshipContext(ctx,grant,g)
 	if err!=nil{return err}
 	defer p.Close()
-	for _,name:=range []string{"relationship-attempt.json","relationship-result.json"}{
+	for _,name:=range []string{"relationship-attempt.json","relationship-result.json","new-receipt.json","duplicate-attempt.json"}{
 		if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
 	}
 	m.Before,err=inspectRelationships(ctx,g,m.ImageID,m.URL,m.ParentURL)
