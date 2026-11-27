@@ -34,9 +34,12 @@ func(a *Allocator)observeTerminalReceiptLocked(ctx context.Context,grant workerp
 	return a.observeTerminalReceiptModeLocked(ctx,grant,g,naming,extras,false)
 }
 func(a *Allocator)observeTerminalReceiptModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,released bool)(terminalReceiptWitness,error){
+	return a.observeTerminalReceiptPhaseLocked(ctx,grant,g,naming,extras,released,false)
+}
+func(a *Allocator)observeTerminalReceiptPhaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,released,retired bool)(terminalReceiptWitness,error){
 	var zero terminalReceiptWitness
-	if g==nil||g.WatcherRunning()||extras==nil{return zero,ErrStageRefused}
-	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	if (retired&&!released)||g==nil||g.WatcherRunning()||extras==nil{return zero,ErrStageRefused}
+	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,retired)
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
 	// The narrow old receipt and the three composed receipt types are
@@ -65,7 +68,7 @@ func(a *Allocator)observeTerminalReceiptModeLocked(ctx context.Context,grant wor
 	switch selected.name{
 	case "composed-receipt.json":
 		if !l.NewOnly||l.RestoreImageID!=0||naming==nil{return zero,ErrStageRefused}
-		v,err:=a.composedReceiptModeLocked(ctx,grant,g,naming,extras,false,released)
+		v,err:=a.composedReceiptModeLocked(ctx,grant,g,naming,extras,false,released,retired)
 		if err!=nil{return zero,err}
 		out=terminalReceiptWitness{Kind:v.Kind,Allocation:v.Allocation,GalleryIdentity:v.GalleryIdentity,PolicySHA256:v.PolicySHA256,
 			Row:v.Row,PathID:v.PathID,FileIdentity:v.FileIdentity}
@@ -73,7 +76,7 @@ func(a *Allocator)observeTerminalReceiptModeLocked(ctx context.Context,grant wor
 		if err!=nil{return zero,ErrStageRecovery}
 	case "held-receipt.json":
 		if l.NewOnly||l.RestoreImageID!=0{return zero,ErrStageRefused}
-		v,err:=a.heldReceiptModeLocked(ctx,grant,g,extras,false,released)
+		v,err:=a.heldReceiptModeLocked(ctx,grant,g,extras,false,released,retired)
 		if err!=nil{return zero,err}
 		m,err:=readMetadataAttempt(p,l,e)
 		if err!=nil{return zero,err}
@@ -90,7 +93,7 @@ func(a *Allocator)observeTerminalReceiptModeLocked(ctx context.Context,grant wor
 		if err!=nil{return zero,ErrStageRecovery}
 	case "restored-receipt.json":
 		if l.NewOnly||l.RestoreImageID<=0||naming==nil{return zero,ErrStageRefused}
-		v,err:=a.restoredReceiptModeLocked(ctx,grant,g,naming,extras,false,released)
+		v,err:=a.restoredReceiptModeLocked(ctx,grant,g,naming,extras,false,released,retired)
 		if err!=nil{return zero,err}
 		out=terminalReceiptWitness{Kind:v.Kind,Allocation:v.Allocation,GalleryIdentity:v.GalleryIdentity,PolicySHA256:v.PolicySHA256,
 			Row:v.Row,PathID:v.PathID,FileIdentity:v.FileIdentity}
@@ -111,6 +114,10 @@ func(a *Allocator)observeTerminalReceiptModeLocked(ctx context.Context,grant wor
 		m,_,err:=readPreparedReleaseAttempt(p,r,e)
 		if err!=nil||m.Witness!=out{return zero,ErrStageRecovery}
 		if err:=verifyPreparedReleaseInventory(src,m,true);err!=nil{return zero,err}
+		if retired{
+			t,_,err:=readSealedRetirementAttempt(p,r,e)
+			if err!=nil||t.Witness!=out{return zero,ErrStageRecovery}
+		}
 	}
 	return out,nil
 }
