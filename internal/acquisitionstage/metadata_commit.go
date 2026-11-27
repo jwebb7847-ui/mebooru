@@ -197,6 +197,8 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 	if err!=nil{return nil,err}
 	_,hash,err:=acquisitionplan.EncodeApprovedPolicy(snapshot.Transfer,snapshot.Rows)
 	if err!=nil{return nil,ErrStageRecovery}
+	plan,planHash,err:=readPublicationAttempt(p,grant)
+	if err!=nil||planHash!=landing.PlanSHA256||(plan!=nil&&plan.PolicySHA256!=hash){return nil,ErrStageRecovery}
 	m:=metadataAttempt{Version:1,Landing:landing,PolicySHA256:hash,Targets:make([]metadataTarget,0,len(rows))}
 	seen:=map[int64]bool{}
 	for i,v:=range observed{
@@ -217,7 +219,14 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 		s,err:=a.scope(ctx,grant.Request)
 		if err!=nil||!matches(r,s)||g.WatcherRunning(){return false}
 		c,err:=observedDB(r,g)
-		return err==nil&&sameLandingDB(c,landing)
+		if err!=nil||!sameLandingDB(c,landing){return false}
+		if plan!=nil{
+			_,currentHash,err:=readPublicationAttempt(p,grant)
+			if err!=nil||currentHash!=planHash{return false}
+			id,err:=namingFile(ctx,src,e.Files[0].RelativeName,e.Files[0],2)
+			if err!=nil||id!=plan.FileIdentity{return false}
+		}
+		return true
 	}
 	if !stillCurrent(){return nil,ErrStageRefused}
 	// Bound the worst-case observation record before any mutation.
