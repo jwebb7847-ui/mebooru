@@ -24,6 +24,7 @@ import(
 // and no job extras. It is NOT a general production receipt. The
 // caller must hold exclusive gallery lifetime and scan exclusion.
 const newReceiptKind = "isolated_new_png_v1"
+const newReceiptOrigin = "managed-isolated"
 type newReceiptRow struct{
 	PostID string `json:"post_id"`
 	ImageID int64 `json:"image_id"`
@@ -87,7 +88,7 @@ func(a *Allocator)landNewPrepared(ctx context.Context,grant workerproto.StageAll
 		name:=finalName(grant,f)
 		if err:=readCheckedLinks(ctx,dst,name,f.Size,f.SHA256,io.Discard,2);err!=nil{return err}
 		path:=filepath.Join(r.GalleryRoot,name)
-		res,err:=g.LandInPlace(ctx,path,library.LandSpec{Origin:"managed-isolated",MaxBytes:f.Size,Check:func(path,_ string)error{
+		res,err:=g.LandInPlace(ctx,path,library.LandSpec{Origin:newReceiptOrigin,MaxBytes:f.Size,Check:func(path,_ string)error{
 			f,err:=os.Open(path)
 			if err!=nil{return err}
 			defer f.Close()
@@ -150,22 +151,31 @@ func(a *Allocator)newReceiptLocked(ctx context.Context,grant workerproto.StageAl
 	if err!=nil||len(observed)!=len(rows){return zero,ErrStageRecovery}
 	landed,err:=a.observeLandingLocked(ctx,grant,g)
 	if err!=nil||len(landed)!=len(rows){return zero,ErrStageRecovery}
+	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
+	if err!=nil{return zero,ErrStageRecovery}
+	defer tx.Rollback()
 	for i,row:=range rows{
 		v:=observed[i]
 		if !landed[i].Canonical||landed[i].ImageID!=v.ImageID||!sameMetadataObservation(v,result.Rows[i]){return zero,ErrStageRecovery}
+		in,md5,err:=normalizedMappedSource(row)
+		if err!=nil||verifySourceClaimsMode(ctx,tx,v.ImageID,in,md5,true)!=nil{return zero,ErrStageRecovery}
 		var n int
 		// New-only: no extra origins or aliases, no unexpected active
 		// attribution to this source, and no omitted parent/collection.
 		for _,check:=range []struct{query string;args []any;want int}{
+			{`SELECT COUNT(*) FROM images WHERE id=? AND origin=? AND source=? AND url=?`,[]any{v.ImageID,newReceiptOrigin,row.SourceLabel,row.PostURL},1},
 			{`SELECT COUNT(*) FROM image_paths WHERE image_id=?`,[]any{v.ImageID},1},
 			{`SELECT COUNT(*) FROM image_sources WHERE image_id=?`,[]any{v.ImageID},1},
-			{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=? AND source=?`,[]any{v.ImageID,row.SourceLabel},len(v.TagIDs)},
+			{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=?`,[]any{v.ImageID},len(v.TagIDs)},
+			{`SELECT COUNT(*) FROM image_tag_sources ts JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source=? AND it.stale=0`,[]any{v.ImageID,row.SourceLabel},len(v.TagIDs)},
+			{`SELECT COUNT(*) FROM image_tags WHERE image_id=? AND is_implied=0`,[]any{v.ImageID},len(v.TagIDs)},
 			{`SELECT COUNT(*) FROM image_collections WHERE image_id=?`,[]any{v.ImageID},0},
 			{`SELECT COUNT(*) FROM image_sources WHERE parent_url=?`,[]any{row.PostURL},0},
 		}{
-			if err:=g.DB.Read.QueryRowContext(ctx,check.query,check.args...).Scan(&n);err!=nil||n!=check.want{return zero,ErrStageRecovery}
+			if err:=tx.QueryRowContext(ctx,check.query,check.args...).Scan(&n);err!=nil||n!=check.want{return zero,ErrStageRecovery}
 		}
 	}
+	if err:=tx.Commit();err!=nil{return zero,ErrStageRecovery}
 	current,err:=observedDB(r,g)
 	current.NewOnly=true
 	if err!=nil||current!=l{return zero,ErrStageRecovery}
@@ -183,7 +193,9 @@ func(a *Allocator)newReceiptLocked(ctx context.Context,grant workerproto.StageAl
 	if err!=nil||!matches(r,s){return zero,ErrStageRefused}
 	stored,err:=readNewReceipt(p,r,e,m,result)
 	if err!=nil||!slices.Equal(stored.Rows,expected.Rows){return zero,ErrStageRecovery}
-	return stored,nil
+	// A saved receipt does not exempt the writer from the same
+	// read-only reconciliation required after a lost acknowledgement.
+	return a.newReceiptLocked(ctx,grant,g,false)
 }
 func(a *Allocator)finishNewReceipt(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)(newReceipt,error){
 	a.mu.Lock();defer a.mu.Unlock()

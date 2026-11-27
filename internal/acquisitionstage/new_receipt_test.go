@@ -17,7 +17,7 @@ import(
 	"github.com/monbooru/monbooru/internal/library"
 )
 func TestNewOnlyReceiptThroughActualIngest(t *testing.T){
-	for _,mode:=range []string{"complete","unrated","existing bytes","parent claim","missing provenance","legacy attempt","missing metadata result","changed row","changed file","damaged receipt","extra source tag"}{
+	for _,mode:=range []string{"complete","unrated","existing bytes","parent claim","missing provenance","legacy attempt","missing metadata result","changed row","changed file","damaged receipt","extra source tag","stale source tag","unexpected source claim","wrong origin"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -85,8 +85,14 @@ func TestNewOnlyReceiptThroughActualIngest(t *testing.T){
 				if err:=os.WriteFile(filepath.Join(p,"new-receipt.json"),[]byte("{}"),0600);err!=nil{t.Fatal(err)}
 			case "extra source tag":
 				if _,err:=g.DB.Write.Exec(`INSERT INTO image_tag_sources(image_id,tag_id,source) SELECT image_id,tag_id,'extra' FROM image_tag_sources WHERE image_id=? LIMIT 1`,v[0].ImageID);err!=nil{t.Fatal(err)}
-				// Extra source ownership is outside the narrow receipt.
-				if _,err:=g.DB.Write.Exec(`UPDATE image_tag_sources SET source='different' WHERE image_id=? AND source=?`,v[0].ImageID,row.SourceLabel);err!=nil{t.Fatal(err)}
+				// Original attribution remains unchanged: an extra owner alone
+				// must invalidate the isolated new-only observation.
+			case "stale source tag":
+				if _,err:=g.DB.Write.Exec(`UPDATE image_tags SET stale=1 WHERE image_id=?`,v[0].ImageID);err!=nil{t.Fatal(err)}
+			case "unexpected source claim":
+				if _,err:=g.DB.Write.Exec(`UPDATE image_sources SET commentary='unexpected' WHERE image_id=?`,v[0].ImageID);err!=nil{t.Fatal(err)}
+			case "wrong origin":
+				if _,err:=g.DB.Write.Exec(`UPDATE images SET origin='other' WHERE id=?`,v[0].ImageID);err!=nil{t.Fatal(err)}
 			}
 			got,err:=a.observeNewReceipt(ctx,grant,g)
 			if mode=="complete"||mode=="unrated"{

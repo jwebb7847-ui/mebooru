@@ -319,3 +319,6 @@ Workflow adoption [PR #30](https://github.com/jwebb7847-ui/mebooru/pull/30) merg
 
 
 **II.6.4c isolated new-only receipt candidate:** actual existing LandInPlace under one-attempt durable marker, narrow new PNG-only/no prior SHA or source/relations/full explicit policy provenance/all approved rows returned, no extras. Complete mapped result and exact file/DB/source/tag/path checks before exclusive synced terminal receipt for this diagnostic scope only; read-only recovery repeats actual checks, refuses legacy landing, missing metadata, changed media/DB/receipt. Duplicate/restore/drop, parent and collection relations, other media, job extras, true owner/scanner fencing, reclamation and production receipt remain outstanding. Hosted verification pending.
+
+
+**II.6.4c isolated receipt reconciliation tightening:** exact new-row origin/source mirror, even empty source claims and absent notes, no extra tag attribution or unexpected direct tags, active nonstale ownership, single read transaction for these final DB checks and full read-only reconciliation after receipt write. Test mutations of extra attribution (without removing expected ownership), stale tags, unexpected previously empty source claims and wrong origin. Still no production receipt or reclamation. Hosted verification pending.
