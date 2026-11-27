@@ -2,6 +2,8 @@
 
 Snapshot 2026-11-26, accepted code `2d0b122326fd504eb54cedf575d55cb03348c479` in draft [PR #38](https://github.com/jwebb7847-ui/mebooru/pull/38). [North star](../../MEBOORU.md) is the sole roadmap. [Dated evidence](../validation/worker-ownership-runtime-2026-11-26.md) records actual platform results and preserved history. This map is a code-navigation and review reference, not another roadmap or production enablement instruction.
 
+Current development extension (2026-11-27): b isolated adapters verified on f7e27065e6d9ec81697324c7d5b59691514f8716 (run 45943329373); this historical acceptance map retains the a baseline. See [operation inventory](managed-operation-inventory.md) and [staging technical design](managed-staging.md) for current candidate scope and remaining activation requirements.
+
 ## Architecture and ownership
 
 ```text
