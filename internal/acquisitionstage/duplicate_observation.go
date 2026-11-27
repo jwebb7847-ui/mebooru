@@ -78,6 +78,9 @@ func verifyHeldCanonical(ctx context.Context,root *os.Root,rel string,f acquisit
 }
 func(a *Allocator)observeHeldDuplicates(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)([]heldDuplicate,error){
 	a.mu.Lock();defer a.mu.Unlock()
+	return a.observeHeldDuplicatesLocked(ctx,grant,g)
+}
+func(a *Allocator)observeHeldDuplicatesLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)([]heldDuplicate,error){
 	if g==nil||g.WatcherRunning(){return nil,ErrStageRefused}
 	// Existing mapped phase proves policy, metadata, exact destination
 	// link and DB identity. Do not drop any copy after a partial merge.

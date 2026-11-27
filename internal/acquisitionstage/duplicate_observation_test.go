@@ -16,7 +16,7 @@ import(
 	"github.com/monbooru/monbooru/internal/library"
 )
 func TestHeldDuplicateCanonicalObservation(t *testing.T){
-	for _,mode:=range []string{"held","nested","no metadata","changed canonical","missing canonical","wrong canonical path","extra hardlink","new image","revoked"}{
+	for _,mode:=range []string{"held","nested","no metadata","changed canonical","missing canonical","wrong canonical path","extra hardlink","new image","revoked","dispose","DB delete failure","changed after disposal"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -65,6 +65,23 @@ func TestHeldDuplicateCanonicalObservation(t *testing.T){
 				if err:=os.Link(old,filepath.Join(s.GalleryRoot,"user-copy.png"));err!=nil{t.Fatal(err)}
 			case "revoked":
 				a.authority=func(context.Context,workerproto.StageAllocateRequest)(Scope,error){return Scope{},ErrStageRefused}
+			}
+			if mode=="dispose"||mode=="DB delete failure"||mode=="changed after disposal"{
+				if mode=="DB delete failure"{
+					if _,err:=g.DB.Write.Exec(`CREATE TRIGGER refuse_alias_delete BEFORE DELETE ON image_paths BEGIN SELECT RAISE(ABORT,'fixture failure'); END`);err!=nil{t.Fatal(err)}
+				}
+				got,err:=a.disposeHeldDuplicate(ctx,grant,g)
+				if mode=="DB delete failure"{if err==nil{t.Fatal("partial deletion succeeded")}}else if err!=nil||got.ImageID!=id{t.Fatal("disposal",got,err)}
+				if _,err:=os.Lstat(alias);!os.IsNotExist(err){t.Fatal("managed alias remains",err)}
+				if b,err:=os.ReadFile(old);err!=nil||!bytes.Equal(b,buf.Bytes()){t.Fatal("canonical changed",err)}
+				if _,err:=a.disposeHeldDuplicate(ctx,grant,g);err==nil{t.Fatal("disposal replayed")}
+				if mode=="changed after disposal"{if err:=os.WriteFile(old,[]byte("changed"),0600);err!=nil{t.Fatal(err)}}
+				if err:=a.Close();err!=nil{t.Fatal(err)}
+				a,err=Open(stage,2,4096,func(context.Context,workerproto.StageAllocateRequest)(Scope,error){return s,nil})
+				if err!=nil{t.Fatal(err)}
+				got,err=a.observeDuplicateDisposal(ctx,grant,g)
+				if mode=="dispose"{if err!=nil||got.ImageID!=id{t.Fatal("lost response",got,err)}}else if err==nil{t.Fatal("uncertain deletion reconciled")}
+				return
 			}
 			got,err:=a.observeHeldDuplicates(ctx,grant,g)
 			if mode=="held"||mode=="nested"{

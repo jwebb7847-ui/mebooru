@@ -77,7 +77,11 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 				result,err:=readMetadataResult(p,m)
 				if err!=nil{return zero,ErrStageRecovery}
 				if len(entries)==7{
-					if _,err:=readNewReceipt(p,r,e,m,result);err!=nil{return zero,ErrStageRecovery}
+					if landing.NewOnly{
+						if _,err:=readNewReceipt(p,r,e,m,result);err!=nil{return zero,ErrStageRecovery}
+					}else{
+						if _,err:=readDuplicateAttempt(p,e,result);err!=nil{return zero,ErrStageRecovery}
+					}
 				}
 			}
 		}
