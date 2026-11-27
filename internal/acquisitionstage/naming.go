@@ -18,7 +18,7 @@ import (
 	"github.com/monbooru/monbooru/internal/library"
 )
 
-// Isolated single-new-PNG, existing destination directory, no collection.
+// Isolated single-new-PNG, existing destination directory, optional verified collection.
 // The trusted caller supplies an independent current naming decision,
 // never a worker-supplied destination. No production authority yet.
 // Retain both private copies and refuse replay after any attempt.
@@ -29,6 +29,7 @@ type namingAttempt struct {
 	Version int `json:"version"`
 	MetadataSHA256 string `json:"metadata_sha256"`
 	RelationshipSHA256 string `json:"relationship_sha256"`
+	CollectionSHA256 string `json:"collection_sha256,omitempty"`
 	Request gallery.ReceivedNamingRequest `json:"request"`
 	ImageID int64 `json:"image_id"`
 	PathID int64 `json:"path_id"`
@@ -66,6 +67,8 @@ func readNamingAttempt(p *os.Root,r record,e SealedEvidence,result metadataResul
 		m.Request.ReceivedName!=e.Files[0].RelativeName||m.Request.PostID!=e.Files[0].ID{return zero,nil,ErrStageRecovery}
 	rel,err:=boundedRegularBytes(p,"relationship-result.json",maxRelationshipRecord)
 	if err!=nil||m.RelationshipSHA256!=digestBytes(rel){return zero,nil,ErrStageRecovery}
+	collection,err:=collectionResultDigest(p)
+	if err!=nil||m.CollectionSHA256!=collection{return zero,nil,ErrStageRecovery}
 	canonical,err:=json.Marshal(m)
 	if err!=nil||!bytes.Equal(raw,canonical){return zero,nil,ErrStageRecovery}
 	return m,raw,nil
@@ -171,7 +174,7 @@ func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllo
 	if g==nil||g.WatcherRunning()||auth==nil||len(e.Files)!=1{return fail(ErrStageRefused)}
 	snapshot,err:=a.boundPolicyLocked(ctx,grant)
 	if err!=nil{return fail(err)}
-	rows,err:=newOnlyRows(e,snapshot)
+	rows,err:=newOnlyRowsMode(e,snapshot,true)
 	if err!=nil||len(rows)!=1{return fail(ErrStageRefused)}
 	l,err=readLandingAttempt(p,r)
 	if err!=nil||!l.NewOnly{return fail(ErrStageRefused)}
@@ -185,14 +188,16 @@ func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllo
 	if err!=nil{return fail(err)}
 	v,err:=verifyMappedRow(ctx,g,m.Targets[0],rows[0],result.Rows[0].Rejected)
 	if err!=nil||!sameMetadataObservation(v,result.Rows[0]){return fail(ErrStageRecovery)}
-	if err:=verifyNewMetadataStateWithClient(ctx,g,rows,m,result,client);err!=nil{return fail(err)}
+	collection,err:=newCollectionProof(ctx,g,p,l,result,rows[0])
+	if err!=nil{return fail(err)}
+	if err:=verifyNewMetadataStateFull(ctx,g,rows,m,result,client,collection);err!=nil{return fail(err)}
 	relRaw,err:=boundedRegularBytes(p,"relationship-attempt.json",maxRelationshipRecord)
 	var rel relationshipAttempt
 	if err!=nil||json.Unmarshal(relRaw,&rel)!=nil||rel.ImageID!=v.ImageID||rel.URL!=rows[0].PostURL||rel.ParentURL!=""{return fail(ErrStageRecovery)}
 	if err:=validateRelationshipRecords(p,result,true);err!=nil{return fail(err)}
 	graph,err:=inspectRelationships(ctx,g,v.ImageID,rel.URL,rel.ParentURL)
 	if err!=nil||!sameRelationships(expectedRelationships(rel.Before),graph){return fail(ErrStageRecovery)}
-	for _,name:=range []string{"collection-attempt.json","new-receipt.json","duplicate-attempt.json"}{
+	for _,name:=range []string{"new-receipt.json","duplicate-attempt.json"}{
 		if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return fail(ErrStageRecovery)}
 	}
 	q,err=auth(ctx,grant)
@@ -206,6 +211,8 @@ func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAlloc
 	meta,err:=json.Marshal(result)
 	rel,relErr:=boundedRegularBytes(p,"relationship-result.json",maxRelationshipRecord)
 	if err!=nil||relErr!=nil||digestBytes(meta)!=m.MetadataSHA256||digestBytes(rel)!=m.RelationshipSHA256{return ErrStageRecovery}
+	collection,err:=collectionResultDigest(p)
+	if err!=nil||m.CollectionSHA256!=collection{return ErrStageRecovery}
 	s,err:=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst)||!namingParentLive(r,dst,parent,m.Final){return ErrStageRefused}
 	current,err:=observedDB(r,g)
@@ -245,6 +252,8 @@ func(a *Allocator)applyNaming(ctx context.Context,grant workerproto.StageAllocat
 	rel,relErr:=boundedRegularBytes(p,"relationship-result.json",maxRelationshipRecord)
 	if err!=nil||relErr!=nil{return ErrStageRecovery}
 	m.MetadataSHA256=digestBytes(meta);m.RelationshipSHA256=digestBytes(rel)
+	m.CollectionSHA256,err=collectionResultDigest(p)
+	if err!=nil{return err}
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,false);err!=nil{return err}
 	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil);err!=nil{return err}
 	raw,err:=json.Marshal(m)
