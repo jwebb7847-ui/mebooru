@@ -180,6 +180,42 @@ func readNewReceipt(p *os.Root,r record,e SealedEvidence,m metadataAttempt,resul
 // attribution under the same local owner. Require the complete mapped
 // result, not merely an existing row or a successful service call.
 // No mutation on observation, and no cleanup permission.
+// Verify exact new-only metadata independently of the current canonical path.
+// Callers must separately prove the file and canonical path row.
+func verifyNewMetadataState(ctx context.Context,g *library.Gallery,rows []acquisitionplan.ApprovedPolicyRow,m metadataAttempt,result metadataResult)error{
+	if !m.Landing.NewOnly||len(rows)==0||len(rows)!=len(m.Targets)||len(rows)!=len(result.Rows){return ErrStageRecovery}
+	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
+	if err!=nil{return ErrStageRecovery}
+	defer tx.Rollback()
+	for i,row:=range rows{
+		v:=result.Rows[i]
+		in,md5,err:=normalizedMappedSource(row)
+		if err!=nil||verifySourceClaimsMode(ctx,tx,v.ImageID,in,md5,true)!=nil{return ErrStageRecovery}
+		derived:=m.Targets[i].DerivedTags
+		if err:=verifyNewDerivedBaseline(ctx,tx,v.ImageID,derived);err!=nil{return err}
+		direct:=map[int64]bool{}
+		for _,id:=range derived{direct[id]=true}
+		for _,id:=range v.TagIDs{direct[id]=true}
+		var n int
+		// New-only: no extra origins or aliases, no unexpected active
+		// attribution to this source, and no omitted parent/collection.
+		for _,check:=range []struct{query string;args []any;want int}{
+			{`SELECT COUNT(*) FROM images WHERE id=? AND origin=? AND source=? AND url=?`,[]any{v.ImageID,newReceiptOrigin,row.SourceLabel,row.PostURL},1},
+			{`SELECT COUNT(*) FROM image_paths WHERE image_id=?`,[]any{v.ImageID},1},
+			{`SELECT COUNT(*) FROM image_sources WHERE image_id=?`,[]any{v.ImageID},1},
+			{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=?`,[]any{v.ImageID},len(v.TagIDs)+len(derived)},
+			{`SELECT COUNT(*) FROM image_tag_sources ts JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source=? AND it.stale=0`,[]any{v.ImageID,row.SourceLabel},len(v.TagIDs)},
+			{`SELECT COUNT(*) FROM image_tags WHERE image_id=? AND is_implied=0`,[]any{v.ImageID},len(direct)},
+			{`SELECT COUNT(*) FROM image_collections WHERE image_id=?`,[]any{v.ImageID},0},
+			{`SELECT COUNT(*) FROM image_sources WHERE parent_url=?`,[]any{row.PostURL},0},
+		}{
+			if err:=tx.QueryRowContext(ctx,check.query,check.args...).Scan(&n);err!=nil||n!=check.want{return ErrStageRecovery}
+		}
+	}
+	if err:=tx.Commit();err!=nil{return ErrStageRecovery}
+	return nil
+}
+
 func(a *Allocator)newReceiptLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,write bool)(newReceipt,error){
 	var zero newReceipt
 	if g==nil||g.WatcherRunning(){return zero,ErrStageRefused}
@@ -202,36 +238,10 @@ func(a *Allocator)newReceiptLocked(ctx context.Context,grant workerproto.StageAl
 	if err!=nil||len(observed)!=len(rows){return zero,ErrStageRecovery}
 	landed,err:=a.observeLandingLocked(ctx,grant,g)
 	if err!=nil||len(landed)!=len(rows){return zero,ErrStageRecovery}
-	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
-	if err!=nil{return zero,ErrStageRecovery}
-	defer tx.Rollback()
-	for i,row:=range rows{
-		v:=observed[i]
+	for i,v:=range observed{
 		if !landed[i].Canonical||landed[i].ImageID!=v.ImageID||!sameMetadataObservation(v,result.Rows[i]){return zero,ErrStageRecovery}
-		in,md5,err:=normalizedMappedSource(row)
-		if err!=nil||verifySourceClaimsMode(ctx,tx,v.ImageID,in,md5,true)!=nil{return zero,ErrStageRecovery}
-		derived:=m.Targets[i].DerivedTags
-		if err:=verifyNewDerivedBaseline(ctx,tx,v.ImageID,derived);err!=nil{return zero,err}
-		direct:=map[int64]bool{}
-		for _,id:=range derived{direct[id]=true}
-		for _,id:=range v.TagIDs{direct[id]=true}
-		var n int
-		// New-only: no extra origins or aliases, no unexpected active
-		// attribution to this source, and no omitted parent/collection.
-		for _,check:=range []struct{query string;args []any;want int}{
-			{`SELECT COUNT(*) FROM images WHERE id=? AND origin=? AND source=? AND url=?`,[]any{v.ImageID,newReceiptOrigin,row.SourceLabel,row.PostURL},1},
-			{`SELECT COUNT(*) FROM image_paths WHERE image_id=?`,[]any{v.ImageID},1},
-			{`SELECT COUNT(*) FROM image_sources WHERE image_id=?`,[]any{v.ImageID},1},
-			{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=?`,[]any{v.ImageID},len(v.TagIDs)+len(derived)},
-			{`SELECT COUNT(*) FROM image_tag_sources ts JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source=? AND it.stale=0`,[]any{v.ImageID,row.SourceLabel},len(v.TagIDs)},
-			{`SELECT COUNT(*) FROM image_tags WHERE image_id=? AND is_implied=0`,[]any{v.ImageID},len(direct)},
-			{`SELECT COUNT(*) FROM image_collections WHERE image_id=?`,[]any{v.ImageID},0},
-			{`SELECT COUNT(*) FROM image_sources WHERE parent_url=?`,[]any{row.PostURL},0},
-		}{
-			if err:=tx.QueryRowContext(ctx,check.query,check.args...).Scan(&n);err!=nil||n!=check.want{return zero,ErrStageRecovery}
-		}
 	}
-	if err:=tx.Commit();err!=nil{return zero,ErrStageRecovery}
+	if err:=verifyNewMetadataState(ctx,g,rows,m,result);err!=nil{return zero,err}
 	current,err:=observedDB(r,g)
 	if err!=nil||!sameLandingDB(current,l){return zero,ErrStageRecovery}
 	s,err:=a.scope(ctx,grant.Request)
