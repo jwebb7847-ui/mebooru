@@ -51,7 +51,7 @@ type record struct {
 // Allocator is local to the single cooperative profile owner. Caller must
 // hold exclusive profile ownership for its lifetime; this mutex is not an
 // interprocess lock. Root must be an existing owner-selected directory.
-// No cleanup or launch occurs here. Ambiguous records reserve capacity and
+// No implicit cleanup or launch occurs here. Ambiguous records reserve capacity and
 // block further allocation rather than being removed or guessed at.
 type Allocator struct {
 	mu sync.Mutex
@@ -161,7 +161,7 @@ func diskFree(path string)(uint64,error){
 // owner records/probe overhead. Conservative free-space preflight only:
 // existing reservations may already occupy space, and other writers may
 // consume the free bytes later. This does not enforce live disk quotas.
-const reservationOverhead = uint64(3*workerproto.MaxMetadataOutputBytes+8<<20+2*maxRelationshipRecord+2*maxCollectionRecord+2*maxNamingRecord+2*maxExtrasRecord+maxComposedReceipt+maxHeldComposition+maxHeldReceipt+maxRestoredReceipt)
+const reservationOverhead = uint64(3*workerproto.MaxMetadataOutputBytes+8<<20+2*maxRelationshipRecord+2*maxCollectionRecord+2*maxNamingRecord+2*maxExtrasRecord+maxComposedReceipt+maxHeldComposition+maxHeldReceipt+maxRestoredReceipt+2*maxWorkspaceReclaimRecord)
 func(a *Allocator)spaceFor(count int,payload uint64)bool{
 	if count<0||count>maxAllocations||payload>maxReservedBytes||a.freeBytes==nil{return false}
 	required:=3*payload+uint64(count)*reservationOverhead
