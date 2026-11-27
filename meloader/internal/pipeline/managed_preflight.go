@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sync/atomic"
@@ -90,6 +91,7 @@ func(p *ManagedPreflight) Run(caller context.Context,q workerproto.MetadataPlanR
 	var result ManagedPreflightResult
 	approved:=make([]string,0,len(rows))
 	projections:=make([]approvedPolicyRow,0,len(rows))
+	projectionBytes:=0
 	for i,row:=range rows{
 		if !p.current(ctx)||caller.Err()!=nil||row.Item.ID!=w.posts[i].ID{return ManagedPreflightResult{},ErrManagedPreflight}
 		note,err:=strictListingVerdict(row.Item,rules)
@@ -103,6 +105,9 @@ func(p *ManagedPreflight) Run(caller context.Context,q workerproto.MetadataPlanR
 		}else{
 			projected,err:=policyRow(w.mapper,row,w.posts[i])
 			if err!=nil||!p.current(ctx){return ManagedPreflightResult{},ErrManagedPreflight}
+			encoded,err:=json.Marshal(projected)
+			if err!=nil||len(encoded)>maxPolicyProjectionBytes-projectionBytes{return ManagedPreflightResult{},ErrManagedPreflight}
+			projectionBytes+=len(encoded)
 			approved=append(approved,row.Item.ID)
 			projections=append(projections,projected)
 		}
