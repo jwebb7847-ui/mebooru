@@ -127,6 +127,10 @@ func(a *Allocator)Seal(ctx context.Context,g workerproto.StageAllocation,observe
 	src,err:=openDir(workspace,"media")
 	if err!=nil{return zero,err}
 	defer src.Close()
+	var copyBytes uint64
+	for _,f:=range files{copyBytes+=uint64(f.Size)+uint64(f.SidecarSize)}
+	free,err:=a.freeBytes(a.path)
+	if err!=nil||free<copyBytes+uint64(len(manifest))+maxSealRecordBytes||!a.live(){return zero,ErrStageLimit}
 	if err:=operation.Mkdir("sealed",0700);err!=nil{return zero,ErrStageRecovery}
 	sealed,err:=openDir(operation,"sealed")
 	if err!=nil{return zero,err}
@@ -150,7 +154,8 @@ func(a *Allocator)Seal(ctx context.Context,g workerproto.StageAllocation,observe
 		_,err:=io.Copy(w,bytes.NewReader(body));return err
 	});err!=nil{return zero,err}
 	syncDirectory(sealed);syncDirectory(operation);syncDirectory(a.root)
-	if !a.live()||ctx.Err()!=nil{return zero,ErrStageRefused}
+	current,err=a.scope(ctx,g.Request)
+	if err!=nil||!matches(r,current){return zero,ErrStageRefused}
 	stored,err:=readSeal(operation,g)
 	if err!=nil||!slices.Equal(e.Files,stored.Files){return zero,ErrStageRecovery}
 	return stored,nil

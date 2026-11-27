@@ -106,3 +106,26 @@ func TestAllocatorRejectsOverlapsAndAmbiguity(t *testing.T){
 		})
 	}
 }
+
+func TestAllocatorSpaceReservationAccountsForBothCopies(t *testing.T){
+	ctx:=context.Background()
+	stage,s,q:=fixture(t)
+	a,err:=Open(stage,2,4096,func(context.Context,workerproto.StageAllocateRequest)(Scope,error){return s,nil})
+	if err!=nil{t.Fatal(err)}
+	defer a.Close()
+	needed:=2*s.MaxBytes+reservationOverhead
+	a.freeBytes=func(string)(uint64,error){return needed-1,nil}
+	if _,err:=a.Allocate(ctx,q);!errors.Is(err,ErrStageLimit){t.Fatal("low space",err)}
+	entries,err:=os.ReadDir(stage)
+	if err!=nil||len(entries)!=0{t.Fatal("low-space allocation changed root",err)}
+	a.freeBytes=func(string)(uint64,error){return 0,errors.New("unavailable volume")}
+	if _,err:=a.Allocate(ctx,q);!errors.Is(err,ErrStageLimit){t.Fatal("unknown space",err)}
+	a.freeBytes=func(string)(uint64,error){return needed,nil}
+	g,err:=a.Allocate(ctx,q)
+	if err!=nil{t.Fatal(err)}
+	a.freeBytes=func(string)(uint64,error){return 0,nil}
+	if got,err:=a.Allocate(ctx,q);err!=nil||got!=g{t.Fatal("existing allocation lost on low space",err)}
+	second:=q;second.OperationID=strings.Repeat("c",32)
+	a.freeBytes=func(string)(uint64,error){return 2*needed-1,nil}
+	if _,err:=a.Allocate(ctx,second);!errors.Is(err,ErrStageLimit){t.Fatal("aggregate capacity",err)}
+}

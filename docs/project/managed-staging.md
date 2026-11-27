@@ -37,3 +37,8 @@ The strict runtime result now binds native sidecar bytes as well as media bytes.
 ## Persistent sealed evidence candidate
 
 The allocator now has an isolated Seal/Sealed path. Only trusted local observer supplies exact original approved manifest and contained results after writer-stop proof; fixture observer is not production custody. Verify fixed strict workspace, exclusive `sealed` sibling, separately verified media copy, synced manifest and canonical seal.json. Partial marker retains all state and blocks replay/allocation; completed seal disallows workspace reopening and a second seal attempt. Reopen queries revalidate current gallery scope and actual bytes; no claim of final commit or permission to ingest, no automatic reclaim. Directory sync remains best effort. This does not solve external writer identity or power-loss atomicity.
+
+
+## Destination volume and capacity candidate
+
+Require actual opened stage/destination directory identities on the same device/volume (Unix device, Windows volume serial as point-in-time evidence). Unknown or different volume is refused in this first candidate; no cross-volume fallback until independently verified. Free-space preflight includes original plus sealed payload and maximum manifest/record overhead for each reservation, with a separate actual seal-copy preflight. Conservative accounting may double-count already-written bytes; no live quota, power-loss guarantee, durable volume ID or protection against other disk writers/mount changes. Existing exact replay does not require fresh free space or restart a writer. Tests exercise low and unknown space without mutation, aggregate reservations and low seal capacity before marker creation.

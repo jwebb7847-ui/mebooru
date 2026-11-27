@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 )
 
 var ErrStageRefused = errors.New("managed staging refused")
@@ -60,6 +61,7 @@ type Allocator struct {
 	authority Authority
 	maxCount int
 	maxBytes uint64
+	freeBytes func(string)(uint64,error)
 }
 
 func Open(path string,maxCount int,maxBytes uint64,authority Authority)(*Allocator,error){
@@ -70,7 +72,7 @@ func Open(path string,maxCount int,maxBytes uint64,authority Authority)(*Allocat
 	if err!=nil{return nil,ErrStageRefused}
 	actual,err:=r.Stat(".")
 	if err!=nil||!os.SameFile(info,actual){_ = r.Close();return nil,ErrStageRefused}
-	return &Allocator{root:r,path:canonical,info:info,authority:authority,maxCount:maxCount,maxBytes:maxBytes},nil
+	return &Allocator{root:r,path:canonical,info:info,authority:authority,maxCount:maxCount,maxBytes:maxBytes,freeBytes:diskFree},nil
 }
 func(a *Allocator)Close()error{
 	a.mu.Lock()
@@ -128,9 +130,43 @@ func(a *Allocator)scope(ctx context.Context,q workerproto.StageAllocateRequest)(
 		inside,err=contains(a.info,path)
 		if err!=nil||inside{return Scope{},ErrStageRefused}
 	}
-	if !found||!a.live(){return Scope{},ErrStageRefused}
+	if !found||!a.live()||!a.sameDestinationVolume(dest,destInfo){return Scope{},ErrStageRefused}
 	s.GalleryRoot=dest
 	return s,nil
+}
+// Same-volume is a point-in-time prerequisite of this first candidate.
+// Unknown or different device/volume refuses allocation; no unsafe
+// cross-volume fallback. The owner must still qualify actual filesystem
+// capabilities and durable identity before final publication.
+func(a *Allocator)sameDestinationVolume(path string,info os.FileInfo)bool{
+	stage,err:=a.root.Open(".")
+	if err!=nil{return false}
+	defer stage.Close()
+	dest,err:=os.Open(path)
+	if err!=nil{return false}
+	defer dest.Close()
+	si,err:=stage.Stat()
+	if err!=nil||!os.SameFile(a.info,si){return false}
+	di,err:=dest.Stat()
+	if err!=nil||!os.SameFile(info,di){return false}
+	return sameVolume(stage,dest)
+}
+func diskFree(path string)(uint64,error){
+	_,free,err:=desktop.DiskUsage(path)
+	return free,err
+}
+
+// The payload reservation includes media/sidecars. Allow for both the
+// original and sealed copies, two maximum-sized manifests, and bounded
+// owner records/probe overhead. Conservative free-space preflight only:
+// existing reservations may already occupy space, and other writers may
+// consume the free bytes later. This does not enforce live disk quotas.
+const reservationOverhead = uint64(2*workerproto.MaxMetadataOutputBytes+4<<20)
+func(a *Allocator)spaceFor(count int,payload uint64)bool{
+	if count<0||count>maxAllocations||payload>maxReservedBytes||a.freeBytes==nil{return false}
+	required:=2*payload+uint64(count)*reservationOverhead
+	free,err:=a.freeBytes(a.path)
+	return err==nil&&free>=required&&a.live()
 }
 func matches(r record,s Scope)bool{
 	return r.GalleryIdentity==s.GalleryIdentity&&r.GalleryRoot==s.GalleryRoot&&
@@ -244,7 +280,7 @@ func(a *Allocator)Allocate(ctx context.Context,q workerproto.StageAllocateReques
 		if err!=nil||!matches(r,current){return workerproto.StageAllocation{},ErrStageRefused}
 		return r.Allocation,nil
 	}
-	if len(records)>=a.maxCount||reserved>a.maxBytes||s.MaxBytes>a.maxBytes-reserved{return workerproto.StageAllocation{},ErrStageLimit}
+	if len(records)>=a.maxCount||reserved>a.maxBytes||s.MaxBytes>a.maxBytes-reserved||!a.spaceFor(len(records)+1,reserved+s.MaxBytes){return workerproto.StageAllocation{},ErrStageLimit}
 	var id [16]byte
 	if _,err:=rand.Read(id[:]);err!=nil{return workerproto.StageAllocation{},ErrStageRefused}
 	grant:=workerproto.StageAllocation{Request:q,TransferID:hex.EncodeToString(id[:]),MaxFiles:s.MaxFiles,MaxBytes:s.MaxBytes}

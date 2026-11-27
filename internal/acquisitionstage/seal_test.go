@@ -14,7 +14,7 @@ import(
 )
 
 func TestAllocatorSealAndReconcile(t *testing.T){
-	for _,mode:=range []string{"valid","empty","unconfirmed","changed source","partial marker","changed sealed bytes","changed sealed manifest","revoked after seal"}{
+	for _,mode:=range []string{"valid","empty","unconfirmed","changed source","partial marker","low seal space","changed sealed bytes","changed sealed manifest","revoked after seal"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			stage,s,q:=fixture(t)
@@ -58,7 +58,13 @@ func TestAllocatorSealAndReconcile(t *testing.T){
 			if mode=="changed source"{
 				if err:=os.WriteFile(path,[]byte("changed"),0600);err!=nil{t.Fatal(err)}
 			}
+			if mode=="low seal space"{a.freeBytes=func(string)(uint64,error){return 0,nil}}
 			e,err:=a.Seal(ctx,g,observe)
+			if mode=="low seal space"{
+				if !errors.Is(err,ErrStageLimit)||e.Version!=0{t.Fatal("low space seal",err)}
+				if _,err:=os.Lstat(sealedPath);!errors.Is(err,os.ErrNotExist){t.Fatal("low space created partial seal",err)}
+				return
+			}
 			if mode=="unconfirmed"||mode=="partial marker"||mode=="changed source"{
 				if err==nil||e.Version!=0{t.Fatal("unsafe seal published")}
 				if mode=="unconfirmed"{
