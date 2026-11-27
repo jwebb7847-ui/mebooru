@@ -6,6 +6,7 @@ import(
 	"os"
 	"path/filepath"
 	"testing"
+	"strings"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
@@ -13,9 +14,14 @@ import(
 
 func publicationFixture(t *testing.T)(*Allocator,string,Scope,workerproto.StageAllocation,Authority,acquisitionplan.VerifiedTransferFile){
 	t.Helper()
+	return publicationFixtureData(t,"jpg",[]byte("fixture bytes"))
+}
+func publicationFixtureData(t *testing.T,ext string,data []byte)(*Allocator,string,Scope,workerproto.StageAllocation,Authority,acquisitionplan.VerifiedTransferFile){
+	t.Helper()
 	ctx:=context.Background()
 	stage,s,q:=fixture(t)
 	manifest:=[]byte(`{"42":{"category":"derpibooru","subcategory":"search","tags":["safe","fixture"],"meloader_verified_media_url":"https://example.invalid/42.jpg"}}`)
+	manifest=[]byte(strings.ReplaceAll(string(manifest),"42.jpg","42."+ext))
 	q.Transfer.ManifestSHA256=digest(manifest)
 	s.MaxBytes=2048
 	auth:=func(context.Context,workerproto.StageAllocateRequest)(Scope,error){return s,nil}
@@ -27,9 +33,9 @@ func publicationFixture(t *testing.T)(*Allocator,string,Scope,workerproto.StageA
 	if err!=nil{a.Close();t.Fatal(err)}
 	cmd,err:=acquisitionplan.PrepareTransferCommands(q.Transfer,manifest,acquisitionplan.MetadataConfig{Generation:1,Source:q.Transfer.Metadata.Source},w)
 	if err!=nil{a.Close();t.Fatal(err)}
-	path:=filepath.Join(w,"media","42.jpg")
-	data:=[]byte("fixture bytes")
+	path:=filepath.Join(w,"media","42."+ext)
 	meta:=[]byte(`{"id":42,"category":"derpibooru","subcategory":"search","tags":["safe","fixture"],"meloader_verified_media_url":"https://example.invalid/42.jpg"}`)
+	meta=[]byte(strings.ReplaceAll(string(meta),"42.jpg","42."+ext))
 	for p,b:=range map[string][]byte{path:data,path+".json":meta}{if err:=os.WriteFile(p,b,0600);err!=nil{a.Close();t.Fatal(err)}}
 	files,err:=cmd.VerifyTransferResult(ctx,[]byte(path+"\n"))
 	if err!=nil||len(files)!=1{a.Close();t.Fatal("verify",err)}
@@ -38,7 +44,7 @@ func publicationFixture(t *testing.T)(*Allocator,string,Scope,workerproto.StageA
 }
 func TestPublicationIntentAndNoClobber(t *testing.T){
 	ctx:=context.Background()
-	for _,mode:=range []string{"placed","prepared restart","attempt without file","same bytes collision","different collision","changed prepared","partial intent","changed placed","foreign link","low space","canceled"}{
+	for _,mode:=range []string{"placed","prepared restart","attempt without file","same bytes collision","different collision","collision after marker","changed prepared","partial intent","changed placed","foreign link","low space","canceled"}{
 		t.Run(mode,func(t *testing.T){
 			a,stage,s,g,auth,f:=publicationFixture(t)
 			defer func(){_ = a.Close()}()
@@ -81,6 +87,19 @@ func TestPublicationIntentAndNoClobber(t *testing.T){
 				if _,err:=a.publishPrepared(ctx,g);err==nil{t.Fatal("collision accepted")}
 				if got,err:=os.ReadFile(final);err!=nil||string(got)!=string(data){t.Fatal("collision overwritten",err)}
 				if _,err:=a.inspectPublication(ctx,g);err==nil{t.Fatal("collision mistaken for placement")}
+				return
+			case "collision after marker":
+				a.authority=func(c context.Context,q workerproto.StageAllocateRequest)(Scope,error){
+					if _,err:=os.Stat(filepath.Join(p,"attempt"));err==nil{
+						if _,err:=os.Stat(final);errors.Is(err,os.ErrNotExist){
+							if err:=os.WriteFile(final,[]byte("racing destination"),0600);err!=nil{t.Fatal(err)}
+						}
+					}
+					return auth(c,q)
+				}
+				if _,err:=a.publishPrepared(ctx,g);err==nil{t.Fatal("atomic link overwrote race")}
+				if got,err:=os.ReadFile(final);err!=nil||string(got)!="racing destination"{t.Fatal("racing file changed",err)}
+				if _,err:=os.Stat(filepath.Join(p,"attempt"));err!=nil{t.Fatal("race not exercised after marker",err)}
 				return
 			case "changed prepared":
 				if err:=os.WriteFile(filepath.Join(p,"media",f.RelativeName),[]byte("wrong bytes!!"),0600);err!=nil{t.Fatal(err)}
