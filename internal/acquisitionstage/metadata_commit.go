@@ -190,8 +190,7 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 	landing,err:=readLandingAttempt(p,r)
 	if err!=nil{return nil,err}
 	current,err:=observedDB(r,g)
-	current.NewOnly=landing.NewOnly
-	if err!=nil||current!=landing{return nil,ErrStageRecovery}
+	if err!=nil||!sameLandingDB(current,landing){return nil,ErrStageRecovery}
 	observed,err:=a.observeLandingLocked(ctx,grant,g)
 	if err!=nil||len(observed)!=len(e.Files){return nil,ErrStageRecovery}
 	rows,err:=selectMappedRows(snapshot,e)

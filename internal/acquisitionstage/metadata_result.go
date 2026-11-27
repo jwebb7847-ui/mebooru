@@ -72,8 +72,7 @@ func(a *Allocator)observeMappedMetadataLocked(ctx context.Context,grant workerpr
 	landing,err:=readLandingAttempt(p,r)
 	if err!=nil{return nil,err}
 	current,err:=observedDB(r,g)
-	current.NewOnly=landing.NewOnly
-	if err!=nil||current!=landing{return nil,ErrStageRecovery}
+	if err!=nil||!sameLandingDB(current,landing){return nil,ErrStageRecovery}
 	m,err:=readMetadataAttempt(p,landing,e)
 	if err!=nil{return nil,err}
 	_,digest,err:=acquisitionplan.EncodeApprovedPolicy(snapshot.Transfer,snapshot.Rows)
@@ -93,7 +92,6 @@ func(a *Allocator)observeMappedMetadataLocked(ctx context.Context,grant workerpr
 	s,err:=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s)||g.WatcherRunning(){return nil,ErrStageRefused}
 	current,err=observedDB(r,g)
-	current.NewOnly=landing.NewOnly
-	if err!=nil||current!=landing{return nil,ErrStageRecovery}
+	if err!=nil||!sameLandingDB(current,landing){return nil,ErrStageRecovery}
 	return result.Rows,nil
 }
