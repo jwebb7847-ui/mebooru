@@ -91,28 +91,30 @@ func runCustodian(ctx context.Context,profileDir,generation string,parentLife *o
 	}
 	lifetime,cancel:=context.WithCancel(ctx)
 	defer cancel()
-	finished:=make(chan struct{})
-	defer close(finished)
-	go func(){
-		select{
-		case <-lifetime.Done():_ = parentLife.Close()
-		case <-finished:
-		}
-	}()
+	// Only the single reader touches the inherited pipe. Cancellation
+	// must not depend on Close interrupting a synchronous Windows read.
+	// The platform reader waits for availability with bounded polling.
 	if ready!=nil{
 		n,err:=ready.Write([]byte{custodyReady})
 		if n!=1||err!=nil{return errors.Join(ErrCustodyActivation,err,finish())}
 	}
-	var one [1]byte
-	n,err:=io.ReadFull(parentLife,one[:])
-	if err!=nil||n!=1||one[0]!=custodyActivate||lifetime.Err()!=nil{
+	one,err:=readCustodyByte(lifetime,parentLife)
+	if err!=nil||one!=custodyActivate||lifetime.Err()!=nil{
 		// No launch attempted; this channel cannot be activated again.
 		return errors.Join(ErrCustodyActivation,err,lifetime.Err(),finish())
 	}
 	// Even a received activation byte is insufficient without the exact
 	// durable armed generation. A stale or premature arm launches nothing.
 	if _,err:=verifyCustodyFence(root,generation,fenceDirty);err!=nil{return errors.Join(ErrCustodyActivation,err)}
-	go func(){var b [1]byte;_,_=parentLife.Read(b[:]);cancel()}()
+	readerDone:=make(chan struct{})
+	go func(){
+		defer close(readerDone)
+		_,_=readCustodyByte(lifetime,parentLife)
+		cancel()
+	}()
+	// Join before closing the pipe (including child failure or normal
+	// child exit while the parent's writer is still held open).
+	defer func(){cancel();<-readerDone}()
 	startup,stopStartup:=context.WithTimeout(lifetime,custodyStartupTimeout)
 	child,startErr:=start(startup)
 	stopStartup()

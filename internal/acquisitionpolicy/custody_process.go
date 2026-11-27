@@ -47,27 +47,25 @@ func StartCustodyProcess(ctx context.Context,cmd *exec.Cmd,fence *WorkerFence)(*
 	_ = w.Close()
 	p:=&CustodyProcess{fence:fence,life:life,done:make(chan struct{})}
 	go func(){p.waitErr=cmd.Wait();close(p.done)}()
-	type result struct{byteValue byte;err error}
-	ch:=make(chan result,1)
+	// Readiness has the same synchronous-pipe cancellation hazard as
+	// liveness. Cancel the single reader when the child exits, and
+	// complete the read before deferred Close can run.
+	readyCtx,cancel:=context.WithCancel(ctx)
+	readerDone:=make(chan struct{})
 	go func(){
-		var b [1]byte
-		_,err:=io.ReadFull(r,b[:])
-		ch<-result{b[0],err}
+		defer close(readerDone)
+		select{case <-p.done:cancel();case <-readyCtx.Done():}
 	}()
-	select{
-	case got:=<-ch:
-		if got.err==nil&&got.byteValue==custodyReady{
-			select{case <-p.done:default:p.ready=true;return p,nil}
-		}
-		p.revoke()
-		return p,errors.Join(ErrCustodyActivation,got.err)
-	case <-p.done:
-		p.revoke()
-		return p,errors.Join(ErrCustodyActivation,p.waitErr)
-	case <-ctx.Done():
-		p.revoke()
-		return p,ctx.Err()
+	got,readErr:=readCustodyByte(readyCtx,r)
+	cancel()
+	<-readerDone
+	if readErr==nil&&got==custodyReady&&ctx.Err()==nil{
+		select{case <-p.done:default:p.ready=true;return p,nil}
 	}
+	p.revoke()
+	if err:=ctx.Err();err!=nil{return p,err}
+	select{case <-p.done:return p,errors.Join(ErrCustodyActivation,readErr,p.waitErr);default:}
+	return p,errors.Join(ErrCustodyActivation,readErr)
 }
 
 func(p *CustodyProcess)Done()<-chan struct{}{return p.done}

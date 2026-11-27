@@ -57,3 +57,8 @@ These are known navigation points, not a claim of exhaustive coverage. Review th
 | Data commit | `internal/library`, `internal/api`, existing upload/replace/enrich and outcome handlers | Subsequent II.6.4c: destination-aware rooted staging outside scan trees, size/hash/provenance validation, no-clobber commit/verified-copy fallback, durable op ID and receipt reconciliation. No worker direct gallery DB writes or exactly-once claim across independent DBs. |
 
 Keep version 1.32.19 qualified pending compatibility tests for newer release (II.6.5); Chapter IV bundles verified updates and rollback. Keep the actual runtime trust identity (including dependencies/interpreter) distinct from the fixture digest. Do not remove the diagnostic tests or conflate passed development gates with full milestone acceptance. Real queue, staging and runtime installation are not yet migrated. See the north star for sequencing, decisions and workflow.
+
+
+### Custody pipe cancellation correction (candidate)
+
+Windows development run 45968708640 timed out at TestCustodyUnconfirmedStopNeverPublishesReceipt, with Close waiting on a synchronous ReadFile while the writer was still held open. Readiness has the same pattern. Single-reader availability polling for the one-byte control channels now avoids speculative blocking reads and joins the liveness reader before closing. Windows PeekNamedPipe, Darwin/Linux poll, unsupported platform refuses. No change to exact cleanup receipt requirement or launch authorization. Hosted verification pending; this does not establish cancellation behavior for other framed IPC streams.
