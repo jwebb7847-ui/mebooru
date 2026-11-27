@@ -47,6 +47,9 @@ func readDuplicateAttempt(p *os.Root,e SealedEvidence,result metadataResult)(dup
 // a missing file alone. The private publication copy remains intact.
 // No mutation or retry on recovery.
 func(a *Allocator)observeDuplicateDisposalLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery)(heldDuplicate,error){
+	return a.observeDuplicateDisposalModeLocked(ctx,grant,g,false)
+}
+func(a *Allocator)observeDuplicateDisposalModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,released bool)(heldDuplicate,error){
 	var zero heldDuplicate
 	if g==nil||g.WatcherRunning(){return zero,ErrStageRefused}
 	snapshot,err:=a.boundPolicyLocked(ctx,grant)
@@ -73,8 +76,7 @@ func(a *Allocator)observeDuplicateDisposalLocked(ctx context.Context,grant worke
 	if err!=nil||!sameMetadataObservation(v,result.Rows[0]){return zero,ErrStageRecovery}
 	f:=e.Files[0]
 	h:=d.Held
-	places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
-	if err!=nil||len(places)!=1||places[0].State!="absent"{return zero,ErrStageRecovery}
+	if err:=verifyCompletedHeldPlacement(ctx,grant,e,p,src,dst,released);err!=nil{return zero,err}
 	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
 	if err!=nil{return zero,ErrStageRecovery}
 	defer tx.Rollback()
@@ -94,8 +96,7 @@ func(a *Allocator)observeDuplicateDisposalLocked(ctx context.Context,grant worke
 	if err!=nil||!matches(r,s)||g.WatcherRunning(){return zero,ErrStageRefused}
 	current,err=observedDB(r,g)
 	if err!=nil||current!=l||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRecovery}
-	places,err=inspectPlacements(ctx,grant,e,p,src,dst)
-	if err!=nil||len(places)!=1||places[0].State!="absent"{return zero,ErrStageRecovery}
+	if err:=verifyCompletedHeldPlacement(ctx,grant,e,p,src,dst,released);err!=nil{return zero,err}
 	id,err=verifyHeldCanonical(ctx,dst,h.CanonicalPath,f)
 	if err!=nil||id!=h.CanonicalIdentity{return zero,ErrStageRecovery}
 	return h,nil
