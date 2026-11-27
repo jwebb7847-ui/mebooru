@@ -115,7 +115,7 @@ jobs:
           go test -count=1 -v -timeout 4m ./internal/acquisitionstage ./internal/library
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cd shared
-          go test -count=1 -timeout 3m ./processguard ./workerproto ./acquisitionplan
+          go test -count=1 -timeout 3m ./processguard ./workerproto ./acquisitionplan ./contract
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cd ../meloader
           go test -count=1 -timeout 3m ./internal/gdl ./internal/taxonomy ./internal/pipeline
