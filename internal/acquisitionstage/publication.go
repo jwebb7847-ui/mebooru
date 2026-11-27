@@ -309,6 +309,13 @@ func digestBytes(body []byte)string{
 // even an all-placed result is not database commit or receipt.
 func(a *Allocator)publishPrepared(ctx context.Context,g workerproto.StageAllocation)([]placement,error){
 	a.mu.Lock();defer a.mu.Unlock()
+	return a.publishPreparedLocked(ctx,g,nil)
+}
+
+// guard is an independent owner-side pre-publication check. Diagnostic
+// callers retain their previous behavior; the guarded caller supplies
+// an exact plan re-observer before intent and immediately before link.
+func(a *Allocator)publishPreparedLocked(ctx context.Context,g workerproto.StageAllocation,guard func()error)([]placement,error){
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,g)
 	if err!=nil{return nil,err}
 	defer p.Close();defer src.Close();defer dst.Close()
@@ -324,6 +331,7 @@ func(a *Allocator)publishPrepared(ctx context.Context,g workerproto.StageAllocat
 		x,err:=common.Lstat(from);if err!=nil||!x.IsDir()||!os.SameFile(si,x){return false}
 		y,err:=common.Lstat(to);return err==nil&&y.IsDir()&&os.SameFile(di,y)
 	}
+	if guard!=nil{if err:=guard();err!=nil{return nil,err}}
 	if !rootsMatch(){return nil,ErrStageRefused}
 	if err:=writeOwnerBytes(ctx,p,"attempt",[]byte(g.TransferID));err!=nil{return nil,err}
 	syncDirectory(p)
@@ -331,6 +339,8 @@ func(a *Allocator)publishPrepared(ctx context.Context,g workerproto.StageAllocat
 		s,err:=a.scope(ctx,g.Request)
 		if err!=nil||!matches(r,s)||!rootsMatch(){return nil,ErrStageRefused}
 		if err:=readChecked(ctx,src,f.RelativeName,f.Size,f.SHA256,io.Discard);err!=nil{return nil,err}
+		if guard!=nil{if err:=guard();err!=nil{return nil,err}}
+		if !rootsMatch(){return nil,ErrStageRefused}
 		if err:=common.Link(filepath.Join(from,f.RelativeName),filepath.Join(to,finalName(g,f)));err!=nil{return nil,ErrStageRecovery}
 		syncDirectory(dst)
 	}
