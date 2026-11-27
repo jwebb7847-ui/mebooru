@@ -78,6 +78,9 @@ func TestManagedPreflightAliasBlacklistAndApprovedNativeManifest(t *testing.T){
 			_,raw,finish,err:=a.admit(ctx,a.Request())
 			if err!=nil{t.Fatal(err)}
 			defer finish(nil)
+			actualPolicy,actualHash,err:=a.policyEvidence(ctx,a.Request())
+			if err!=nil{t.Fatal(err)}
+			if _,err:=acquisitionplan.DecodeApprovedPolicy(actualPolicy,a.Request(),actualHash,raw);err!=nil{t.Fatal("shared policy manifest verification",err)}
 			var rows map[string]map[string]json.RawMessage
 			if json.Unmarshal(raw,&rows)!=nil||len(rows)!=1||rows["41"]!=nil||rows["42"]==nil||string(rows["42"]["tags"])!=`["explicit","dashie"]`{t.Fatalf("bad manifest %s",raw)}
 			if _,_,_,err:=a.admit(ctx,a.Request());err==nil{t.Fatal("replayed approval")}

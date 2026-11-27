@@ -55,3 +55,6 @@ Existing `api/images.go:createImage` calls library Land/LandInPlace, then separa
 
 
 The contained strict manifest is necessary but not sufficient for import: verified alias taxonomy and mapped rating/tags/withheld rules must remain bound to the actual approved preflight. Capture local immutable bounded policy projection separately, with native digest/media ID and exact transfer identity; never reconstruct from a different rule snapshot or accept an untrusted worker-selected digest. Full source/provenance optional fields, job extras and library-side durable authorization are still separate work. Existing `gallery.MergeSource` and `ResolveTagNames` implement source ownership, rating fill and user rejection semantics; `LandInPlace` alone does not. Do not mistake an observed row for a receipt.
+
+
+Shared approved policy artifact encoder/decoder requires independently trusted expected SHA256 and exact original native manifest, checks canonical encoding, bounded rows and strings, one-to-one post IDs/media URLs/source/subcategory and mapped rating/tag agreement. It does not prove semantic truth or approval; never derive expected digest from worker payload. The 64 MiB local artifact is not a single private frame. Library-side durable binding to actual custody and final import projection still outstanding.
