@@ -99,7 +99,7 @@ func TestWorkspaceReclamationThroughActualReceipts(t *testing.T){
 			case "no authority":authorize=nil
 			case "denied":authorize=func(context.Context,workerproto.StageAllocation,terminalReceiptWitness)error{return ErrStageRefused}
 			case "changed original":if err:=os.WriteFile(original,[]byte("changed"),0600);err!=nil{t.Fatal(err)}
-			case "foreign link":if err:=os.Link(original,filepath.Join(workspace,"foreign"));err!=nil{t.Fatal(err)}
+			case "foreign link":if err:=os.Link(original,filepath.Join(filepath.Dir(stage),"foreign"));err!=nil{t.Fatal(err)}
 			case "extra file":if err:=os.WriteFile(filepath.Join(media,"foreign.txt"),[]byte("operator"),0600);err!=nil{t.Fatal(err)}
 			case "changed manifest":if err:=os.WriteFile(manifest,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
 			}
@@ -143,12 +143,14 @@ func TestWorkspaceReclamationThroughActualReceipts(t *testing.T){
 				switch mode{
 				case "changed survivor":if err:=os.WriteFile(sidecar,[]byte("changed"),0600);err!=nil{t.Fatal(err)}
 				case "replaced survivor":
-					if err:=os.Rename(sidecar,sidecar+".retained");err!=nil{t.Fatal(err)}
+					if err:=os.Rename(sidecar,filepath.Join(filepath.Dir(stage),"sidecar.retained"));err!=nil{t.Fatal(err)}
 					if err:=os.WriteFile(sidecar,sidecarBytes,0600);err!=nil{t.Fatal(err)}
 				case "wrong prefix":if err:=os.Remove(sidecar);err!=nil{t.Fatal(err)}
 				case "replaced directory":
-					if err:=os.Rename(media,filepath.Join(workspace,"old-media"));err!=nil{t.Fatal(err)}
+					if err:=os.Rename(media,filepath.Join(filepath.Dir(stage),"old-media"));err!=nil{t.Fatal(err)}
 					if err:=os.Mkdir(media,0700);err!=nil{t.Fatal(err)}
+					if err:=os.WriteFile(original,buf.Bytes(),0600);err!=nil{t.Fatal(err)}
+					if err:=os.WriteFile(sidecar,sidecarBytes,0600);err!=nil{t.Fatal(err)}
 				case "changed canonical":if err:=os.WriteFile(final,[]byte("changed"),0600);err!=nil{t.Fatal(err)}
 				case "changed job":job.Commentary="changed"
 				case "damaged attempt":if err:=os.WriteFile(attempt,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
@@ -159,7 +161,8 @@ func TestWorkspaceReclamationThroughActualReceipts(t *testing.T){
 				if bad{
 					if !absent(result){t.Fatal("unsafe result")}
 					if mode=="changed survivor"{checkBytes(sidecar,[]byte("changed"))}
-					if mode=="replaced survivor"{checkBytes(sidecar,sidecarBytes)}
+					if mode=="replaced survivor"{checkBytes(sidecar,sidecarBytes);checkBytes(filepath.Join(filepath.Dir(stage),"sidecar.retained"),sidecarBytes)}
+					if mode=="replaced directory"{checkBytes(original,buf.Bytes());checkBytes(sidecar,sidecarBytes)}
 					checkBytes(sealed,buf.Bytes())
 					return
 				}
@@ -169,6 +172,7 @@ func TestWorkspaceReclamationThroughActualReceipts(t *testing.T){
 			checkBytes(final,buf.Bytes());checkBytes(prepared,buf.Bytes());checkBytes(sealed,buf.Bytes())
 			if _,err:=a.Workspace(ctx,grant);err==nil{t.Fatal("workspace reopened for writer")}
 			if again,err:=a.Allocate(ctx,grant.Request);err!=nil||again!=grant{t.Fatal("reservation lost",err)}
+			if _,reserved,err:=a.inventory(ctx);err!=nil||reserved!=grant.MaxBytes{t.Fatal("reservation changed",reserved,err)}
 			// Reclamation does not release the operation slot or payload reservation.
 			if err:=a.Close();err!=nil{t.Fatal(err)}
 			a,err=Open(stage,2,4096,authority);if err!=nil{t.Fatal(err)}
