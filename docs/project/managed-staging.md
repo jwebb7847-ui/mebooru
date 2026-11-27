@@ -83,3 +83,8 @@ Exercise actual existing LandInPlace and mapped metadata services through durabl
 ## Isolated receipt checkpoint
 
 Hosted Linux/Windows and owner Apple Silicon Mac passed the corrected new-only receipt candidate including exact preexisting library-derived tag ownership (preserve legacy meta tags), source claims, active mapped attribution and actual read-only receipt recovery. See [native staging checkpoint](../validation/managed-staging-2026-11-27.md). This is a meaningful filesystem/hardware qualification boundary, not complete II.6.4c. No staging deletion until a separate verified reclamation state machine preserves exact terminal evidence and independently establishes cleanup authority. Do not implement a competing full metadata engine or silently change duplicate/restore behavior.
+
+
+### Held duplicate disposition boundary
+
+Existing HTTP multipart upload drops the landed duplicate; operator-owned path references retain aliases. Existing DropDuplicateCopy is best-effort and can log errors without returning them, so managed reconciliation must never infer terminal deletion from LandResult.Dropped. First isolated witness after mapped metadata observes exact noncanonical landed path and actual separately held canonical file (rooted path, regular single link, SHA, size and stable identity), with no mutation or deletion grant. Missing/reactivated/promoted canonicals, multi-post same-image windows, exact one-attempt duplicate disposal and receipt remain separate. Before deleting a managed alias, persist exact target and prove canonical remains available, independently observe DB/path removal and never touch operator-owned aliases. No automatic replay after ambiguous deletion.
