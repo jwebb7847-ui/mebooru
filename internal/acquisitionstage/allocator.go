@@ -157,11 +157,11 @@ func diskFree(path string)(uint64,error){
 }
 
 // The payload reservation includes media/sidecars. Allow for both the
-// original, sealed and publication copies, two maximum-sized manifests, and bounded
+// original, sealed and publication copies, two manifests, one policy artifact and bounded
 // owner records/probe overhead. Conservative free-space preflight only:
 // existing reservations may already occupy space, and other writers may
 // consume the free bytes later. This does not enforce live disk quotas.
-const reservationOverhead = uint64(2*workerproto.MaxMetadataOutputBytes+4<<20)
+const reservationOverhead = uint64(3*workerproto.MaxMetadataOutputBytes+4<<20)
 func(a *Allocator)spaceFor(count int,payload uint64)bool{
 	if count<0||count>maxAllocations||payload>maxReservedBytes||a.freeBytes==nil{return false}
 	required:=3*payload+uint64(count)*reservationOverhead

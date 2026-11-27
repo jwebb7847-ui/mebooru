@@ -69,8 +69,8 @@ func readSeal(operation *os.Root,g workerproto.StageAllocation)(SealedEvidence,e
 	dir,err:=openDir(operation,"sealed")
 	if err!=nil{return zero,err}
 	defer dir.Close()
-	entries,err:=list(dir,3)
-	if err!=nil||len(entries)!=3{return zero,ErrStageRecovery}
+	entries,err:=list(dir,4)
+	if err!=nil||len(entries)<3||len(entries)>4{return zero,ErrStageRecovery}
 	raw,err:=boundedRegularBytes(dir,"seal.json",maxSealRecordBytes)
 	if err!=nil{return zero,err}
 	var e SealedEvidence
@@ -83,6 +83,9 @@ func readSeal(operation *os.Root,g workerproto.StageAllocation)(SealedEvidence,e
 	if err!=nil{return zero,err}
 	defer media.Close()
 	if !exactInventory(media,e.Files){return zero,ErrStageRecovery}
+	if len(entries)==4{
+		if _,err:=readPolicyBinding(dir,e);err!=nil{return zero,ErrStageRecovery}
+	}
 	return e,nil
 }
 
@@ -189,6 +192,9 @@ func(a *Allocator)sealedLocked(ctx context.Context,g workerproto.StageAllocation
 	if err!=nil{return zero,err}
 	verifier,err:=acquisitionplan.NewStrictManifestVerifier(g.Request.Transfer,manifest)
 	if err!=nil{return zero,ErrStageRecovery}
+	if _,err:=sealed.Lstat("policy");err==nil{
+		if _,err:=verifyBoundPolicy(sealed,e,manifest);err!=nil{return zero,err}
+	}else if !errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
 	media,err:=openDir(sealed,"media")
 	if err!=nil{return zero,err}
 	defer media.Close()

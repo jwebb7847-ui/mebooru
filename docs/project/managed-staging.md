@@ -58,3 +58,6 @@ The contained strict manifest is necessary but not sufficient for import: verifi
 
 
 Shared approved policy artifact encoder/decoder requires independently trusted expected SHA256 and exact original native manifest, checks canonical encoding, bounded rows and strings, one-to-one post IDs/media URLs/source/subcategory and mapped rating/tag agreement. It does not prove semantic truth or approval; never derive expected digest from worker payload. The 64 MiB local artifact is not a single private frame. Library-side durable binding to actual custody and final import projection still outstanding.
+
+
+Library-owned bound policy artifact: before publication, independently trusted local observer provides exact approved projection and expected digest; shared decoder verifies native manifest membership, returned IDs must be included. Store projection.json and binding.json (exact allocation, seal digest, projection digest) in exclusive private sealed/policy directory; incomplete binding blocks replay. Reopen rechecks original sealed evidence and bound artifact; no mutable re-mapping. Reserve additional maximum artifact bytes. Production must require actual custody and policy authority before binding/commit, not merely callback-provided digest. Diagnostic publication and landing tests remain disconnected. No final import receipt.
