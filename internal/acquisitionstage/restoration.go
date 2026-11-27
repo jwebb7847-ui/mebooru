@@ -41,10 +41,15 @@ func captureRestoreTarget(ctx context.Context,g *library.Gallery,r record,e Seal
 		var n int
 		if err:=tx.QueryRowContext(ctx,check.q,check.args...).Scan(&n);err!=nil||n!=check.want{return ErrStageRefused}
 	}
+	var oldID int64
+	if err:=tx.QueryRowContext(ctx,`SELECT id FROM image_paths WHERE image_id=? AND path=? AND is_canonical=1`,id,path).Scan(&oldID);err!=nil||oldID<=0{return ErrStageRecovery}
+	preserved,err:=restorePreservationDigest(ctx,tx,id)
+	if err!=nil{return err}
 	if err:=tx.Commit();err!=nil{return ErrStageRecovery}
 	rating,err:=readImageRating(ctx,g,id)
 	if err!=nil{return err}
 	l.RestoreImageID=id;l.RestorePath=name;l.RestoreRating=rating;l.RestoreMarkedMissing=missing==1
+	l.RestorePathID=oldID;l.RestorePreservationSHA256=preserved
 	return nil
 }
 
@@ -66,6 +71,14 @@ func verifyRestoredLanding(ctx context.Context,g *library.Gallery,r record,e Sea
 	}{
 		var n int
 		if err:=tx.QueryRowContext(ctx,check.q,check.args...).Scan(&n);err!=nil||n!=check.want{return ErrStageRecovery}
+	}
+	if l.RestorePathID>0{
+		if l.RestoreMarkedMissing{
+			var oldID int64
+			if err:=tx.QueryRowContext(ctx,`SELECT id FROM image_paths WHERE image_id=? AND path=? AND is_canonical=0`,row.ImageID,filepath.Join(r.GalleryRoot,l.RestorePath)).Scan(&oldID);err!=nil||oldID!=l.RestorePathID{return ErrStageRecovery}
+		}
+		preserved,err:=restorePreservationDigest(ctx,tx,row.ImageID)
+		if err!=nil||preserved!=l.RestorePreservationSHA256{return ErrStageRecovery}
 	}
 	if err:=tx.Commit();err!=nil{return ErrStageRecovery}
 	if l.RestoreRating!=""{
