@@ -281,3 +281,39 @@ func validateCollectionRecords(p *os.Root,l landingAttempt,metadata metadataResu
 	if err!=nil||!bytes.Equal(body,want){return ErrStageRecovery}
 	return nil
 }
+
+
+// A collection witness can be observed after the temporary landing
+// path disappears. The approved row, original empty membership, exact
+// result and current actual home/memberships must all agree. This does
+// not observe files or confer permission to mutate them.
+func newCollectionProof(ctx context.Context,g *library.Gallery,p *os.Root,l landingAttempt,metadata metadataResult,row acquisitionplan.ApprovedPolicyRow)(*collectionState,error){
+	if !l.NewOnly||len(metadata.Rows)!=1||row.Provenance==nil||!validCollectionClaim(row.Provenance){return nil,ErrStageRecovery}
+	if row.Provenance.Collection==""{
+		for _,name:=range []string{"collection-attempt.json","collection-result.json"}{
+			if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return nil,ErrStageRecovery}
+		}
+		return nil,nil
+	}
+	if err:=validateCollectionRecords(p,l,metadata,true);err!=nil{return nil,err}
+	raw,err:=boundedRegularBytes(p,"collection-attempt.json",maxCollectionRecord)
+	var m collectionAttempt
+	if err!=nil||json.Unmarshal(raw,&m)!=nil||!m.NewOnly||m.Name!=row.Provenance.Collection||m.Order!=row.Provenance.CollectionOrder||m.ImageID!=metadata.Rows[0].ImageID{return nil,ErrStageRecovery}
+	expected,err:=expectedCollection(m)
+	if err!=nil{return nil,err}
+	actual,err:=inspectCollection(ctx,g,m.ImageID,m.Name)
+	if err!=nil||!reflect.DeepEqual(expected,actual){return nil,ErrStageRecovery}
+	return &actual.State,nil
+}
+
+// Bind optional completed collection evidence to a subsequent naming
+// attempt. Absence is exact, not a way to bypass an incomplete attempt.
+func collectionResultDigest(p *os.Root)(string,error){
+	if _,err:=p.Lstat("collection-attempt.json");errors.Is(err,os.ErrNotExist){
+		if _,err:=p.Lstat("collection-result.json");!errors.Is(err,os.ErrNotExist){return "",ErrStageRecovery}
+		return "",nil
+	}else if err!=nil{return "",ErrStageRecovery}
+	raw,err:=boundedRegularBytes(p,"collection-result.json",maxCollectionRecord)
+	if err!=nil{return "",err}
+	return digestBytes(raw),nil
+}
