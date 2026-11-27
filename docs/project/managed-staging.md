@@ -78,3 +78,8 @@ Shared gallery.NormalizeSourceInput preserves ordinary API normalization and is 
 ## Narrow new-only terminal diagnostic
 
 Exercise actual existing LandInPlace and mapped metadata services through durable one-attempt markers; refuse duplicate/missing-row SHA, preexisting source/parent references, missing provenance, parent/collection claims, non-PNG or partial approved window. Issue immutable new-receipt.json only for exact complete isolated new-only scope, after verification of actual file, DB, provenance, tags and exact single path/origin. Reopen verifies receipt against current evidence rather than authorizing replay. Not a production receipt, not a deletion grant; retain all evidence. Existing legacy behavior, duplicate drop/restore, relation handling, naming/job extras and real scanner exclusion still need qualification.
+
+
+## Isolated receipt checkpoint
+
+Hosted Linux/Windows passed the corrected new-only receipt candidate including exact preexisting library-derived tag ownership (preserve legacy meta tags), source claims, active mapped attribution and actual read-only receipt recovery. See [native staging checkpoint](../validation/managed-staging-2026-11-27.md). This is a meaningful filesystem/hardware qualification boundary, not complete II.6.4c. No staging deletion until a separate verified reclamation state machine preserves exact terminal evidence and independently establishes cleanup authority. Do not implement a competing full metadata engine or silently change duplicate/restore behavior.
