@@ -42,13 +42,13 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	p,err:=openDir(operation,"publication")
 	if err!=nil{return zero,err}
 	defer p.Close()
-	entries,err:=list(p,9)
-	if err!=nil||len(entries)<2||len(entries)>9{return zero,ErrStageRecovery}
+	entries,err:=list(p,11)
+	if err!=nil||len(entries)<2||len(entries)>11{return zero,ErrStageRecovery}
 	names:=map[string]bool{}
 	for _,entry:=range entries{
 		name:=entry.Name()
 		switch name{
-		case "media","intent.json","attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","new-receipt.json","duplicate-attempt.json":
+		case "media","intent.json","attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","new-receipt.json","duplicate-attempt.json":
 			names[name]=true
 		default:return zero,ErrStageRecovery
 		}
@@ -59,6 +59,9 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		(names["metadata-result.json"]&&!names["metadata-attempt.json"])||
 		(names["relationship-attempt.json"]&&!names["metadata-result.json"])||
 		(names["relationship-result.json"]&&!names["relationship-attempt.json"])||
+		(names["collection-attempt.json"]&&!names["relationship-result.json"])||
+		(names["collection-result.json"]&&!names["collection-attempt.json"])||
+		(names["collection-attempt.json"]&&(names["new-receipt.json"]||names["duplicate-attempt.json"]))||
 		((names["new-receipt.json"]||names["duplicate-attempt.json"])&&!names["metadata-result.json"])||
 		(names["new-receipt.json"]&&names["duplicate-attempt.json"])||
 		((names["new-receipt.json"]||names["duplicate-attempt.json"])&&names["relationship-attempt.json"]&&!names["relationship-result.json"]){return zero,ErrStageRecovery}
@@ -96,6 +99,9 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 				if err!=nil{return zero,ErrStageRecovery}
 				if names["relationship-attempt.json"]{
 					if err:=validateRelationshipRecords(p,result,names["relationship-result.json"]);err!=nil{return zero,err}
+				}
+				if names["collection-attempt.json"]{
+					if err:=validateCollectionRecords(p,landing,result,names["collection-result.json"]);err!=nil{return zero,err}
 				}
 				if names["new-receipt.json"]{
 					if !landing.NewOnly{return zero,ErrStageRecovery}
