@@ -189,13 +189,16 @@ func inspectClientResolution(ctx context.Context,g *library.Gallery,row acquisit
 	return out,nil
 }
 func(a *Allocator)extrasContext(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth extrasAuthority)(extrasAttempt,*os.Root,error){
+	return a.extrasContextMode(ctx,grant,g,auth,false)
+}
+func(a *Allocator)extrasContextMode(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth extrasAuthority,retired bool)(extrasAttempt,*os.Root,error){
 	var zero extrasAttempt
 	if g==nil||g.WatcherRunning()||auth==nil{return zero,nil,ErrStageRefused}
-	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,retired)
 	if err!=nil{return zero,nil,err}
 	defer src.Close();defer dst.Close()
 	fail:=func(err error)(extrasAttempt,*os.Root,error){p.Close();return zero,nil,err}
-	snapshot,err:=a.boundPolicyLocked(ctx,grant)
+	snapshot,err:=a.boundPolicyModeLocked(ctx,grant,retired)
 	if err!=nil{return fail(err)}
 	rows,err:=newOnlyRowsMode(e,snapshot,true)
 	if err!=nil||len(rows)!=1{return fail(ErrStageRefused)}
@@ -279,11 +282,11 @@ func(a *Allocator)applyClientExtras(ctx context.Context,grant workerproto.StageA
 	return err
 }
 func(a *Allocator)observeClientExtrasLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,auth extrasAuthority)(extrasResult,error){
-	return a.observeClientExtrasAfterReleaseLocked(ctx,grant,g,naming,auth,false)
+	return a.observeClientExtrasAfterReleaseLocked(ctx,grant,g,naming,auth,false,false)
 }
-func(a *Allocator)observeClientExtrasAfterReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,auth extrasAuthority,released bool)(extrasResult,error){
+func(a *Allocator)observeClientExtrasAfterReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,auth extrasAuthority,released,retired bool)(extrasResult,error){
 	var zero extrasResult
-	current,p,err:=a.extrasContext(ctx,grant,g,auth)
+	current,p,err:=a.extrasContextMode(ctx,grant,g,auth,retired)
 	if err!=nil{return zero,err}
 	defer p.Close()
 	// The exact metadata/naming binding was structurally verified by
@@ -293,10 +296,10 @@ func(a *Allocator)observeClientExtrasAfterReleaseLocked(ctx context.Context,gran
 	if err!=nil||json.Unmarshal(raw,&m)!=nil||!sameExtrasScope(m,current){return zero,ErrStageRecovery}
 	result,err:=readExtrasResult(p,m,raw)
 	if err!=nil||!reflect.DeepEqual(result.Resolution,current.Resolution){return zero,ErrStageRecovery}
-	if err:=a.observeNamingAfterReleaseLocked(ctx,grant,g,naming,&result.Client,nil,released);err!=nil{return zero,err}
+	if err:=a.observeNamingAfterReleaseLocked(ctx,grant,g,naming,&result.Client,nil,released,retired);err!=nil{return zero,err}
 	all,err:=activeClientImageTags(ctx,g,m.ImageID)
 	if err!=nil||!slices.Equal(all,result.AllTags){return zero,ErrStageRecovery}
-	again,check,err:=a.extrasContext(ctx,grant,g,auth)
+	again,check,err:=a.extrasContextMode(ctx,grant,g,auth,retired)
 	if err!=nil{return zero,err}
 	sameRoot:=sameRelationshipRoot(p,check);check.Close()
 	if !sameRoot||!sameExtrasScope(m,again)||!reflect.DeepEqual(result.Resolution,again.Resolution){return zero,ErrStageRecovery}
