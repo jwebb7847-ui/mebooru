@@ -94,3 +94,6 @@ Isolated single-held duplicate disposal records exact metadata result digest and
 
 
 Restoration is distinct from held duplicate disposal: inherited Ingest reports moved/restored separately from ordinary duplicates. Isolated candidate binds prior image ID/path/missing flag/rating before actual LandInPlace, verifies new canonical and existing ID, preserves the marked-missing old path demotion vs unmarked promotion removal, refuses other aliases/unknown state, and never disposes restored bytes. Known single PNG with measured size only; not placeholder or general production restore. No replay or terminal receipt.
+
+
+Relationship parity preparation: the HTTP parent/child linkage routine is now shared at library.Gallery.LinkParentRelations, preserving existing first-source/operator precedence and late parent arrival. Its best-effort logging is not terminal success evidence. A managed commit must distinguish no matching parent from lookup error, existing manual source from newly linked exact edge, and ambiguous URL matches/conflict; preserve legacy UI/API semantics and use existing relation service rather than writing an independent graph engine.

@@ -35,52 +35,10 @@ import (
 	"github.com/monbooru/monbooru/internal/markup"
 	"github.com/monbooru/monbooru/internal/models"
 	"github.com/monbooru/monbooru/internal/monloader"
-	"github.com/monbooru/monbooru/internal/relations"
 	"github.com/monbooru/monbooru/internal/search"
 	"github.com/monbooru/monbooru/internal/tagger"
 	"github.com/monbooru/monbooru/internal/tags"
 )
-
-func linkParentRelations(g *library.Gallery, imageID int64, url, parentURL string) {
-	if g.RelationsSvc == nil {
-		return
-	}
-	if parentURL != "" {
-		if parentID, ok := gallery.ImageIDBySourceURL(g.DB, parentURL); ok && parentID != imageID {
-			linkFirstSource(g, parentID, imageID)
-		}
-	}
-	if url == "" {
-		return
-	}
-	children, err := gallery.ChildIDsByParentURL(g.DB, url)
-	if err != nil {
-		logx.Warnf("api: child lookup for %q: %v", url, err)
-		return
-	}
-	for _, child := range children {
-		if child == imageID {
-			continue
-		}
-		linkFirstSource(g, imageID, child)
-	}
-}
-
-// Only while the derivative names no source: a fetch must not stack its
-// claim on one the operator declared by hand.
-func linkFirstSource(g *library.Gallery, source, derivative int64) {
-	has, err := relations.HasDerivativeSource(g.DB, derivative)
-	if err != nil {
-		logx.Debugf("api: parent link %d -> %d skipped: %v", source, derivative, err)
-		return
-	}
-	if has {
-		return
-	}
-	if err := g.RelationsSvc.AddDerivativeEdge(source, derivative); err != nil {
-		logx.Debugf("api: parent link %d -> %d skipped: %v", source, derivative, err)
-	}
-}
 
 func (h *Handler) enrichImage(w http.ResponseWriter, r *http.Request) {
 	g, id, ok := h.galleryAndID(w, r)
@@ -150,7 +108,7 @@ func (h *Handler) enrichImage(w http.ResponseWriter, r *http.Request) {
 		h.refuse(w, g, id, "fetch failed while applying tags", http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	linkParentRelations(g, id, prov.url, prov.parentURL)
+	g.LinkParentRelations(id, prov.url, prov.parentURL)
 	failed := "recording the match score"
 	if err := g.Edit(func(d *db.DB) error {
 		if err := gallery.SetSourceSimilarity(d, id, prov.source, prov.postID, body.Similarity); err != nil {
@@ -345,7 +303,7 @@ func (h *Handler) replaceImageFile(w http.ResponseWriter, r *http.Request) {
 			h.refuse(w, g, id, "replace failed while applying tags", http.StatusInternalServerError, "internal_error", err.Error())
 			return sum, nil, false
 		}
-		linkParentRelations(g, id, prov.url, prov.parentURL)
+		g.LinkParentRelations(id, prov.url, prov.parentURL)
 		if step, err := applySourceProvenance(g, id, prov); err != nil {
 			h.refuse(w, g, id, "replace failed while applying "+step, http.StatusInternalServerError, "internal_error", err.Error())
 			return sum, tagWarnings, false
@@ -1065,7 +1023,7 @@ func (h *Handler) createImage(w http.ResponseWriter, r *http.Request) {
 		tagWarnings = append(tagWarnings, clientWarnings...)
 		rejected := append(sum.RejectedTags, clientRejected...)
 		sum.RejectedTags = nil
-		linkParentRelations(g, img.ID, in.url, in.parentURL)
+		g.LinkParentRelations(img.ID, in.url, in.parentURL)
 		if step, err := applySourceProvenance(g, img.ID, in.provenance); err != nil {
 			logx.Warnf("api createImage %s: %v", step, err)
 			contract.WriteError(w, http.StatusInternalServerError, "internal_error", "duplicate detected but the merge failed: "+err.Error())
@@ -1112,7 +1070,7 @@ func (h *Handler) createImage(w http.ResponseWriter, r *http.Request) {
 		contract.WriteError(w, http.StatusInternalServerError, "internal_error", "failed to set provenance fields")
 		return
 	}
-	linkParentRelations(g, img.ID, in.url, in.parentURL)
+	g.LinkParentRelations(img.ID, in.url, in.parentURL)
 	if in.source != "" && len(in.notes) > 0 {
 		if err := g.Edit(func(d *db.DB) error {
 			return gallery.ReplaceSourceAnnotations(d, img.ID, in.source, in.postID, in.notes)

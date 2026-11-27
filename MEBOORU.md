@@ -340,3 +340,6 @@ Workflow adoption [PR #30](https://github.com/jwebb7847-ui/mebooru/pull/30) merg
 
 
 **II.6.4c duplicate fixture handle correction:** defer closure reads current allocator after reopen and checks close result. Windows 45979426640 failures were explicit stage directory handle-in-use errors during test cleanup, not failed disposal assertions. Preserve all tests, rerun both platforms with prepared restoration increment. Hosted verification pending.
+
+
+**II.6.4c shared parent-link behavior candidate:** move inherited HTTP linkParentRelations implementation unchanged to library.Gallery.LinkParentRelations, reuse from all existing HTTP call sites. Actual disposable SQLite relation tests parent-first, child-first, existing operator source, self and missing-parent. Best-effort legacy behavior preserved; future managed caller needs exact relationship outcome and receipt observation rather than treating a successful call as proof. No managed activation yet. Hosted verification pending.
