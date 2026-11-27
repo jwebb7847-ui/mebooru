@@ -9,7 +9,7 @@
 | [Managed worker technical map](project/managed-worker.md) | Accepted architecture, code navigation, known production adapter inventory and limits |
 | [Managed operation inventory](project/managed-operation-inventory.md) | Scope, execution sinks, verified adapters and remaining production obligations |
 | [Managed staging technical design](project/managed-staging.md) | Initial strict allocation contract and ordered staging/receipt implementation |
-| [II.6.4c isolated staging/receipt checkpoint](validation/managed-staging-2026-11-27.md) | Hosted evidence and exact pending owner Mac filesystem/custody test; not full milestone acceptance |
+| [II.6.4c isolated staging/receipt checkpoint](validation/managed-staging-2026-11-27.md) | Hosted evidence and passed owner Mac filesystem/custody test and exact reproduction; not full milestone acceptance |
 | [II.6.4a runtime acceptance](validation/worker-ownership-runtime-2026-11-26.md) | Exact cross-platform evidence, Mac reproduction, archived candidate history |
 | [Historical handoff](project/handoff.md) | Earlier operating context, test evidence and Mac environment |
 | [Bundled pairing](project/bundled-pairing.md) | Existing implementation and trust boundary |
