@@ -10,6 +10,7 @@ import(
 	"unicode/utf8"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 
 // ApprovedPolicyTag retains verified source taxonomy separately from
@@ -21,6 +22,26 @@ type ApprovedPolicyTag struct{
 	Name string
 	Aliases []string
 	LegacyBlacklistName string
+}
+// ApprovedProvenance retains source claims from the exact approved
+// mapping pass, never substitutes them for measured local media facts.
+// A nil value is permitted for earlier isolated diagnostic artifacts,
+// but cannot represent complete source evidence for future production.
+type ApprovedProvenance struct{
+	SourceMD5 string `json:"source_md5,omitempty"`
+	ParentURL string `json:"parent_url,omitempty"`
+	Original string `json:"original,omitempty"`
+	Commentary string `json:"commentary,omitempty"`
+	CommentaryDText string `json:"commentary_dtext,omitempty"`
+	CommentaryTranslated string `json:"commentary_translated,omitempty"`
+	CommentaryTranslatedDText string `json:"commentary_translated_dtext,omitempty"`
+	Notes []contract.NoteBox `json:"notes,omitempty"`
+	PostWidth int `json:"post_width,omitempty"`
+	PostHeight int `json:"post_height,omitempty"`
+	PostSize int64 `json:"post_size,omitempty"`
+	PostExt string `json:"post_ext,omitempty"`
+	Collection string `json:"collection,omitempty"`
+	CollectionOrder int `json:"collection_order,omitempty"`
 }
 type ApprovedPolicyRow struct{
 	PostID string `json:"post_id"`
@@ -34,6 +55,7 @@ type ApprovedPolicyRow struct{
 	WithheldCategories []string `json:"withheld_categories"`
 	UnknownTargets []string `json:"unknown_targets"`
 	Taxonomy []ApprovedPolicyTag `json:"taxonomy"`
+	Provenance *ApprovedProvenance `json:"provenance,omitempty"`
 }
 type ApprovedPolicySnapshot struct{
 	Version int `json:"version"`
@@ -57,12 +79,28 @@ func policyStrings(values []string)bool{
 	for _,v:=range values{if !policyText(v,true){return false}}
 	return true
 }
+func validProvenance(p *ApprovedProvenance)bool{
+	if p==nil{return true}
+	// Bounded source evidence, not the final storage normalization.
+	// Preserve raw DText/HTML for the existing library converters.
+	bounded:=func(value string,limit int)bool{return utf8.ValidString(value)&&utf8.RuneCountInString(value)<=limit}
+	if !bounded(p.SourceMD5,contract.MaxMD5)||!bounded(p.ParentURL,contract.MaxURL)||
+		!bounded(p.Original,contract.MaxOriginal)||!bounded(p.Commentary,contract.MaxDText)||
+		!bounded(p.CommentaryTranslated,contract.MaxDText)||!bounded(p.CommentaryDText,contract.MaxDText)||
+		!bounded(p.CommentaryTranslatedDText,contract.MaxDText)||!bounded(p.PostExt,contract.MaxPostExt)||
+		!bounded(p.Collection,contract.MaxCollection)||len(p.Notes)>500{return false}
+	if p.CollectionOrder<0||(p.Collection==""&&p.CollectionOrder!=0){return false}
+	for _,n:=range p.Notes{
+		if !bounded(n.Body,contract.MaxDText)||!bounded(n.BodyHTML,contract.MaxDText){return false}
+	}
+	return true
+}
 func validPolicyRow(r ApprovedPolicyRow)bool{
 	id,err:=strconv.ParseUint(r.PostID,10,64)
 	if err!=nil||id==0||strconv.FormatUint(id,10)!=r.PostID||!policyDigest(r.NativeSHA256)||
 		!policyText(r.MediaURL,true)||!policyText(r.SourceLabel,true)||!policyText(r.PostURL,false)||
 		!policyStrings(r.Tags)||!policyStrings(r.WithheldTags)||!policyStrings(r.WithheldCategories)||
-		!policyStrings(r.UnknownTargets)||len(r.Taxonomy)>maxPolicyValues{return false}
+		!policyStrings(r.UnknownTargets)||len(r.Taxonomy)>maxPolicyValues||!validProvenance(r.Provenance){return false}
 	switch r.Rating{
 	case "","general","sensitive","questionable","explicit":
 	default:return false

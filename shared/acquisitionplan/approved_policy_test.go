@@ -7,6 +7,7 @@ import(
 	"testing"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
 func TestApprovedPolicyExactManifestAndAuthorityDigest(t *testing.T){
 	manifest:=[]byte(`{"42":{"category":"derpibooru","subcategory":"search","tags":["explicit","dashie"],"meloader_verified_media_url":"https://example.invalid/42.jpg"}}`)
@@ -14,11 +15,12 @@ func TestApprovedPolicyExactManifestAndAuthorityDigest(t *testing.T){
 	q:=workerproto.TransferPlanRequest{Metadata:workerproto.MetadataPlanRequest{JobID:1,Gallery:"A",Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:"https://derpibooru.org/search?q=fixture",First:1,Last:2},Subcategory:"search",PolicyGeneration:1,ManifestSHA256:hex.EncodeToString(sum[:])}
 	r:=ApprovedPolicyRow{PostID:"42",NativeSHA256:strings.Repeat("a",64),MediaURL:"https://example.invalid/42.jpg",
 		SourceLabel:"derpibooru",PostURL:"https://derpibooru.org/images/42",Rating:"explicit",Tags:[]string{"character:rainbow_dash","rating:explicit"},
-		Taxonomy:[]ApprovedPolicyTag{{Listed:"dashie",Category:"character",Name:"rainbow dash",Aliases:[]string{"dashie"}}}}
+		Taxonomy:[]ApprovedPolicyTag{{Listed:"dashie",Category:"character",Name:"rainbow dash",Aliases:[]string{"dashie"}}},
+		Provenance:&ApprovedProvenance{SourceMD5:"0123456789abcdef0123456789abcdef",Original:"https://example.invalid/upstream",CommentaryDText:"[b]fixture[/b]",Notes:[]contract.NoteBox{{X:1,Y:2,W:3,H:4,Body:"fixture"}},PostWidth:640,PostHeight:480,PostSize:12345,PostExt:"jpg"}}
 	body,digest,err:=EncodeApprovedPolicy(q,[]ApprovedPolicyRow{r})
 	if err!=nil{t.Fatal(err)}
 	out,err:=DecodeApprovedPolicy(body,q,digest,manifest)
-	if err!=nil||len(out.Rows)!=1||out.Rows[0].PostID!="42"{t.Fatalf("projection %+v %v",out,err)}
+	if err!=nil||len(out.Rows)!=1||out.Rows[0].PostID!="42"||out.Rows[0].Provenance==nil||out.Rows[0].Provenance.PostSize!=12345||out.Rows[0].Provenance.Notes[0].Body!="fixture"{t.Fatalf("projection %+v %v",out,err)}
 	for _,mode:=range []string{"wrong ID","wrong URL","extra row","wrong gallery","wrong digest","changed rating","wrong manifest","duplicate key","unknown field","invalid UTF8"}{
 		t.Run(mode,func(t *testing.T){
 			rows:=[]ApprovedPolicyRow{r}
@@ -50,4 +52,8 @@ func TestApprovedPolicyExactManifestAndAuthorityDigest(t *testing.T){
 		})
 	}
 	if _,_,err:=EncodeApprovedPolicy(q,[]ApprovedPolicyRow{r,r});err==nil{t.Fatal("duplicate ID")}
+	for _,bad:=range []ApprovedProvenance{{CommentaryDText:strings.Repeat("a",contract.MaxDText+1)},{Notes:make([]contract.NoteBox,501)},{Original:string([]byte{0xff})},{CollectionOrder:1}}{
+		x:=r;x.Provenance=&bad
+		if _,_,err:=EncodeApprovedPolicy(q,[]ApprovedPolicyRow{x});err==nil{t.Fatal("unbounded or malformed source details")}
+	}
 }
