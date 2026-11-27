@@ -142,8 +142,8 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 				if names["extras-attempt.json"]{
 					if err:=validateExtrasRecords(p,landing,result,names["extras-result.json"]);err!=nil{return zero,err}
 					if plan!=nil{
-						m,_,err:=readExtrasAttempt(p,result)
-						if err!=nil||!samePlannedJob(plan.Job,m.Job){return zero,ErrStageRecovery}
+						extra,_,err:=readExtrasAttempt(p,result)
+						if err!=nil||!samePlannedJob(plan.Job,extra.Job)||!plannedClientCompatible(plan.Client,extra.Resolution,m,result,false){return zero,ErrStageRecovery}
 					}
 				}
 				if names["restored-receipt.json"]{
