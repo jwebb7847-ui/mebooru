@@ -21,7 +21,7 @@ import (
 
 // Isolated owner-authorized add-only client tags after relocation.
 // No worker-supplied extras authority; no source/commentary override,
-// custom via, collection or unrated rating mutation in this candidate.
+// custom via or unrated rating mutation in this candidate.
 type extrasAuthority func(context.Context,workerproto.StageAllocation)(contract.JobExtras,error)
 const maxExtrasRecord = 512 << 10
 const maxClientTags = 128
@@ -197,7 +197,7 @@ func(a *Allocator)extrasContext(ctx context.Context,grant workerproto.StageAlloc
 	fail:=func(err error)(extrasAttempt,*os.Root,error){p.Close();return zero,nil,err}
 	snapshot,err:=a.boundPolicyLocked(ctx,grant)
 	if err!=nil{return fail(err)}
-	rows,err:=newOnlyRows(e,snapshot)
+	rows,err:=newOnlyRowsMode(e,snapshot,true)
 	if err!=nil||len(rows)!=1{return fail(ErrStageRefused)}
 	l,err:=readLandingAttempt(p,r)
 	if err!=nil||!l.NewOnly{return fail(ErrStageRefused)}
