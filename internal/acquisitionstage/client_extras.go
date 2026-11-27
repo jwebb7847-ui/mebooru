@@ -37,6 +37,7 @@ type clientResolution struct{
 	Category int64 `json:"category"`
 	Bare string `json:"bare"`
 	ID int64 `json:"id"`
+	Canonical bool `json:"canonical"`
 	Rejected bool `json:"rejected"`
 	Closure []int64 `json:"closure"`
 }
@@ -73,7 +74,7 @@ func validClientResolutions(rs []clientResolution)bool{
 	for i,r:=range rs{
 		if r.Form==""||len(r.Form)>1024||r.Bare==""||len(r.Bare)>1024||r.Category<=0||r.ID<0||
 			(i>0&&rs[i-1].Form>=r.Form)||!sortedClientIDs(r.Closure,maxClientClosure){return false}
-		if r.ID==0{if r.Rejected||len(r.Closure)!=0{return false}
+		if r.ID==0{if r.Canonical||r.Rejected||len(r.Closure)!=0{return false}
 		}else if r.Rejected{if len(r.Closure)!=0{return false}
 		}else if !slices.Contains(r.Closure,r.ID){return false}
 	}
@@ -89,7 +90,7 @@ func expectedExtras(m extrasAttempt,raw []byte,after []clientResolution)(extrasR
 		if b.Form!=v.Form||b.Category!=v.Category||b.Bare!=v.Bare||v.ID<=0{return zero,ErrStageRecovery}
 		if b.ID>0{
 			if !reflect.DeepEqual(b,v){return zero,ErrStageRecovery}
-		}else if v.Rejected||len(v.Closure)!=1||v.Closure[0]!=v.ID{return zero,ErrStageRecovery}
+		}else if !v.Canonical||v.Rejected||len(v.Closure)!=1||v.Closure[0]!=v.ID{return zero,ErrStageRecovery}
 		if v.Rejected{out.Rejected=append(out.Rejected,v.Form);continue}
 		out.Client.TagIDs=append(out.Client.TagIDs,v.ID)
 		out.AllTags=append(out.AllTags,v.Closure...)
@@ -172,7 +173,7 @@ func inspectClientResolution(ctx context.Context,g *library.Gallery,row acquisit
 		tag,err:=g.TagSvc.FindTag(bare,cat)
 		if errors.Is(err,tags.ErrTagNotFound){out=append(out,v);continue}
 		if err!=nil||tag==nil||tag.CategoryID==ratingID{return nil,ErrStageRefused}
-		v.ID=tag.ID;v.Rejected=tag.Rejected
+		v.ID=tag.ID;v.Canonical=tag.Name==bare&&tag.CategoryID==cat;v.Rejected=tag.Rejected
 		if !v.Rejected{
 			ids,err:=g.TagSvc.ImplicationClosure(tag.ID)
 			if err!=nil||len(ids)>maxClientClosure{return nil,ErrStageRecovery}
