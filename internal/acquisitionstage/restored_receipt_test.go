@@ -18,7 +18,8 @@ import(
 	"github.com/monbooru/monbooru/internal/library"
 )
 func TestComposedRestoredReceipt(t *testing.T){
-	for _,mode:=range []string{"marked missing","unmarked missing","DB reopen","unrated prior","nested destination","collision","missing relationships",
+	for _,mode:=range []string{"marked missing","unmarked missing","DB reopen","unrated prior","nested destination","collision","manual annotation","missing relationships",
+		"changed prior note before metadata","changed prior collection before metadata","changed old row before metadata",
 		"nonempty extras","no authority","old path requested","old path returns before move","changed state after intent","revoked after intent","revoked after link",
 		"DB move failure","revoked after DB move","lost naming result","damaged naming result","changed canonical","same bytes replacement",
 		"old path returns after receipt","changed old row","changed final row","changed note","changed rating","changed membership","changed source","changed job","changed naming","damaged receipt","receipt revoked"}{
@@ -49,6 +50,11 @@ func TestComposedRestoredReceipt(t *testing.T){
 			if _,err:=g.DB.Write.Exec(`UPDATE images SET note='operator note' WHERE id=?`,id);err!=nil{t.Fatal(err)}
 			order:=3
 			if err:=gallery.SetHomeCollection(g.DB,id,"original-home",&order);err!=nil{t.Fatal(err)}
+			var oldPathID int64
+			if err:=g.DB.Read.QueryRow(`SELECT id FROM image_paths WHERE path=?`,old).Scan(&oldPathID);err!=nil{t.Fatal(err)}
+			if mode=="manual annotation"{
+				if _,err:=g.DB.Write.Exec(`INSERT INTO image_annotations(image_id,x,y,w,h,body,manual) VALUES(?,1,2,3,4,'operator annotation',1)`,id);err!=nil{t.Fatal(err)}
+			}
 			if err:=os.Remove(old);err!=nil{t.Fatal(err)}
 			marked:=mode!="unmarked missing"
 			if marked{if _,err:=gallery.SetMissing(g.DB,id,true);err!=nil{t.Fatal(err)}}
@@ -56,6 +62,16 @@ func TestComposedRestoredReceipt(t *testing.T){
 			if _,err:=a.publishPrepared(ctx,grant);err!=nil{t.Fatal(err)}
 			if err:=a.landRestoredPrepared(ctx,grant,g);err!=nil{t.Fatal(err)}
 			if err:=a.landRestoredPrepared(ctx,grant,g);err==nil{t.Fatal("restoration replayed")}
+			switch mode{
+			case "changed prior note before metadata":if _,err:=g.DB.Write.Exec(`UPDATE images SET note='changed' WHERE id=?`,id);err!=nil{t.Fatal(err)}
+			case "changed prior collection before metadata":if _,err:=g.DB.Write.Exec(`UPDATE image_collections SET position=9 WHERE image_id=?`,id);err!=nil{t.Fatal(err)}
+			case "changed old row before metadata":if _,err:=g.DB.Write.Exec(`UPDATE image_paths SET id=id+10000 WHERE path=?`,old);err!=nil{t.Fatal(err)}
+			}
+			if mode=="changed prior note before metadata"||mode=="changed prior collection before metadata"||mode=="changed old row before metadata"{
+				if _,err:=a.applyMappedMetadata(ctx,grant,g);err==nil{t.Fatal("changed pre-restoration invariant accepted")}
+				if _,err:=os.Stat(filepath.Join(stage,grant.Request.OperationID,"publication","metadata-attempt.json"));!os.IsNotExist(err){t.Fatal("unexpected metadata attempt",err)}
+				return
+			}
 			metadata,err:=a.applyMappedMetadata(ctx,grant,g)
 			if err!=nil||len(metadata)!=1||metadata[0].ImageID!=id||metadata[0].Rating!=wantRating{t.Fatal("metadata",err,metadata)}
 			if mode!="missing relationships"{if err:=a.applyRelationships(ctx,grant,g);err!=nil{t.Fatal(err)}}
@@ -134,7 +150,8 @@ func TestComposedRestoredReceipt(t *testing.T){
 			if _,err:=os.Stat(old);!os.IsNotExist(err){t.Fatal("old missing path recreated",err)}
 			if count(`SELECT COUNT(*) FROM images WHERE id=? AND canonical_path=? AND is_missing=0 AND note='operator note' AND series='original-home' AND series_order=3 AND origin=?`,id,final,origin)!=1{t.Fatal("restored identity or state changed")}
 			wantOld:=0;if marked{wantOld=1}
-			if count(`SELECT COUNT(*) FROM image_paths WHERE path=? AND image_id=? AND is_canonical=0`,old,id)!=wantOld{t.Fatal("old missing row disposition")}
+			if count(`SELECT COUNT(*) FROM image_paths WHERE path=? AND image_id=? AND is_canonical=0 AND id=?`,old,id,oldPathID)!=wantOld{t.Fatal("old missing row disposition")}
+			if mode=="manual annotation"&&count(`SELECT COUNT(*) FROM image_annotations WHERE image_id=? AND manual=1 AND body='operator annotation'`,id)!=1{t.Fatal("manual annotation lost")}
 			if count(`SELECT COUNT(*) FROM image_tags it JOIN tags t ON t.id=it.tag_id WHERE it.image_id=? AND t.name='prior'`,id)!=1{t.Fatal("prior tag lost")}
 			rating,err:=readImageRating(ctx,g,id);if err!=nil||rating!=wantRating{t.Fatal("rating",rating,err)}
 			stored,err:=a.finishRestoredReceipt(ctx,grant,g,naming,extras)
@@ -144,7 +161,7 @@ func TestComposedRestoredReceipt(t *testing.T){
 				stored,err=a.observeRestoredReceipt(ctx,grant,g,naming,extras)
 			}
 			rel,relErr:=filepath.Rel(s.GalleryRoot,final)
-			if err!=nil||relErr!=nil||stored.Kind!=restoredReceiptKind||stored.Row.ImageID!=id||stored.Row.Name!=rel||stored.PriorRating!=priorRating||stored.OldMarkedMissing!=marked{t.Fatal("receipt",stored,err)}
+			if err!=nil||relErr!=nil||stored.Kind!=restoredReceiptKind||stored.Row.ImageID!=id||stored.Row.Name!=rel||stored.PriorRating!=priorRating||stored.OldMarkedMissing!=marked||stored.OldPathID!=oldPathID||!validDigest(stored.PreservationSHA256){t.Fatal("receipt",stored,err)}
 			if _,err:=a.finishRestoredReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("receipt overwritten")}
 			if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("wrong new-image receipt")}
 			if _,err:=a.finishHeldReceipt(ctx,grant,g,extras);err==nil{t.Fatal("wrong held receipt")}
