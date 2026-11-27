@@ -49,7 +49,8 @@ func TestVerifyStrictTransferResult(t *testing.T){
 			got,err:=c.VerifyTransferResult(run,[]byte(stdout))
 			if mode=="valid"{
 				digest:=sha256.Sum256(data)
-				if err!=nil||len(got)!=1||got[0].ID!="42"||got[0].SHA256!=hex.EncodeToString(digest[:])||got[0].Size!=int64(len(data)){t.Fatalf("result %+v %v",got,err)}
+				metaDigest:=sha256.Sum256([]byte(sidecar))
+				if err!=nil||len(got)!=1||got[0].ID!="42"||got[0].SHA256!=hex.EncodeToString(digest[:])||got[0].Size!=int64(len(data))||got[0].SidecarSize!=int64(len(sidecar))||got[0].SidecarSHA256!=hex.EncodeToString(metaDigest[:]){t.Fatalf("result %+v %v",got,err)}
 			}else if mode=="empty"{
 				if err!=nil||len(got)!=0{t.Fatal("empty legitimate result",err)}
 			}else if got!=nil||err==nil{t.Fatalf("accepted %s %+v",mode,got)}

@@ -27,3 +27,8 @@ No product decision is requested here; these are incremental engineering constra
 ## Initial rooted allocation candidate
 
 The local-only allocator uses an existing dedicated owner-selected canonical staging directory and requires the caller's exclusive profile ownership. It checks all live gallery roots in both directions by actual ancestor identity; scope and bounds are supplied by trusted owner authority, not the wire. Exclusive operation directory contains canonical synced allocation.json and an opaque transfer-ID workspace. Exact reallocation/reopen returns the same reservation, never authorizes another launch; ambiguous entries block allocation and are retained. Candidate reservation cap 1024 entries / 16 GiB aggregate ceiling, selected lower by owner. No reclamation, live byte quota, durable gallery identity, destination volume qualification, power-loss directory durability or production binding yet. No filesystem mutation outside the dedicated staging root.
+
+
+## Initial sealed-copy primitive
+
+The strict runtime result now binds native sidecar bytes as well as media bytes. A local library-only copy helper accepts trusted manifest/result after independently proven cleanup; checks exact flat inventory and native evidence, canonical ID filename and supported extension, file count/byte limits including sidecars, rooted regular single-link objects; copies exclusively to a fresh owner root, fsyncs and independently rechecks all source/destination hashes. No caller-supplied path or arbitrary write from IPC. Failed copy retains incomplete destination without publishing success; durable state and actual custody binding remain later increments. A same-user adversary can still mutate files; this is not sandboxing or remote source authenticity.

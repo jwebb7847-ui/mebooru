@@ -12,6 +12,7 @@ import(
 	"path/filepath"
 	"reflect"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 )
@@ -24,6 +25,8 @@ type VerifiedTransferFile struct{
 	RelativeName string
 	Size int64
 	SHA256 string
+	SidecarSize int64
+	SidecarSHA256 string
 }
 
 const maxTransferFileBytes int64=512<<20
@@ -42,10 +45,10 @@ func(c TransferCommands)VerifyTransferResult(ctx context.Context,stdout []byte)(
 	if err!=nil||actual!=c.mediaRoot{return nil,ErrStrictTransferPlan}
 	info,err:=os.Lstat(c.mediaRoot)
 	if err!=nil||!info.IsDir(){return nil,ErrStrictTransferPlan}
-	var approved map[string]map[string]json.RawMessage
-	if json.Unmarshal(c.manifest,&approved)!=nil||len(approved)==0{return nil,ErrStrictTransferPlan}
+	verifier,err:=NewStrictManifestVerifier(c.request,c.manifest)
+	if err!=nil{return nil,err}
 	entries,err:=os.ReadDir(c.mediaRoot)
-	if err!=nil||len(entries)>2*len(approved){return nil,ErrStrictTransferPlan}
+	if err!=nil||len(entries)>2*len(verifier.approved){return nil,ErrStrictTransferPlan}
 	inventory:=make(map[string]bool,len(entries))
 	for _,entry:=range entries{
 		if !entry.Type().IsRegular(){return nil,ErrStrictTransferPlan}
@@ -66,27 +69,55 @@ func(c TransferCommands)VerifyTransferResult(ctx context.Context,stdout []byte)(
 		delete(inventory,name);delete(inventory,name+".json")
 		sidecar,err:=readRegularBounded(line+".json",workerproto.MaxMetadataPostBytes)
 		if err!=nil{return nil,ErrStrictTransferPlan}
-		var native map[string]json.RawMessage
-		if json.Unmarshal(sidecar,&native)!=nil{return nil,ErrStrictTransferPlan}
-		var media string
-		if json.Unmarshal(native[StrictMediaURLKey],&media)!=nil{return nil,ErrStrictTransferPlan}
-		row,err:=json.Marshal([]any{[]any{3,media,json.RawMessage(sidecar)}})
-		if err!=nil{return nil,ErrStrictTransferPlan}
-		parsed,err:=workerproto.DecodeMetadataEvidence(row,c.request.Metadata,c.request.Subcategory)
-		if err!=nil||len(parsed)!=1{return nil,ErrStrictTransferPlan}
-		id:=parsed[0].ID
-		if seen[id]||approved[id]==nil||!strings.HasPrefix(name,id+"."){return nil,ErrStrictTransferPlan}
-		record:=map[string]json.RawMessage{"category":native["category"],"subcategory":native["subcategory"],StrictMediaURLKey:native[StrictMediaURLKey]}
-		for k,v:=range native{if StrictEvidenceField(k){record[k]=v}}
-		if !sameEvidence(approved[id],record){return nil,ErrStrictTransferPlan}
+		id,err:=verifier.verify(sidecar)
+		if err!=nil||seen[id]||!strings.HasPrefix(name,id+"."){return nil,ErrStrictTransferPlan}
 		size,digest,err:=hashTransferFile(ctx,line,maxTransferTotalBytes-total)
 		if err!=nil{return nil,ErrStrictTransferPlan}
 		total+=size
 		seen[id]=true
-		out=append(out,VerifiedTransferFile{ID:id,RelativeName:name,Size:size,SHA256:digest})
+		sidecarDigest:=sha256.Sum256(sidecar)
+		out=append(out,VerifiedTransferFile{ID:id,RelativeName:name,Size:size,SHA256:digest,SidecarSize:int64(len(sidecar)),SidecarSHA256:hex.EncodeToString(sidecarDigest[:])})
 	}
 	if sc.Err()!=nil||len(inventory)!=0||ctx.Err()!=nil{return nil,ErrStrictTransferPlan}
 	return out,nil
+}
+
+// StrictManifestVerifier is a bounded, immutable local comparison helper.
+// The caller must independently hold the trusted approved manifest;
+// a request digest alone is not an approval or an ingest receipt.
+type StrictManifestVerifier struct{
+	request workerproto.TransferPlanRequest
+	approved map[string]map[string]json.RawMessage
+}
+func NewStrictManifestVerifier(q workerproto.TransferPlanRequest,manifest []byte)(*StrictManifestVerifier,error){
+	if !workerproto.ValidTransferPlan(q)||len(manifest)==0||len(manifest)>workerproto.MaxMetadataOutputBytes||!utf8.Valid(manifest){return nil,ErrStrictTransferPlan}
+	sum:=sha256.Sum256(manifest)
+	if hex.EncodeToString(sum[:])!=q.ManifestSHA256{return nil,ErrStrictTransferPlan}
+	var approved map[string]map[string]json.RawMessage
+	if json.Unmarshal(manifest,&approved)!=nil||len(approved)==0||len(approved)>int(q.Metadata.Last-q.Metadata.First+1){return nil,ErrStrictTransferPlan}
+	return &StrictManifestVerifier{request:q,approved:approved},nil
+}
+func(v *StrictManifestVerifier)VerifySidecar(id string,sidecar []byte)error{
+	actual,err:=v.verify(sidecar)
+	if err!=nil||actual!=id{return ErrStrictTransferPlan}
+	return nil
+}
+func(v *StrictManifestVerifier)verify(sidecar []byte)(string,error){
+	if v==nil||len(sidecar)==0||len(sidecar)>workerproto.MaxMetadataPostBytes||!utf8.Valid(sidecar){return "",ErrStrictTransferPlan}
+	var native map[string]json.RawMessage
+	if json.Unmarshal(sidecar,&native)!=nil{return "",ErrStrictTransferPlan}
+	var media string
+	if json.Unmarshal(native[StrictMediaURLKey],&media)!=nil{return "",ErrStrictTransferPlan}
+	row,err:=json.Marshal([]any{[]any{3,media,json.RawMessage(sidecar)}})
+	if err!=nil{return "",ErrStrictTransferPlan}
+	parsed,err:=workerproto.DecodeMetadataEvidence(row,v.request.Metadata,v.request.Subcategory)
+	if err!=nil||len(parsed)!=1{return "",ErrStrictTransferPlan}
+	id:=parsed[0].ID
+	if v.approved[id]==nil{return "",ErrStrictTransferPlan}
+	record:=map[string]json.RawMessage{"category":native["category"],"subcategory":native["subcategory"],StrictMediaURLKey:native[StrictMediaURLKey]}
+	for k,value:=range native{if StrictEvidenceField(k){record[k]=value}}
+	if !sameEvidence(v.approved[id],record){return "",ErrStrictTransferPlan}
+	return id,nil
 }
 
 func sameEvidence(a,b map[string]json.RawMessage)bool{
