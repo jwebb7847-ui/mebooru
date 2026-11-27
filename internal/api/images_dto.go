@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/library"
-	"github.com/monbooru/monbooru/internal/markup"
 	"github.com/monbooru/monbooru/internal/models"
 )
 
@@ -99,52 +97,12 @@ type provenance struct {
 	withheld   gallery.Withheld
 }
 
-// The limits apply to what is stored, after a DText body has superseded
-// the plain one.
+// Use the same source normalization as managed library acquisition.
 func (p provenanceJSON) read() (provenance, error) {
-	if err := validateMaxLen("commentary_dtext", p.CommentaryDText, contract.MaxDText); err != nil {
-		return provenance{}, err
-	}
-	if err := validateMaxLen("commentary_translated_dtext", p.CommentaryTranslatedDText, contract.MaxDText); err != nil {
-		return provenance{}, err
-	}
-	v := provenance{
-		source:     strings.TrimSpace(p.Source),
-		postID:     strings.TrimSpace(p.PostID),
-		url:        strings.TrimSpace(p.URL),
-		parentURL:  strings.TrimSpace(p.ParentURL),
-		commentary: commentaryFromInput(p.Commentary, p.CommentaryDText),
-		translated: commentaryFromInput(p.CommentaryTranslated, p.CommentaryTranslatedDText),
-		original:   strings.TrimSpace(p.Original),
-		postFile:   postFileFrom(p.PostWidth, p.PostHeight, p.PostSize, p.PostExt),
-		withheld:   gallery.Withheld{Categories: p.WithheldCategories, Tags: p.WithheldTags},
-	}
-	v.notes = annotationsFromInput(p.Notes, v.url)
-	if err := validateImageSource(v.source); err != nil {
-		return v, err
-	}
-	if err := validateMaxLen("post_id", v.postID, contract.MaxPostID); err != nil {
-		return v, err
-	}
-	if err := validateImageURL(v.url); err != nil {
-		return v, err
-	}
-	if err := validateImageURL(v.parentURL); err != nil {
-		return v, fmt.Errorf("parent_url: %v", err)
-	}
-	if err := validateMaxLen("commentary", v.commentary, contract.MaxCommentary); err != nil {
-		return v, err
-	}
-	if err := validateMaxLen("commentary_translated", v.translated, contract.MaxCommentary); err != nil {
-		return v, err
-	}
-	if err := validateMaxLen("original", v.original, contract.MaxOriginal); err != nil {
-		return v, err
-	}
-	if err := validateMaxLen("post_ext", v.postFile.Ext, contract.MaxPostExt); err != nil {
-		return v, err
-	}
-	return v, nil
+	v,err:=gallery.NormalizeSourceInput(p.PostFields)
+	return provenance{source:v.Source,postID:v.PostID,url:v.URL,parentURL:v.ParentURL,
+		commentary:v.Commentary,translated:v.Translated,original:v.Original,
+		notes:v.Notes,postFile:v.PostFile,withheld:v.Withheld},err
 }
 
 func validateCollection(collection string, order *int) error {
@@ -248,34 +206,10 @@ func firstRunes(s string, n int) string {
 // DText wins over the plain rendering: only a booru's own markup still
 // says what the artist wrote.
 func commentaryFromInput(plain, dtext string) string {
-	if strings.TrimSpace(dtext) == "" {
-		return strings.TrimSpace(plain)
-	}
-	body := markup.FromDText(dtext)
-	// Converting can grow a body, so the cap applies to what is stored.
-	return firstRunes(body, contract.MaxCommentary)
+	return gallery.SourceCommentaryFromInput(plain,dtext)
 }
-
 func annotationsFromInput(in []contract.NoteBox, postURL string) []models.Annotation {
-	if len(in) > maxAnnotations {
-		in = in[:maxAnnotations]
-	}
-	var base *url.URL
-	if postURL != "" {
-		base, _ = url.Parse(postURL)
-	}
-	out := make([]models.Annotation, 0, len(in))
-	for _, n := range in {
-		body := n.Body
-		if n.BodyHTML != "" {
-			body = markup.FromHTML(firstRunes(n.BodyHTML, maxAnnotationBodyHTMLLen), base)
-		}
-		body = firstRunes(body, maxAnnotationBodyLen)
-		out = append(out, models.Annotation{
-			X: max(n.X, 0), Y: max(n.Y, 0), W: max(n.W, 0), H: max(n.H, 0), Body: body,
-		})
-	}
-	return out
+	return gallery.SourceAnnotationsFromInput(in,postURL)
 }
 
 type imageTagJSON struct {
