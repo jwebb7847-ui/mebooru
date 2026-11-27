@@ -42,13 +42,13 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	p,err:=openDir(operation,"publication")
 	if err!=nil{return zero,err}
 	defer p.Close()
-	entries,err:=list(p,25)
-	if err!=nil||len(entries)<2||len(entries)>25{return zero,ErrStageRecovery}
+	entries,err:=list(p,26)
+	if err!=nil||len(entries)<2||len(entries)>26{return zero,ErrStageRecovery}
 	names:=map[string]bool{}
 	for _,entry:=range entries{
 		name:=entry.Name()
 		switch name{
-		case "media","intent.json","attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json":
+		case "media","intent.json","attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json","operation-closed.json":
 			names[name]=true
 		default:return zero,ErrStageRecovery
 		}
@@ -79,6 +79,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		(names["prepared-release-result.json"]&&!names["prepared-release-attempt.json"])||
 		(names["sealed-retirement-attempt.json"]&&!names["prepared-release-result.json"])||
 		(names["sealed-retirement-result.json"]&&!names["sealed-retirement-attempt.json"])||
+		(names["operation-closed.json"]&&!names["sealed-retirement-result.json"])||
 		(names["restored-receipt.json"]&&(!names["naming-result.json"]||names["extras-attempt.json"]||names["held-composition.json"]||names["collection-attempt.json"]||names["new-receipt.json"]||names["duplicate-attempt.json"]))||
 		((names["new-receipt.json"]||names["duplicate-attempt.json"])&&!names["metadata-result.json"])||
 		(names["new-receipt.json"]&&names["duplicate-attempt.json"])||
@@ -148,6 +149,9 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 				}
 				if names["prepared-release-attempt.json"]{
 					if err:=validatePreparedReleaseRecords(p,media,r,e,names["prepared-release-result.json"]);err!=nil{return zero,err}
+				}
+				if names["operation-closed.json"]{
+					if _,err:=readOperationClosure(p,r,e);err!=nil{return zero,err}
 				}
 				if names["duplicate-attempt.json"]{
 					if landing.NewOnly{return zero,ErrStageRecovery}
