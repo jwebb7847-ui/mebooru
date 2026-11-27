@@ -67,3 +67,9 @@ Mapped metadata candidate: after exact bound policy and landing observation, per
 
 
 Mapped-phase result is a bounded canonical owner record, tied to metadata attempt digest and per-post observed image ID, effective rating, rejections and resolved tag IDs. Reopen rechecks actual bound policy, landing, DB/file identity and source/tag/rating observations; missing record after attempt is uncertain, never replay. No terminal import or reclamation permission. Existing multi-transaction service semantics still require actual complete provenance/duplicate policy and final receipt design.
+
+
+Approved source detail capture: preserve original mapped commentary/DText/translation, upstream/parent, notes, claimed MD5 and declared file facts/collection in immutable projection alongside native digest and measured transfer hashes (not equivalent). Explicit capture needed for eventual full commit; nil remains diagnostic fixture compatibility only. Apply existing normalization and provenance services in later increment; job extras and duplicate semantics not yet handled. Bounded record allowance increased to 8 MiB for phase records.
+
+
+Shared gallery.NormalizeSourceInput preserves ordinary API normalization and is used by the managed mapped phase to apply exact approved source claims through existing MergeSource and ApplySourceProvenance. Read-only verification checks supplied fields/notes, not empty fields that preserve existing values. Source size and MD5 are claims, never measured local facts. Parent URL stored but graph relations, collections, job extras, actual duplicate-drop and final terminal receipt not yet integrated. No production dispatch.

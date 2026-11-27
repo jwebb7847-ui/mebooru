@@ -12,6 +12,7 @@ import(
 	"strings"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/db"
 	"github.com/monbooru/monbooru/internal/gallery"
@@ -83,6 +84,25 @@ func validMappedRow(r acquisitionplan.ApprovedPolicyRow)bool{
 		r.SourceLabel!=""&&strings.TrimSpace(r.SourceLabel)==r.SourceLabel&&
 		len(r.UnknownTargets)==0&&canonicalRating(r.Rating)
 }
+// Apply the existing import normalization to exact source claims.
+// Collection and relationship application are distinct later stages;
+// do not silently accept collection requests in this diagnostic path.
+func normalizedMappedSource(r acquisitionplan.ApprovedPolicyRow)(gallery.SourceInput,string,error){
+	var zero gallery.SourceInput
+	f:=contract.PostFields{Source:r.SourceLabel,PostID:r.PostID,URL:r.PostURL,Tags:r.Tags,
+		WithheldCategories:r.WithheldCategories,WithheldTags:r.WithheldTags}
+	var md5 string
+	if p:=r.Provenance;p!=nil{
+		if p.Collection!=""||p.CollectionOrder!=0{return zero,"",ErrStageRefused}
+		md5=strings.TrimSpace(p.SourceMD5)
+		f.ParentURL=p.ParentURL;f.Original=p.Original;f.Commentary=p.Commentary;f.CommentaryDText=p.CommentaryDText
+		f.CommentaryTranslated=p.CommentaryTranslated;f.CommentaryTranslatedDText=p.CommentaryTranslatedDText
+		f.Notes=p.Notes;f.PostWidth=p.PostWidth;f.PostHeight=p.PostHeight;f.PostSize=p.PostSize;f.PostExt=p.PostExt
+	}
+	input,err:=gallery.NormalizeSourceInput(f)
+	if err!=nil||input.Source!=r.SourceLabel||input.PostID!=r.PostID||input.URL!=r.PostURL{return zero,"",ErrStageRefused}
+	return input,md5,nil
+}
 func selectMappedRows(snapshot acquisitionplan.ApprovedPolicySnapshot,e SealedEvidence)([]acquisitionplan.ApprovedPolicyRow,error){
 	byID:=map[string]acquisitionplan.ApprovedPolicyRow{}
 	for _,r:=range snapshot.Rows{byID[r.PostID]=r}
@@ -90,6 +110,7 @@ func selectMappedRows(snapshot acquisitionplan.ApprovedPolicySnapshot,e SealedEv
 	for _,f:=range e.Files{
 		r,ok:=byID[f.ID]
 		if !ok||!validMappedRow(r){return nil,ErrStageRefused}
+		if _,_,err:=normalizedMappedSource(r);err!=nil{return nil,err}
 		out=append(out,r)
 	}
 	return out,nil
@@ -130,8 +151,9 @@ func verifyMappedRow(ctx context.Context,g *library.Gallery,t metadataTarget,r a
 	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
 	if err!=nil{return zero,ErrStageRecovery}
 	defer tx.Rollback()
-	var actualURL string
-	if err:=tx.QueryRowContext(ctx,`SELECT url FROM image_sources WHERE image_id=? AND site=? AND post_id=?`,t.ImageID,r.SourceLabel,t.PostID).Scan(&actualURL);err!=nil||actualURL!=r.PostURL{return zero,ErrStageRecovery}
+	input,md5,err:=normalizedMappedSource(r)
+	if err!=nil{return zero,err}
+	if err:=verifySourceClaims(ctx,tx,t.ImageID,input,md5);err!=nil{return zero,err}
 	for _,id:=range ids{
 		var n int
 		if err:=tx.QueryRowContext(ctx,`SELECT COUNT(*) FROM image_tags it JOIN image_tag_sources ts
@@ -205,10 +227,15 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 		if !stillCurrent(){return nil,ErrStageRefused}
 		var sum gallery.MergeSummary
 		var warnings []string
-		err:=g.Edit(func(d *db.DB)error{
+		input,md5,err:=normalizedMappedSource(row)
+		if err!=nil{return nil,err}
+		err=g.Edit(func(d *db.DB)error{
 			var err error
-			sum,warnings,err=gallery.MergeSource(d,g.TagSvc,m.Targets[i].ImageID,row.SourceLabel,row.PostID,row.PostURL,"","",gallery.PostFile{},row.Tags,
-				gallery.Withheld{Categories:row.WithheldCategories,Tags:row.WithheldTags})
+			sum,warnings,err=gallery.MergeSource(d,g.TagSvc,m.Targets[i].ImageID,input.Source,input.PostID,input.URL,md5,input.ParentURL,input.PostFile,row.Tags,input.Withheld)
+			if err!=nil||len(warnings)!=0{return err}
+			// Same existing source-provenance services; empty claims
+			// preserve prior values and manual annotations stay intact.
+			_,err=gallery.ApplySourceProvenance(d,m.Targets[i].ImageID,input.Source,input.PostID,input.Commentary,input.Translated,input.Original,input.Notes)
 			return err
 		})
 		if err!=nil||len(warnings)!=0||!sum.SourceAdded||!stillCurrent(){return nil,ErrStageRecovery}
@@ -218,7 +245,7 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 	}
 	again,err:=a.observeLandingLocked(ctx,grant,g)
 	if err!=nil||!slices.Equal(observed,again)||!stillCurrent(){return nil,ErrStageRecovery}
-	// Results are deliberately NONTERMINAL. Optional provenance, naming,
+	// Results are deliberately NONTERMINAL. Parent relations, naming,
 	// duplicate-drop and user extras remain unresolved. Recheck all
 	// rows after the final service write, then persist exact observation.
 	for i,row:=range rows{

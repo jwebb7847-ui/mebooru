@@ -12,6 +12,7 @@ import(
 	"testing"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/gallery"
@@ -19,7 +20,7 @@ import(
 )
 
 func TestMappedMetadataUsesExistingLibraryServices(t *testing.T){
-	for _,mode:=range []string{"new","duplicate rating","rejected tag","withheld tag","failure after source","unbound","wrong scope","lost result","changed source URL","missing tag attribution","changed rating","damaged result"}{
+	for _,mode:=range []string{"new","source details","changed source details","changed annotation","duplicate rating","rejected tag","withheld tag","failure after source","unbound","wrong scope","lost result","changed source URL","missing tag attribution","changed rating","damaged result"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -28,6 +29,12 @@ func TestMappedMetadataUsesExistingLibraryServices(t *testing.T){
 			defer func(){_ = a.Close()}()
 			row:=acquisitionplan.ApprovedPolicyRow{PostID:f.ID,NativeSHA256:strings.Repeat("a",64),MediaURL:"https://example.invalid/42.png",
 				SourceLabel:"derpibooru",PostURL:"https://derpibooru.org/images/42",Rating:"general",Tags:[]string{"fixture","rating:general"},WithheldTags:[]string{"held"}}
+			if mode=="source details"||mode=="changed source details"||mode=="changed annotation"{
+				row.Provenance=&acquisitionplan.ApprovedProvenance{SourceMD5:"0123456789abcdef0123456789abcdef",ParentURL:"https://derpibooru.org/images/40",
+					Original:"https://example.invalid/upstream",Commentary:"plain",CommentaryDText:"[b]fixture[/b]",
+					CommentaryTranslated:"translated",Notes:[]contract.NoteBox{{X:1,Y:2,W:3,H:4,Body:"note",BodyHTML:"<b>note</b>"}},
+					PostWidth:640,PostHeight:480,PostSize:12345,PostExt:"PNG"}
+			}
 			if mode!="unbound"{
 				body,hash,err:=acquisitionplan.EncodeApprovedPolicy(grant.Request.Transfer,[]acquisitionplan.ApprovedPolicyRow{row})
 				if err!=nil{t.Fatal(err)}
@@ -76,6 +83,14 @@ func TestMappedMetadataUsesExistingLibraryServices(t *testing.T){
 				if mode=="duplicate rating"||mode=="withheld tag"{want="explicit"}
 				if err!=nil||len(got)!=1||got[0].ImageID!=res.Image.ID||got[0].Rating!=want{t.Fatalf("metadata %+v %v",got,err)}
 				if (mode=="rejected tag")!=slices.Contains(got[0].Rejected,"fixture"){t.Fatal("rejection disposition",got)}
+				if row.Provenance!=nil{
+					var md5,ext,original string
+					var size int64
+					if err:=g.DB.Read.QueryRow(`SELECT md5,post_size,post_ext,original FROM image_sources WHERE image_id=? AND site=? AND post_id=?`,res.Image.ID,row.SourceLabel,row.PostID).Scan(&md5,&size,&ext,&original);err!=nil||md5!=row.Provenance.SourceMD5||size!=12345||ext!="png"||original!=row.Provenance.Original{t.Fatal("actual source details",err)}
+					if res.Image.FileSize==size{t.Fatal("source claim substituted for measured bytes")}
+					var count int
+					if err:=g.DB.Read.QueryRow(`SELECT COUNT(*) FROM image_annotations WHERE image_id=? AND site=? AND post_id=? AND manual=0`,res.Image.ID,row.SourceLabel,row.PostID).Scan(&count);err!=nil||count!=1{t.Fatal("missing note",err)}
+				}
 				if mode=="withheld tag"{
 					for name,want:=range map[string]int{"held":0,"retired":1}{
 						var stale int
@@ -92,6 +107,10 @@ func TestMappedMetadataUsesExistingLibraryServices(t *testing.T){
 			switch mode{
 			case "lost result":
 				if err:=os.Remove(resultPath);err!=nil{t.Fatal(err)}
+			case "changed source details":
+				if _,err:=g.DB.Write.Exec(`UPDATE image_sources SET post_size=post_size+1 WHERE image_id=?`,res.Image.ID);err!=nil{t.Fatal(err)}
+			case "changed annotation":
+				if _,err:=g.DB.Write.Exec(`UPDATE image_annotations SET body='changed' WHERE image_id=? AND manual=0`,res.Image.ID);err!=nil{t.Fatal(err)}
 			case "changed source URL":
 				if _,err:=g.DB.Write.Exec(`UPDATE image_sources SET url='https://example.invalid/different' WHERE image_id=?`,res.Image.ID);err!=nil{t.Fatal(err)}
 			case "missing tag attribution":
@@ -105,7 +124,7 @@ func TestMappedMetadataUsesExistingLibraryServices(t *testing.T){
 			}
 			reconciled,err:=a.observeMappedMetadata(ctx,grant,g)
 			switch mode{
-			case "failure after source","lost result","changed source URL","missing tag attribution","changed rating","damaged result":
+			case "failure after source","lost result","changed source URL","missing tag attribution","changed rating","damaged result","changed source details","changed annotation":
 				if err==nil||reconciled!=nil{t.Fatal("uncertain or changed metadata reconciled")}
 			default:
 				if err!=nil||len(reconciled)!=1||!sameMetadataObservation(got[0],reconciled[0]){t.Fatalf("lost reply %+v %v",reconciled,err)}

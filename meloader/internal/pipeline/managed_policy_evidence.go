@@ -15,9 +15,9 @@ import(
 )
 
 // This is the approved policy interpretation, NOT a final import DTO.
-// Native evidence remains independent and unchanged. Optional commentary,
-// notes, post file facts, user extras and duplicate semantics still need
-// full source/provenance verification and the library's existing services.
+// Native evidence remains independent and unchanged. Preserve mapped
+// source claims too; job extras, duplicate semantics and actual library
+// validation/storage are still separate.
 // Keep the actual mapped tags and rating (including explicit overrides),
 // not a later reconstruction from mutable category/rule state.
 type approvedPolicyRow = acquisitionplan.ApprovedPolicyRow
@@ -40,7 +40,12 @@ func policyRow(m *mapping.Mapper,row ManagedEvidencePost,native workerproto.Meta
 	p:=approvedPolicyRow{PostID:native.ID,NativeSHA256:hex.EncodeToString(sum[:]),MediaURL:native.MediaURL,
 		SourceLabel:pf.Source,PostURL:m.PostURL(row.Interpreted),Rating:pf.Rating,
 		Tags:slices.Clone(pf.Tags),WithheldTags:slices.Clone(pf.WithheldTags),
-		WithheldCategories:slices.Clone(pf.WithheldCategories),UnknownTargets:slices.Clone(pf.UnknownTargets),Taxonomy:taxonomy}
+		WithheldCategories:slices.Clone(pf.WithheldCategories),UnknownTargets:slices.Clone(pf.UnknownTargets),Taxonomy:taxonomy,
+		Provenance:&acquisitionplan.ApprovedProvenance{SourceMD5:kwdict.String(row.Item.Meta,"md5"),ParentURL:pf.ParentURL,
+			Original:pf.Original,Commentary:pf.Commentary,CommentaryDText:pf.CommentaryDText,
+			CommentaryTranslated:pf.CommentaryTranslated,CommentaryTranslatedDText:pf.CommentaryTranslatedDText,
+			Notes:slices.Clone(pf.Notes),PostWidth:pf.PostWidth,PostHeight:pf.PostHeight,PostSize:pf.PostSize,
+			PostExt:pf.PostExt,Collection:pf.Collection,CollectionOrder:pf.CollectionOrder}}
 	body,err:=json.Marshal(p)
 	if err!=nil||len(body)>maxPolicyProjectionRowBytes{return approvedPolicyRow{},ErrManagedPreflight}
 	return p,nil

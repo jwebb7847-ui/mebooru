@@ -30,7 +30,7 @@ func managedPreflightFixture(t *testing.T,rule string)(*ManagedPreflight,*config
 	mapper,err:=mapping.New(provider,"")
 	if err!=nil{t.Fatal(err)}
 	q:=workerproto.MetadataPlanRequest{JobID:1,Gallery:"A",Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:"https://derpibooru.org/search?q=fixture",First:1,Last:2}
-	body:=[]byte(`[[3,"https://example.invalid/41.jpg",{"id":41,"category":"derpibooru","subcategory":"search","tags":["safe","dashie","violence"],"tag_ids":[1,24568,3]}],[3,"https://example.invalid/42.jpg",{"id":42,"category":"derpibooru","subcategory":"search","tags":["explicit","dashie"],"tag_ids":[2,24568]}]]`)
+	body:=[]byte(`[[3,"https://example.invalid/41.jpg",{"id":41,"category":"derpibooru","subcategory":"search","tags":["safe","dashie","violence"],"tag_ids":[1,24568,3]}],[3,"https://example.invalid/42.jpg",{"id":42,"category":"derpibooru","subcategory":"search","tags":["explicit","dashie"],"tag_ids":[2,24568],"source_url":"https://example.invalid/upstream","md5":"0123456789abcdef0123456789abcdef","width":640,"height":480,"size":12345,"extension":"jpg"}]]`)
 	transport:=managedEvidenceTransport(func(r *http.Request)(*http.Response,error){
 		var data string
 		switch r.URL.Path{
@@ -72,6 +72,7 @@ func TestManagedPreflightAliasBlacklistAndApprovedNativeManifest(t *testing.T){
 			if json.Unmarshal(body,&projection)!=nil||projection.Transfer!=a.Request()||len(projection.Rows)!=1{t.Fatalf("projection %s",body)}
 			r:=projection.Rows[0]
 			if r.PostID!="42"||r.Rating!="explicit"||!slices.Contains(r.Tags,"rating:explicit")||!slices.Contains(r.Tags,"character:rainbow_dash")||len(r.Taxonomy)!=1||r.Taxonomy[0].Name!="rainbow dash"{t.Fatalf("mapped evidence %+v",r)}
+			if v:=r.Provenance;v==nil||v.Original!="https://example.invalid/upstream"||v.SourceMD5!="0123456789abcdef0123456789abcdef"||v.PostWidth!=640||v.PostHeight!=480||v.PostSize!=12345||v.PostExt!="jpg"{t.Fatalf("source claims %+v",v)}
 			body[0]='!'
 			if again,hash,err:=a.policyEvidence(ctx,a.Request());err!=nil||hash!=digest||again[0]!='{'{t.Fatal("mutable policy snapshot")}
 			if _,_,_,err:=a.admit(ctx,bad);err==nil{t.Fatal("wrong gallery")}
