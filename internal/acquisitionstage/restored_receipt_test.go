@@ -47,7 +47,7 @@ func TestComposedRestoredReceipt(t *testing.T){
 			priorRating,wantRating:="explicit","explicit"
 			if mode=="unrated prior"{priorTags=[]string{"prior"};priorRating="";wantRating="general"}
 			if _,_,err:=gallery.MergeSource(g.DB,g.TagSvc,id,"other","7","https://example.invalid/7","","",gallery.PostFile{},priorTags,gallery.Withheld{});err!=nil{t.Fatal(err)}
-			if _,err:=g.DB.Write.Exec(`UPDATE images SET note='operator note' WHERE id=?`,id);err!=nil{t.Fatal(err)}
+			if _,err:=g.DB.Write.Exec(`UPDATE images SET note='operator note',original_source='https://example.invalid/operator-original',is_favorited=1,is_inbox=0 WHERE id=?`,id);err!=nil{t.Fatal(err)}
 			order:=3
 			if err:=gallery.SetHomeCollection(g.DB,id,"original-home",&order);err!=nil{t.Fatal(err)}
 			var oldPathID int64
@@ -148,7 +148,7 @@ func TestComposedRestoredReceipt(t *testing.T){
 			checkBytes(final,buf.Bytes())
 			if _,err:=os.Stat(diag);!os.IsNotExist(err){t.Fatal("diagnostic path remains",err)}
 			if _,err:=os.Stat(old);!os.IsNotExist(err){t.Fatal("old missing path recreated",err)}
-			if count(`SELECT COUNT(*) FROM images WHERE id=? AND canonical_path=? AND is_missing=0 AND note='operator note' AND series='original-home' AND series_order=3 AND origin=?`,id,final,origin)!=1{t.Fatal("restored identity or state changed")}
+			if count(`SELECT COUNT(*) FROM images WHERE id=? AND canonical_path=? AND is_missing=0 AND note='operator note' AND original_source='https://example.invalid/operator-original' AND is_favorited=1 AND is_inbox=0 AND series='original-home' AND series_order=3 AND origin=?`,id,final,origin)!=1{t.Fatal("restored identity or state changed")}
 			wantOld:=0;if marked{wantOld=1}
 			if count(`SELECT COUNT(*) FROM image_paths WHERE path=? AND image_id=? AND is_canonical=0 AND id=?`,old,id,oldPathID)!=wantOld{t.Fatal("old missing row disposition")}
 			if mode=="manual annotation"&&count(`SELECT COUNT(*) FROM image_annotations WHERE image_id=? AND manual=1 AND body='operator annotation'`,id)!=1{t.Fatal("manual annotation lost")}
