@@ -161,7 +161,7 @@ func diskFree(path string)(uint64,error){
 // owner records/probe overhead. Conservative free-space preflight only:
 // existing reservations may already occupy space, and other writers may
 // consume the free bytes later. This does not enforce live disk quotas.
-const reservationOverhead = uint64(3*workerproto.MaxMetadataOutputBytes+8<<20+2*maxRelationshipRecord+2*maxCollectionRecord)
+const reservationOverhead = uint64(3*workerproto.MaxMetadataOutputBytes+8<<20+2*maxRelationshipRecord+2*maxCollectionRecord+2*maxNamingRecord)
 func(a *Allocator)spaceFor(count int,payload uint64)bool{
 	if count<0||count>maxAllocations||payload>maxReservedBytes||a.freeBytes==nil{return false}
 	required:=3*payload+uint64(count)*reservationOverhead
