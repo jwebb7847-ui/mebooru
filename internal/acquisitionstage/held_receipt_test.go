@@ -100,6 +100,7 @@ func TestComposedHeldReceipt(t *testing.T){
 			})
 			if mode=="no authority"{extras=nil}
 			if _,err:=a.finishHeldReceipt(ctx,grant,g,extras);err==nil{t.Fatal("receipt before disposal")}
+			if _,err:=a.observeTerminalReceipt(ctx,grant,g,nil,extras);err==nil{t.Fatal("terminal witness before receipt")}
 			got,err:=a.disposeComposedHeld(ctx,grant,g,extras)
 			pre:=mode=="missing relationship"||mode=="missing collection"||mode=="nonempty extras"||mode=="no authority"
 			partial:=mode=="changed retained before unlink"||mode=="changed managed row"||mode=="revoked before unlink"||mode=="revoked after unlink"||mode=="DB delete failure"
@@ -117,6 +118,7 @@ func TestComposedHeldReceipt(t *testing.T){
 			}
 			if partial{
 				if _,err:=a.finishHeldReceipt(ctx,grant,g,extras);err==nil{t.Fatal("partial receipt")}
+				if _,err:=a.observeTerminalReceipt(ctx,grant,g,nil,extras);err==nil{t.Fatal("partial terminal witness")}
 				if _,err:=a.disposeComposedHeld(ctx,grant,g,extras);err==nil{t.Fatal("replay")}
 				if mode=="revoked after unlink"||mode=="DB delete failure"{
 					if _,err:=os.Stat(alias);!os.IsNotExist(err){t.Fatal("unlink boundary",err)}
@@ -164,6 +166,13 @@ func TestComposedHeldReceipt(t *testing.T){
 			recovered,err:=a.observeHeldReceipt(ctx,grant,g,extras)
 			bad:=strings.HasPrefix(mode,"changed")||mode=="same bytes replacement"||mode=="old alias returns"||mode=="lost composition"||mode=="damaged receipt"||mode=="extra retained alias"
 			if (err!=nil)!=bad||(!bad&&recovered!=stored){t.Fatal("unexpected recovery",err)}
+			witness,werr:=a.observeTerminalReceipt(ctx,grant,g,nil,extras)
+			if (werr!=nil)!=bad{t.Fatal("common terminal witness recovery",werr)}
+			if !bad{
+				body,err:=os.ReadFile(receipt)
+				wantRow:=newReceiptRow{PostID:stored.Held.PostID,ImageID:stored.Held.ImageID,Name:stored.Held.CanonicalPath,Size:stored.Held.Size,SHA256:stored.Held.SHA256}
+				if err!=nil||witness.Kind!=stored.Kind||witness.Allocation!=grant||witness.GalleryIdentity!=stored.GalleryIdentity||witness.PolicySHA256!=stored.PolicySHA256||witness.ReceiptSHA256!=digestBytes(body)||witness.Row!=wantRow||witness.PathID<=0||witness.FileIdentity!=stored.Held.CanonicalIdentity{t.Fatal("common witness differs",witness,err)}
+			}
 			if _,err:=a.disposeComposedHeld(ctx,grant,g,extras);err==nil{t.Fatal("disposal replay")}
 			if mode=="old alias returns"{checkBytes(alias,[]byte("operator"))}
 			checkBytes(filepath.Join(dir,"media",f.RelativeName),buf.Bytes())
