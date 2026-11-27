@@ -22,7 +22,7 @@ func TestManagedNamingRelocation(t *testing.T){
 	for _,mode:=range []string{"plain","template","upload collision","rename collision","nested",
 		"missing directory","wrong received name","terminal already","revoked after attempt",
 		"collision after attempt","revoked after link","DB write failure","revoked after DB",
-		"lost result","damaged result","changed file","same bytes replacement","changed DB","changed settings","old path returns","extra link"}{
+		"lost result","damaged result","changed file","same bytes replacement","changed DB","changed metadata","changed settings","old path returns","extra link"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -132,13 +132,14 @@ func TestManagedNamingRelocation(t *testing.T){
 				if err:=os.Remove(final);err!=nil{t.Fatal(err)}
 				if err:=os.WriteFile(final,buf.Bytes(),0600);err!=nil{t.Fatal(err)}
 			case "changed DB":if _,err:=g.DB.Write.Exec(`UPDATE images SET folder_path='wrong' WHERE id=?`,id);err!=nil{t.Fatal(err)}
+			case "changed metadata":if _,err:=g.DB.Write.Exec(`UPDATE image_sources SET commentary='unexpected' WHERE image_id=?`,id);err!=nil{t.Fatal(err)}
 			case "changed settings":req.DefaultName="changed"
 			case "old path returns":if err:=os.WriteFile(old,[]byte("operator"),0600);err!=nil{t.Fatal(err)}
 			case "extra link":if err:=os.Link(final,filepath.Join(s.GalleryRoot,"foreign.png"));err!=nil{t.Fatal(err)}
 			}
 			err=a.observeNaming(ctx,grant,g,namingAuth)
 			bad:=partial||mode=="lost result"||mode=="damaged result"||mode=="changed file"||mode=="same bytes replacement"||
-				mode=="changed DB"||mode=="changed settings"||mode=="old path returns"||mode=="extra link"
+				mode=="changed DB"||mode=="changed metadata"||mode=="changed settings"||mode=="old path returns"||mode=="extra link"
 			if (err!=nil)!=bad{t.Fatal("unexpected recovery",err)}
 			if mode=="old path returns"{checkBytes(old,[]byte("operator"))}
 			if mode=="collision after attempt"{checkBytes(final,[]byte("late operator"))}
