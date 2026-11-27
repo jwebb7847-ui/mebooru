@@ -52,7 +52,7 @@ func(a *Allocator)observeDuplicateDisposalLocked(ctx context.Context,grant worke
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
 	l,err:=readLandingAttempt(p,r)
-	if err!=nil||l.NewOnly{return zero,ErrStageRecovery}
+	if err!=nil||l.NewOnly||l.RestoreImageID!=0{return zero,ErrStageRecovery}
 	current,err:=observedDB(r,g)
 	if err!=nil||current!=l{return zero,ErrStageRecovery}
 	m,err:=readMetadataAttempt(p,l,e)

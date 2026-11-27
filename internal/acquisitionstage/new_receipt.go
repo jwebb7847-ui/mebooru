@@ -128,8 +128,7 @@ func(a *Allocator)landNewPrepared(ctx context.Context,grant workerproto.StageAll
 		s,err:=a.scope(ctx,grant.Request)
 		if err!=nil||!matches(r,s)||g.WatcherRunning(){return ErrStageRefused}
 		current,err:=observedDB(r,g)
-		current.NewOnly=true
-		if err!=nil||current!=landing{return ErrStageRecovery}
+		if err!=nil||!sameLandingDB(current,landing){return ErrStageRecovery}
 		name:=finalName(grant,f)
 		if err:=readCheckedLinks(ctx,dst,name,f.Size,f.SHA256,io.Discard,2);err!=nil{return err}
 		path:=filepath.Join(r.GalleryRoot,name)
@@ -227,8 +226,7 @@ func(a *Allocator)newReceiptLocked(ctx context.Context,grant workerproto.StageAl
 	}
 	if err:=tx.Commit();err!=nil{return zero,ErrStageRecovery}
 	current,err:=observedDB(r,g)
-	current.NewOnly=true
-	if err!=nil||current!=l{return zero,ErrStageRecovery}
+	if err!=nil||!sameLandingDB(current,l){return zero,ErrStageRecovery}
 	s,err:=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s){return zero,ErrStageRefused}
 	expected,err:=expectedNewReceipt(r,e,m,result)

@@ -90,7 +90,7 @@ func(a *Allocator)observeHeldDuplicatesLocked(ctx context.Context,grant workerpr
 	if err!=nil{return nil,err}
 	defer p.Close();defer src.Close();defer dst.Close()
 	landing,err:=readLandingAttempt(p,r)
-	if err!=nil||landing.NewOnly||len(metadata)!=len(e.Files){return nil,ErrStageRecovery}
+	if err!=nil||landing.NewOnly||landing.RestoreImageID!=0||len(metadata)!=len(e.Files){return nil,ErrStageRecovery}
 	landed,err:=a.observeLandingLocked(ctx,grant,g)
 	if err!=nil||len(landed)!=len(e.Files){return nil,ErrStageRecovery}
 	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})

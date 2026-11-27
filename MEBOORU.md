@@ -334,3 +334,6 @@ Workflow adoption [PR #30](https://github.com/jwebb7847-ui/mebooru/pull/30) merg
 
 
 **II.6.4c held disposal recheck candidate:** compare retained roots against current owner-selected directories, explicitly rebind policy digest, reverify placement/canonical before unlink and DB identity/absence before conditional deletion; verify again after authority checks on observation. Test preserving operator-owned alias bytes and row, and revocation after synced attempt before unlink (no automatic replay). Hosted verification pending.
+
+
+**II.6.4c isolated restoration candidate:** bind exact known missing-image ID, prior top-level canonical path, rating and marked/unmarked missing state in one-attempt landing record before existing LandInPlace. Refuse still-held, placeholder, external or additional-alias scope. Actual marked restoration preserves demoted old path row; unmarked missing canonical promotion removes old path row, per legacy behavior. Verify actual new canonical on same existing ID, prior rating and old-path disposition; never dispose restored canonical or replay. Six disposable tests incl prior tag/rating, old path returns and changed DB after restore. Nonterminal mapped-phase observation; full production restore semantics and receipt pending. Hosted verification pending.

@@ -24,6 +24,10 @@ type landingAttempt struct{
 	DBPath string `json:"db_path"`
 	DBFileIdentity string `json:"db_file_identity"`
 	NewOnly bool `json:"new_only,omitempty"`
+	RestoreImageID int64 `json:"restore_image_id,omitempty"`
+	RestorePath string `json:"restore_path,omitempty"`
+	RestoreRating string `json:"restore_rating,omitempty"`
+	RestoreMarkedMissing bool `json:"restore_marked_missing,omitempty"`
 }
 type landingObservation struct{
 	PostID string
@@ -40,6 +44,11 @@ func readLandingAttempt(p *os.Root,r record)(landingAttempt,error){
 	if json.Unmarshal(body,&attempt)!=nil||attempt.Version!=1||attempt.Allocation!=r.Allocation||
 		attempt.GalleryIdentity!=r.GalleryIdentity||!filepath.IsAbs(attempt.DBPath)||
 		filepath.Clean(attempt.DBPath)!=attempt.DBPath||attempt.DBFileIdentity==""||len(attempt.DBFileIdentity)>128{return zero,ErrStageRecovery}
+	if attempt.RestoreImageID<0{return zero,ErrStageRecovery}
+	if attempt.RestoreImageID==0{
+		if attempt.RestorePath!=""||attempt.RestoreRating!=""||attempt.RestoreMarkedMissing{return zero,ErrStageRecovery}
+	}else if attempt.NewOnly||!filepath.IsLocal(attempt.RestorePath)||filepath.Base(attempt.RestorePath)!=attempt.RestorePath||
+		attempt.RestorePath=="."||!canonicalRating(attempt.RestoreRating){return zero,ErrStageRecovery}
 	canonical,err:=json.Marshal(attempt)
 	if err!=nil||!bytes.Equal(body,canonical){return zero,ErrStageRecovery}
 	return attempt,nil
@@ -72,6 +81,10 @@ func(a *Allocator)beginLanding(ctx context.Context,grant workerproto.StageAlloca
 	return a.beginLandingLocked(ctx,grant,g,false)
 }
 func(a *Allocator)beginLandingLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,newOnly bool)error{
+	return a.beginLandingModeLocked(ctx,grant,g,newOnly,false)
+}
+func(a *Allocator)beginLandingModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,newOnly,restore bool)error{
+	if newOnly&&restore{return ErrStageRefused}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return err}
 	defer p.Close();defer src.Close();defer dst.Close()
@@ -93,6 +106,11 @@ func(a *Allocator)beginLandingLocked(ctx context.Context,grant workerproto.Stage
 		if err:=verifyNewOnlyEligibility(ctx,g,e,snapshot);err!=nil{return err}
 		attempt.NewOnly=true
 	}
+	if restore{
+		snapshot,err:=a.boundPolicyLocked(ctx,grant)
+		if err!=nil{return err}
+		if err:=captureRestoreTarget(ctx,g,r,e,snapshot,dst,&attempt);err!=nil{return err}
+	}
 	s,err:=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s){return ErrStageRefused}
 	body,err:=json.Marshal(attempt)
@@ -102,8 +120,7 @@ func(a *Allocator)beginLandingLocked(ctx context.Context,grant workerproto.Stage
 	// Once this marker exists a crash is uncertain. Never use absence
 	// of a path row to authorize another ingestion attempt.
 	current,err:=observedDB(r,g)
-	current.NewOnly=attempt.NewOnly
-	if err!=nil||current!=attempt||ctx.Err()!=nil{return ErrStageRecovery}
+	if err!=nil||!sameLandingDB(current,attempt)||ctx.Err()!=nil{return ErrStageRecovery}
 	s,err=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s){return ErrStageRefused}
 	places,err=inspectPlacements(ctx,grant,e,p,src,dst)
@@ -154,20 +171,34 @@ func(a *Allocator)observeLandingLocked(ctx context.Context,grant workerproto.Sta
 	attempt,err:=readLandingAttempt(p,r)
 	if err!=nil{return nil,err}
 	current,err:=observedDB(r,g)
-	current.NewOnly=attempt.NewOnly
-	if err!=nil||current!=attempt{return nil,ErrStageRecovery}
+	if err!=nil||!sameLandingDB(current,attempt){return nil,ErrStageRecovery}
 	places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
 	if err!=nil{return nil,err}
 	for _,v:=range places{if v.State!="placed"{return nil,ErrStageRecovery}}
 	rows,err:=readLandingRows(ctx,g,r,e)
 	if err!=nil{return nil,err}
+	if attempt.RestoreImageID>0{
+		if len(rows)!=1{return nil,ErrStageRecovery}
+		if rows[0].State=="observed_path"{
+			if err:=verifyRestoredLanding(ctx,g,r,e,attempt,dst,rows[0]);err!=nil{return nil,err}
+		}else if rows[0].State!="absent"{return nil,ErrStageRecovery}
+	}
 	s,err:=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,s){return nil,ErrStageRefused}
 	current,err=observedDB(r,g)
-	current.NewOnly=attempt.NewOnly
-	if err!=nil||current!=attempt{return nil,ErrStageRecovery}
+	if err!=nil||!sameLandingDB(current,attempt){return nil,ErrStageRecovery}
 	places,err=inspectPlacements(ctx,grant,e,p,src,dst)
 	if err!=nil{return nil,err}
 	for _,v:=range places{if v.State!="placed"{return nil,ErrStageRecovery}}
 	return rows,nil
+}
+
+// The DB observation does not infer the durable disposition request.
+func sameLandingDB(current,attempt landingAttempt)bool{
+	current.NewOnly=attempt.NewOnly
+	current.RestoreImageID=attempt.RestoreImageID
+	current.RestorePath=attempt.RestorePath
+	current.RestoreRating=attempt.RestoreRating
+	current.RestoreMarkedMissing=attempt.RestoreMarkedMissing
+	return current==attempt
 }

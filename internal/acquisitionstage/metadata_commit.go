@@ -205,6 +205,7 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 		seen[v.ImageID]=true
 		rating,err:=readImageRating(ctx,g,v.ImageID)
 		if err!=nil{return nil,err}
+		if landing.RestoreImageID>0&&(v.ImageID!=landing.RestoreImageID||rating!=landing.RestoreRating){return nil,ErrStageRecovery}
 		target:=metadataTarget{PostID:v.PostID,ImageID:v.ImageID,PriorRating:rating}
 		if landing.NewOnly{
 			if rating!=""{return nil,ErrStageRecovery}
@@ -217,8 +218,7 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 		s,err:=a.scope(ctx,grant.Request)
 		if err!=nil||!matches(r,s)||g.WatcherRunning(){return false}
 		c,err:=observedDB(r,g)
-		c.NewOnly=landing.NewOnly
-		return err==nil&&c==landing
+		return err==nil&&sameLandingDB(c,landing)
 	}
 	if !stillCurrent(){return nil,ErrStageRefused}
 	// Bound the worst-case observation record before any mutation.

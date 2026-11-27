@@ -91,3 +91,6 @@ Existing HTTP multipart upload drops the landed duplicate; operator-owned path r
 
 
 Isolated single-held duplicate disposal records exact metadata result digest and separately held canonical identity before any unlink. Reobserve under current authority and rooted handles, remove only the operation-owned second link; retain all private bytes. Conditional deletion of exact noncanonical alias row follows successful unlink; independently confirm both absences, retained canonical hash/identity and current mapped metadata. A DB error after unlink is uncertain, never auto-repaired or replayed. Test operator-owned second copy stays intact, and revoked attempt cannot resume. This is a nonterminal disposition observation, not a production receipt or cleanup permission.
+
+
+Restoration is distinct from held duplicate disposal: inherited Ingest reports moved/restored separately from ordinary duplicates. Isolated candidate binds prior image ID/path/missing flag/rating before actual LandInPlace, verifies new canonical and existing ID, preserves the marked-missing old path demotion vs unmarked promotion removal, refuses other aliases/unknown state, and never disposes restored bytes. Known single PNG with measured size only; not placeholder or general production restore. No replay or terminal receipt.
