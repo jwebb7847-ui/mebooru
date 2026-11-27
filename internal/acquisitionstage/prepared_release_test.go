@@ -19,7 +19,7 @@ import (
 )
 
 func TestPreparedReleaseThroughActualReceipts(t *testing.T){
-	for _,mode:=range []string{"new","held","restored","collection","DB reopen","before workspace","no authority","denied","foreign link",
+	for _,mode:=range []string{"new","held","held aliases","restored","collection","DB reopen","before workspace","no authority","denied","foreign link",
 		"revoked after intent","revoked after unlink","revoked after result","changed before unlink","changed canonical","same bytes replacement","changed job","changed row","changed sealed","changed workspace result","damaged attempt","lost attempt","damaged result","lost result","reappeared prepared","replaced media root"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
@@ -37,10 +37,16 @@ func TestPreparedReleaseThroughActualReceipts(t *testing.T){
 			g,err:=library.Open(cfg);if err!=nil{t.Fatal(err)}
 			defer func(){g.Close()}()
 			old:=filepath.Join(s.GalleryRoot,"existing.png")
-			if mode=="held"||mode=="restored"{
+			if mode=="held"||mode=="held aliases"||mode=="restored"{
 				if err:=os.WriteFile(old,buf.Bytes(),0600);err!=nil{t.Fatal(err)}
 				res,err:=g.LandInPlace(ctx,old,library.LandSpec{Origin:"fixture"})
 				if err!=nil||res.Image==nil||res.Duplicate{t.Fatal("original",err)}
+				if mode=="held aliases"{
+					alias:=filepath.Join(s.GalleryRoot,"operator-alias.png")
+					if err:=os.WriteFile(alias,buf.Bytes(),0600);err!=nil{t.Fatal(err)}
+					v,err:=g.LandInPlace(ctx,alias,library.LandSpec{Origin:"fixture"})
+					if err!=nil||!v.Duplicate||v.Image.ID!=res.Image.ID{t.Fatal("operator alias",err)}
+				}
 				if mode=="restored"{
 					if err:=os.Remove(old);err!=nil{t.Fatal(err)}
 					if _,err:=gallery.SetMissing(g.DB,res.Image.ID,true);err!=nil{t.Fatal(err)}
@@ -49,7 +55,7 @@ func TestPreparedReleaseThroughActualReceipts(t *testing.T){
 			if err:=a.preparePublication(ctx,grant);err!=nil{t.Fatal(err)}
 			if _,err:=a.publishPrepared(ctx,grant);err!=nil{t.Fatal(err)}
 			switch mode{
-			case "held":
+			case "held","held aliases":
 				if err:=a.beginLanding(ctx,grant,g);err!=nil{t.Fatal(err)}
 				res,err:=g.LandInPlace(ctx,filepath.Join(s.GalleryRoot,finalName(grant,f)),library.LandSpec{Origin:"fixture"})
 				if err!=nil||!res.Duplicate{t.Fatal("held",err)}
@@ -66,7 +72,7 @@ func TestPreparedReleaseThroughActualReceipts(t *testing.T){
 			extras:=extrasAuthority(func(context.Context,workerproto.StageAllocation)(contract.JobExtras,error){return job,nil})
 			final:=filepath.Join(s.GalleryRoot,"derpibooru-42.png")
 			switch mode{
-			case "held":
+			case "held","held aliases":
 				final=old
 				if _,err:=a.disposeComposedHeld(ctx,grant,g,extras);err!=nil{t.Fatal(err)}
 				if _,err:=a.finishHeldReceipt(ctx,grant,g,extras);err!=nil{t.Fatal(err)}
@@ -76,7 +82,7 @@ func TestPreparedReleaseThroughActualReceipts(t *testing.T){
 			default:
 				if err:=a.applyNaming(ctx,grant,g,naming);err!=nil{t.Fatal(err)}
 				if err:=a.applyClientExtras(ctx,grant,g,naming,extras);err!=nil{t.Fatal(err)}
-				if mode!="missing receipt"{if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err!=nil{t.Fatal(err)}}
+				if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err!=nil{t.Fatal(err)}
 			}
 			op:=filepath.Join(stage,grant.Request.OperationID)
 			workspace:=filepath.Join(op,grant.TransferID);media:=filepath.Join(workspace,"media")
@@ -143,9 +149,13 @@ func TestPreparedReleaseThroughActualReceipts(t *testing.T){
 				got,err=a.resumePreparedRelease(ctx,grant,g,naming,extras,auth)
 				if err!=nil{t.Fatal("resume",err)}
 			}
-			if !absent(prepared)||got.ReleasedEntryBytes!=f.Size||got.SharedCanonical!=(mode!="held"){t.Fatal("release result",got)}
+			if !absent(prepared)||got.ReleasedEntryBytes!=f.Size||got.SharedCanonical!=(mode!="held"&&mode!="held aliases"){t.Fatal("release result",got)}
 			checkBytes(final,buf.Bytes());checkBytes(sealed,buf.Bytes())
 			if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("old full-byte observer accepted missing prepared file")}
+			root,err:=os.OpenRoot(s.GalleryRoot);if err!=nil{t.Fatal(err)}
+			_,err=namingFile(ctx,root,filepath.Base(final),f,1);root.Close()
+			if err!=nil{t.Fatal("canonical not a verified single link",err)}
+			if mode=="held aliases"{checkBytes(filepath.Join(s.GalleryRoot,"operator-alias.png"),buf.Bytes())}
 			// Allocation stays reserved; no reacquisition or writer restart.
 			if _,err:=a.Workspace(ctx,grant);err==nil{t.Fatal("workspace reopened")}
 			if _,reserved,err:=a.inventory(ctx);err!=nil||reserved!=grant.MaxBytes{t.Fatal("reservation changed",reserved,err)}
