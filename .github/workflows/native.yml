@@ -106,7 +106,7 @@ jobs:
             shared/go.sum
       - name: Test ownership and protocol transport
         run: |
-          go test -count=1 -timeout 3m ./internal/acquisitionpolicy ./cmd/monbooru
+          go test -count=1 -timeout 3m ./internal/acquisitionpolicy ./internal/acquisitionstage ./cmd/monbooru
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cd shared
           go test -count=1 -timeout 3m ./processguard ./workerproto ./acquisitionplan
