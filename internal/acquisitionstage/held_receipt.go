@@ -293,6 +293,7 @@ func boundedStateDigest(ctx context.Context,tx *sql.Tx,queries []stateQuery,norm
 		if err!=nil{return "",ErrStageRecovery}
 		cols,err:=rows.Columns()
 		if err!=nil{rows.Close();return "",ErrStageRecovery}
+		if len(q.query)+1>maxHeldStateBytes-buf.Len(){rows.Close();return "",ErrStageLimit}
 		buf.WriteString(q.query);buf.WriteByte('\n')
 		count:=0
 		for rows.Next(){
