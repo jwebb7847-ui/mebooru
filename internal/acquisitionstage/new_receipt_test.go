@@ -76,6 +76,8 @@ func TestNewOnlyReceiptThroughActualIngest(t *testing.T){
 			receipt,err:=a.finishNewReceipt(ctx,grant,g)
 			if err!=nil||receipt.Kind!=newReceiptKind||len(receipt.Rows)!=1||receipt.Rows[0].ImageID!=v[0].ImageID{t.Fatalf("receipt %+v %v",receipt,err)}
 			if _,err:=a.finishNewReceipt(ctx,grant,g);err==nil{t.Fatal("receipt overwritten")}
+			if err:=a.applyRelationships(ctx,grant,g);err==nil{t.Fatal("relationship attempt after terminal receipt")}
+			if _,err:=os.Stat(filepath.Join(p,"relationship-attempt.json"));!os.IsNotExist(err){t.Fatal("post-terminal mutation",err)}
 			if err:=a.Close();err!=nil{t.Fatal(err)}
 			a,err=Open(stage,2,4096,auth)
 			if err!=nil{t.Fatal(err)}
