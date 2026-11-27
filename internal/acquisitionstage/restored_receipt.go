@@ -149,9 +149,13 @@ func(a *Allocator)applyRestoredNaming(ctx context.Context,grant workerproto.Stag
 	return a.applyNamingModeLocked(ctx,grant,g,naming,extras)
 }
 func(a *Allocator)restoredReceiptLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,write bool)(restoredReceipt,error){
+	return a.restoredReceiptModeLocked(ctx,grant,g,naming,extras,write,false)
+}
+func(a *Allocator)restoredReceiptModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,write,released bool)(restoredReceipt,error){
 	var zero restoredReceipt
 	if extras==nil{return zero,ErrStageRefused}
-	if err:=a.observeNamingModeLocked(ctx,grant,g,naming,nil,extras);err!=nil{return zero,err}
+	if write&&released{return zero,ErrStageRefused}
+	if err:=a.observeNamingAfterReleaseLocked(ctx,grant,g,naming,nil,extras,released);err!=nil{return zero,err}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
