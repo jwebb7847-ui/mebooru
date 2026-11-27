@@ -42,8 +42,26 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	p,err:=openDir(operation,"publication")
 	if err!=nil{return zero,err}
 	defer p.Close()
-	entries,err:=list(p,7)
-	if err!=nil||len(entries)<2||len(entries)>7{return zero,ErrStageRecovery}
+	entries,err:=list(p,9)
+	if err!=nil||len(entries)<2||len(entries)>9{return zero,ErrStageRecovery}
+	names:=map[string]bool{}
+	for _,entry:=range entries{
+		name:=entry.Name()
+		switch name{
+		case "media","intent.json","attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","new-receipt.json","duplicate-attempt.json":
+			names[name]=true
+		default:return zero,ErrStageRecovery
+		}
+	}
+	if !names["media"]||!names["intent.json"]||
+		(names["landing-attempt.json"]&&!names["attempt"])||
+		(names["metadata-attempt.json"]&&!names["landing-attempt.json"])||
+		(names["metadata-result.json"]&&!names["metadata-attempt.json"])||
+		(names["relationship-attempt.json"]&&!names["metadata-result.json"])||
+		(names["relationship-result.json"]&&!names["relationship-attempt.json"])||
+		((names["new-receipt.json"]||names["duplicate-attempt.json"])&&!names["metadata-result.json"])||
+		(names["new-receipt.json"]&&names["duplicate-attempt.json"])||
+		((names["new-receipt.json"]||names["duplicate-attempt.json"])&&names["relationship-attempt.json"]&&!names["relationship-result.json"]){return zero,ErrStageRecovery}
 	raw,err:=boundedRegularBytes(p,"intent.json",maxSealRecordBytes)
 	if err!=nil{return zero,err}
 	var intent publicationIntent
@@ -63,25 +81,29 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		if !item.Type().IsRegular()||!want[item.Name()]{return zero,ErrStageRecovery}
 		delete(want,item.Name())
 	}
-	if len(entries)>=3{
+	if names["attempt"]{
 		marker,err:=boundedRegularBytes(p,"attempt",64)
 		if err!=nil||string(marker)!=r.Allocation.TransferID{return zero,ErrStageRecovery}
 	}
-	if len(entries)>=4{
+	if names["landing-attempt.json"]{
 		landing,err:=readLandingAttempt(p,r)
 		if err!=nil{return zero,ErrStageRecovery}
-		if len(entries)>=5{
+		if names["metadata-attempt.json"]{
 			m,err:=readMetadataAttempt(p,landing,e)
 			if err!=nil{return zero,ErrStageRecovery}
-			if len(entries)>=6{
+			if names["metadata-result.json"]{
 				result,err:=readMetadataResult(p,m)
 				if err!=nil{return zero,ErrStageRecovery}
-				if len(entries)==7{
-					if landing.NewOnly{
-						if _,err:=readNewReceipt(p,r,e,m,result);err!=nil{return zero,ErrStageRecovery}
-					}else{
-						if _,err:=readDuplicateAttempt(p,e,result);err!=nil{return zero,ErrStageRecovery}
-					}
+				if names["relationship-attempt.json"]{
+					if err:=validateRelationshipRecords(p,result,names["relationship-result.json"]);err!=nil{return zero,err}
+				}
+				if names["new-receipt.json"]{
+					if !landing.NewOnly{return zero,ErrStageRecovery}
+					if _,err:=readNewReceipt(p,r,e,m,result);err!=nil{return zero,ErrStageRecovery}
+				}
+				if names["duplicate-attempt.json"]{
+					if landing.NewOnly{return zero,ErrStageRecovery}
+					if _,err:=readDuplicateAttempt(p,e,result);err!=nil{return zero,ErrStageRecovery}
 				}
 			}
 		}
