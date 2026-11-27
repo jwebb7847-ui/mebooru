@@ -19,7 +19,7 @@ import (
 )
 
 func TestManagedRelationshipWitness(t *testing.T){
-	for _,mode:=range []string{"parent","child","manual","missing","self","ambiguous","write failure","lost result","changed edge"}{
+	for _,mode:=range []string{"parent","child","manual","missing","self","ambiguous","write failure","lost result","changed edge","revoked after attempt","unknown phase","orphan result","damaged attempt","damaged result"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			pngBytes:=func(c uint8)[]byte{
@@ -79,8 +79,20 @@ func TestManagedRelationshipWitness(t *testing.T){
 			if mode=="write failure"{
 				if _,err:=g.DB.Write.Exec(`CREATE TRIGGER fixture_refuse_edge BEFORE INSERT ON derivative_edges BEGIN SELECT RAISE(ABORT,'fixture failure'); END`);err!=nil{t.Fatal(err)}
 			}
-			err=a.applyRelationships(ctx,grant,g)
 			dir:=filepath.Join(stage,grant.Request.OperationID,"publication")
+			if mode=="revoked after attempt"{
+				a.authority=func(ctx context.Context,q workerproto.StageAllocateRequest)(Scope,error){
+					if _,err:=os.Stat(filepath.Join(dir,"relationship-attempt.json"));err==nil{return Scope{},ErrStageRefused}
+					return auth(ctx,q)
+				}
+			}
+			err=a.applyRelationships(ctx,grant,g)
+			if mode=="revoked after attempt"{
+				if err==nil{t.Fatal("revoked relation succeeded")}
+				a.authority=auth
+				if _,err:=os.Stat(filepath.Join(dir,"relationship-attempt.json"));err!=nil{t.Fatal(err)}
+				if _,err:=os.Stat(filepath.Join(dir,"relationship-result.json"));!os.IsNotExist(err){t.Fatal("unexpected result",err)}
+			}
 			if mode=="ambiguous"{
 				if err==nil{t.Fatal("ambiguous parent accepted")}
 				if _,err:=os.Stat(filepath.Join(dir,"relationship-attempt.json"));!os.IsNotExist(err){t.Fatal("ambiguous attempt",err)}
@@ -90,11 +102,11 @@ func TestManagedRelationshipWitness(t *testing.T){
 				if err==nil{t.Fatal("failed edge accepted")}
 				if _,err:=os.Stat(filepath.Join(dir,"relationship-attempt.json"));err!=nil{t.Fatal(err)}
 				if _,err:=g.DB.Write.Exec(`DROP TRIGGER fixture_refuse_edge`);err!=nil{t.Fatal(err)}
-			}else if err!=nil{t.Fatal(err)}
+			}else if mode!="revoked after attempt"&&err!=nil{t.Fatal(err)}
 			child,want:=id,other
 			if mode=="child"{child,want=other,id}
 			if mode=="manual"{want=manual}
-			if mode=="missing"||mode=="self"||mode=="write failure"{want=0}
+			if mode=="missing"||mode=="self"||mode=="write failure"||mode=="revoked after attempt"{want=0}
 			var count int
 			if err:=g.DB.Read.QueryRow(`SELECT COUNT(*) FROM derivative_edges WHERE derivative_image_id=?`,child).Scan(&count);err!=nil{t.Fatal(err)}
 			if want==0{if count!=0{t.Fatal("unexpected edge")}}else{
@@ -106,8 +118,18 @@ func TestManagedRelationshipWitness(t *testing.T){
 			if err:=a.applyRelationships(ctx,grant,g);err==nil{t.Fatal("replayed attempt")}
 			if mode=="lost result"{if err:=os.Remove(filepath.Join(dir,"relationship-result.json"));err!=nil{t.Fatal(err)}}
 			if mode=="changed edge"{if _,err:=g.DB.Write.Exec(`DELETE FROM derivative_edges WHERE derivative_image_id=?`,child);err!=nil{t.Fatal(err)}}
+			switch mode{
+			case "unknown phase":
+				if err:=os.WriteFile(filepath.Join(dir,"unknown.json"),[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+			case "orphan result":
+				if err:=os.Remove(filepath.Join(dir,"relationship-attempt.json"));err!=nil{t.Fatal(err)}
+			case "damaged attempt":
+				if err:=os.WriteFile(filepath.Join(dir,"relationship-attempt.json"),[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+			case "damaged result":
+				if err:=os.WriteFile(filepath.Join(dir,"relationship-result.json"),[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+			}
 			err=a.observeRelationships(ctx,grant,g)
-			bad:=mode=="write failure"||mode=="lost result"||mode=="changed edge"
+			bad:=mode=="write failure"||mode=="lost result"||mode=="changed edge"||mode=="revoked after attempt"||mode=="unknown phase"||mode=="orphan result"||mode=="damaged attempt"||mode=="damaged result"
 			if (err!=nil)!=bad{t.Fatal("unexpected reconciliation",err)}
 		})
 	}
