@@ -128,7 +128,12 @@ func TestComposedRestoredReceipt(t *testing.T){
 			err=a.applyRestoredNaming(ctx,grant,g,naming,extras)
 			pre:=mode=="missing relationships"||mode=="nonempty extras"||mode=="no authority"||mode=="old path requested"||mode=="old path returns before move"
 			partial:=mode=="changed state after intent"||mode=="revoked after intent"||mode=="revoked after link"||mode=="DB move failure"||mode=="revoked after DB move"
-			if (err!=nil)!=(pre||partial){t.Fatal("unexpected naming",err)}
+			if (err!=nil)!=(pre||partial){
+				var actual string
+				_ = g.DB.Read.QueryRow(`SELECT canonical_path FROM images WHERE id=?`,id).Scan(&actual)
+				_,intentErr:=os.Stat(attempt);_,resultErr:=os.Stat(result)
+				t.Fatalf("unexpected naming %v; canonical=%q; intent=%v; result=%v",err,actual,intentErr,resultErr)
+			}
 			checkBytes:=func(p string,want []byte){t.Helper();b,err:=os.ReadFile(p);if err!=nil||!bytes.Equal(b,want){t.Fatal("bytes",p,err)}}
 			count:=func(q string,args ...any)int{t.Helper();var n int;if err:=g.DB.Read.QueryRow(q,args...).Scan(&n);err!=nil{t.Fatal(err)};return n}
 			checkBytes(filepath.Join(dir,"media",f.RelativeName),buf.Bytes())
@@ -143,6 +148,11 @@ func TestComposedRestoredReceipt(t *testing.T){
 				if err:=a.applyRestoredNaming(ctx,grant,g,naming,extras);err==nil{t.Fatal("partial naming replay")}
 				checkBytes(diag,buf.Bytes())
 				if mode=="revoked after link"||mode=="DB move failure"||mode=="revoked after DB move"{checkBytes(final,buf.Bytes())}
+				var actual string
+				if err:=g.DB.Read.QueryRow(`SELECT canonical_path FROM images WHERE id=?`,id).Scan(&actual);err!=nil{t.Fatal(err)}
+				want:=diag;if mode=="revoked after DB move"{want=final}
+				if actual!=want{t.Fatal("wrong DB boundary",actual,want)}
+				if mode!="DB move failure"&&!injected{t.Fatal("injection boundary not reached")}
 				return
 			}
 			checkBytes(final,buf.Bytes())
