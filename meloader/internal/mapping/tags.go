@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 )
@@ -182,39 +181,11 @@ func isTagCategory(name string) bool {
 // Must match monbooru's tags.SplitForm and tags.NormalizeName byte for byte,
 // so a PTR spelling round-trips instead of minting a duplicate.
 func normalizeTag(tag string) string {
-	tag = strings.TrimSpace(tag)
-	if prefix, rest, ok := strings.Cut(tag, ":"); ok {
-		category := strings.ToLower(prefix)
-		if slices.Contains(contract.BuiltinCategories, category) || customCategory(category) {
-			name := normalizeName(rest)
-			if name == "" || category == "general" {
-				return name
-			}
-			return category + ":" + name
-		}
-	}
-	return normalizeName(tag)
+	return contract.NormalizeTagForm(tag,customCategory)
 }
 
 func normalizeName(name string) string {
-	name = strings.ToLower(name)
-	var b strings.Builder
-	b.Grow(len(name))
-	pendingFold := false
-	for _, r := range name {
-		switch {
-		case unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Co):
-		case unicode.IsSpace(r) || r == '"' || r == '*':
-			pendingFold = true
-		default:
-			if pendingFold && b.Len() > 0 {
-				b.WriteByte('_')
-			}
-			pendingFold = false
-			b.WriteRune(r)
-		}
-	}
-	return strings.Trim(b.String(), "_")
+	return contract.NormalizeTagSpelling(name)
 }
 
 // The pre-widening charset: tags monbooru stored before the punctuation
