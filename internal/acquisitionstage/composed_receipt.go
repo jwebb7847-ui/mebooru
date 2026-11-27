@@ -13,7 +13,8 @@ import (
 
 // First composed terminal candidate: single new PNG, approved source
 // evidence + relationship witness + actual relocated canonical + explicit
-// owner job extras (including empty). No collection, duplicate or restore
+// owner job extras (including empty), optional explicit ordered collection.
+// No duplicate or restore
 // and no permission to reclaim stage. No production caller yet.
 const composedReceiptKind = "isolated_named_new_png_client_v1"
 const maxComposedReceipt = 128 << 10
@@ -24,6 +25,7 @@ type composedReceipt struct{
 	GalleryIdentity string `json:"gallery_identity"`
 	PolicySHA256 string `json:"policy_sha256"`
 	NamingSHA256 string `json:"naming_sha256"`
+	CollectionSHA256 string `json:"collection_sha256,omitempty"`
 	ExtrasSHA256 string `json:"extras_sha256"`
 	Row newReceiptRow `json:"row"`
 	PathID int64 `json:"path_id"`
@@ -42,7 +44,7 @@ func expectedComposedReceipt(p *os.Root,r record,e SealedEvidence,l landingAttem
 	if err!=nil{return zero,err}
 	f:=e.Files[0];v:=metadata.Rows[0]
 	return composedReceipt{Version:1,Kind:composedReceiptKind,Allocation:r.Allocation,GalleryIdentity:r.GalleryIdentity,
-		PolicySHA256:m.PolicySHA256,NamingSHA256:digestBytes(naming),ExtrasSHA256:digestBytes(extras),
+		PolicySHA256:m.PolicySHA256,NamingSHA256:digestBytes(naming),CollectionSHA256:n.CollectionSHA256,ExtrasSHA256:digestBytes(extras),
 		Row:newReceiptRow{PostID:f.ID,ImageID:v.ImageID,Name:n.Final,Size:f.Size,SHA256:f.SHA256},PathID:n.PathID,FileIdentity:n.FileIdentity},nil
 }
 func readComposedReceipt(p *os.Root,r record,e SealedEvidence,l landingAttempt,m metadataAttempt,metadata metadataResult)(composedReceipt,error){
