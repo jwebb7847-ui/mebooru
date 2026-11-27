@@ -31,6 +31,9 @@ func(a *Allocator)observeTerminalReceipt(ctx context.Context,grant workerproto.S
 	return a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
 }
 func(a *Allocator)observeTerminalReceiptLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority)(terminalReceiptWitness,error){
+	return a.observeTerminalReceiptModeLocked(ctx,grant,g,naming,extras,false)
+}
+func(a *Allocator)observeTerminalReceiptModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,released bool)(terminalReceiptWitness,error){
 	var zero terminalReceiptWitness
 	if g==nil||g.WatcherRunning()||extras==nil{return zero,ErrStageRefused}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
@@ -62,7 +65,7 @@ func(a *Allocator)observeTerminalReceiptLocked(ctx context.Context,grant workerp
 	switch selected.name{
 	case "composed-receipt.json":
 		if !l.NewOnly||l.RestoreImageID!=0||naming==nil{return zero,ErrStageRefused}
-		v,err:=a.composedReceiptLocked(ctx,grant,g,naming,extras,false)
+		v,err:=a.composedReceiptModeLocked(ctx,grant,g,naming,extras,false,released)
 		if err!=nil{return zero,err}
 		out=terminalReceiptWitness{Kind:v.Kind,Allocation:v.Allocation,GalleryIdentity:v.GalleryIdentity,PolicySHA256:v.PolicySHA256,
 			Row:v.Row,PathID:v.PathID,FileIdentity:v.FileIdentity}
@@ -70,7 +73,7 @@ func(a *Allocator)observeTerminalReceiptLocked(ctx context.Context,grant workerp
 		if err!=nil{return zero,ErrStageRecovery}
 	case "held-receipt.json":
 		if l.NewOnly||l.RestoreImageID!=0{return zero,ErrStageRefused}
-		v,err:=a.heldReceiptLocked(ctx,grant,g,extras,false)
+		v,err:=a.heldReceiptModeLocked(ctx,grant,g,extras,false,released)
 		if err!=nil{return zero,err}
 		m,err:=readMetadataAttempt(p,l,e)
 		if err!=nil{return zero,err}
@@ -87,7 +90,7 @@ func(a *Allocator)observeTerminalReceiptLocked(ctx context.Context,grant workerp
 		if err!=nil{return zero,ErrStageRecovery}
 	case "restored-receipt.json":
 		if l.NewOnly||l.RestoreImageID<=0||naming==nil{return zero,ErrStageRefused}
-		v,err:=a.restoredReceiptLocked(ctx,grant,g,naming,extras,false)
+		v,err:=a.restoredReceiptModeLocked(ctx,grant,g,naming,extras,false,released)
 		if err!=nil{return zero,err}
 		out=terminalReceiptWitness{Kind:v.Kind,Allocation:v.Allocation,GalleryIdentity:v.GalleryIdentity,PolicySHA256:v.PolicySHA256,
 			Row:v.Row,PathID:v.PathID,FileIdentity:v.FileIdentity}
@@ -104,5 +107,10 @@ func(a *Allocator)observeTerminalReceiptLocked(ctx context.Context,grant workerp
 	current,dbErr:=observedDB(r,g)
 	if err!=nil||!matches(r,s)||dbErr!=nil||!sameLandingDB(current,l)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRefused}
 	out.ReceiptSHA256=digestBytes(raw)
+	if released{
+		m,_,err:=readPreparedReleaseAttempt(p,r,e)
+		if err!=nil||m.Witness!=out{return zero,ErrStageRecovery}
+		if err:=verifyPreparedReleaseInventory(src,m,true);err!=nil{return zero,err}
+	}
 	return out,nil
 }
