@@ -23,7 +23,9 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 	for _,mode:=range []string{"new tags","empty job","shared ownership","rejected tag","implication","rated filter","DB reopen","alias","rating alias","source label collision",
 		"unrated rating","rating implication","custom via","commentary","source override","no authority",
 		"revoked after attempt","DB failure","revoked after write","changed job","changed naming",
-		"lost extras result","damaged extras result","missing client owner","unexpected tag","changed implication","damaged receipt","receipt revocation"}{
+		"lost extras result","damaged extras result","missing client owner","unexpected tag","changed implication","damaged receipt","receipt revocation",
+		"collection","collection existing label","collection missing witness","collection changed before move","collection changed after move",
+		"collection changed after receipt","collection extra member","collection lost result","collection damaged result"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -35,6 +37,8 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 				Tags:[]string{"fixture","rating:general"},Provenance:&acquisitionplan.ApprovedProvenance{}}
 			if mode=="unrated rating"{row.Rating="";row.Tags=[]string{"fixture"}}
 			if mode=="source label collision"{row.SourceLabel=contract.Via}
+			withCollection:=strings.HasPrefix(mode,"collection")
+			if withCollection{row.Provenance.Collection="pool";row.Provenance.CollectionOrder=7}
 			body,hash,err:=acquisitionplan.EncodeApprovedPolicy(grant.Request.Transfer,[]acquisitionplan.ApprovedPolicyRow{row})
 			if err!=nil{t.Fatal(err)}
 			if err:=a.BindPolicy(ctx,grant,func(context.Context,workerproto.StageAllocation)([]byte,string,error){return body,hash,nil});err!=nil{t.Fatal(err)}
@@ -48,9 +52,29 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 			if err!=nil||len(mapped)!=1{t.Fatal("metadata",err)}
 			id:=mapped[0].ImageID
 			if err:=a.applyRelationships(ctx,grant,g);err!=nil{t.Fatal(err)}
+			wantCollection:="pool"
+			if mode=="collection existing label"{
+				other:=image.NewRGBA(image.Rect(0,0,17,17))
+				var b bytes.Buffer
+				if err:=png.Encode(&b,other);err!=nil{t.Fatal(err)}
+				res,err:=g.Land(ctx,s.GalleryRoot,"existing.png",library.FromReader(bytes.NewReader(b.Bytes())),library.LandSpec{Origin:"fixture"})
+				if err!=nil||res.Image==nil||res.Duplicate{t.Fatal("collection label fixture",err)}
+				order:=2
+				if err:=gallery.AddCollectionMembership(g.DB,res.Image.ID,"POOL",&order);err!=nil{t.Fatal(err)}
+				wantCollection="POOL"
+			}
+			if withCollection&&mode!="collection missing witness"{if err:=a.applyCollections(ctx,grant,g);err!=nil{t.Fatal(err)}}
+			if mode=="collection changed before move"{if _,err:=g.DB.Write.Exec(`UPDATE image_collections SET position=8 WHERE image_id=?`,id);err!=nil{t.Fatal(err)}}
 			req:=gallery.ReceivedNamingRequest{Gallery:g.Name,ReceivedName:f.RelativeName,Source:row.SourceLabel,PostID:row.PostID,DefaultName:"{source}-{post_id}"}
 			naming:=func(context.Context,workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){return req,nil}
-			if err:=a.applyNaming(ctx,grant,g,naming);err!=nil{t.Fatal(err)}
+			err=a.applyNaming(ctx,grant,g,naming)
+			if mode=="collection missing witness"||mode=="collection changed before move"{
+				if err==nil{t.Fatal("naming accepted incomplete collection")}
+				if _,err:=os.Stat(filepath.Join(stage,grant.Request.OperationID,"publication","naming-attempt.json"));!os.IsNotExist(err){t.Fatal("unexpected naming attempt",err)}
+				return
+			}
+			if err!=nil{t.Fatal(err)}
+			if mode=="collection changed after move"{if _,err:=g.DB.Write.Exec(`UPDATE images SET series_order=8 WHERE id=?`,id);err!=nil{t.Fatal(err)}}
 			dir:=filepath.Join(stage,grant.Request.OperationID,"publication")
 			attempt:=filepath.Join(dir,"extras-attempt.json")
 			result:=filepath.Join(dir,"extras-result.json")
@@ -110,7 +134,7 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 			if mode=="no authority"{extras=nil}
 			if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("receipt without explicit extras witness")}
 			err=a.applyClientExtras(ctx,grant,g,naming,extras)
-			preRefusal:=mode=="rating alias"||mode=="source label collision"||mode=="unrated rating"||mode=="rating implication"||mode=="custom via"||mode=="commentary"||mode=="source override"||mode=="no authority"
+			preRefusal:=mode=="collection changed after move"||mode=="rating alias"||mode=="source label collision"||mode=="unrated rating"||mode=="rating implication"||mode=="custom via"||mode=="commentary"||mode=="source override"||mode=="no authority"
 			partial:=mode=="revoked after attempt"||mode=="DB failure"||mode=="revoked after write"
 			if (err!=nil)!=(preRefusal||partial){t.Fatalf("unexpected extras result %v",err)}
 			count:=func(query string,args ...any)int{
@@ -152,6 +176,9 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 				stored,err=a.observeComposedReceipt(ctx,grant,g,naming,extras)
 			}
 			if err!=nil||stored.Kind!=composedReceiptKind||stored.Row.ImageID!=id||stored.Row.Name!="derpibooru-42.png"||stored.Row.SHA256!=f.SHA256{t.Fatal("composed receipt",stored,err)}
+			if withCollection{
+				if !validDigest(stored.CollectionSHA256)||count(`SELECT COUNT(*) FROM images WHERE id=? AND series=? COLLATE BINARY AND series_order=7`,id,wantCollection)!=1||count(`SELECT COUNT(*) FROM image_collections WHERE image_id=? AND name=? COLLATE BINARY AND position=7`,id,wantCollection)!=1{t.Fatal("collection not composed")}
+			}else if stored.CollectionSHA256!=""{t.Fatal("unexpected collection digest")}
 			if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("overwrote receipt")}
 			if err:=a.Close();err!=nil{t.Fatal(err)}
 			a,err=Open(stage,2,4096,authority);if err!=nil{t.Fatal(err)}
@@ -167,10 +194,15 @@ func TestComposedNewReceiptWithClientExtras(t *testing.T){
 				if _,_,_,err:=g.ApplyInitialTags(id,[]string{"foreign"},"other");err!=nil{t.Fatal(err)}
 			case "changed implication":if err:=g.TagSvc.RemoveImplication(parent,child);err!=nil{t.Fatal(err)}
 			case "damaged receipt":if err:=os.WriteFile(receipt,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+			case "collection changed after receipt":if _,err:=g.DB.Write.Exec(`UPDATE image_collections SET position=8 WHERE image_id=?`,id);err!=nil{t.Fatal(err)}
+			case "collection extra member":if err:=gallery.AddCollectionMembership(g.DB,id,"other",nil);err!=nil{t.Fatal(err)}
+			case "collection lost result":if err:=os.Remove(filepath.Join(dir,"collection-result.json"));err!=nil{t.Fatal(err)}
+			case "collection damaged result":if err:=os.WriteFile(filepath.Join(dir,"collection-result.json"),[]byte("{}"),0600);err!=nil{t.Fatal(err)}
 			}
 			recovered,err:=a.observeComposedReceipt(ctx,grant,g,naming,extras)
 			bad:=mode=="changed job"||mode=="changed naming"||mode=="lost extras result"||mode=="damaged extras result"||
-				mode=="missing client owner"||mode=="unexpected tag"||mode=="changed implication"||mode=="damaged receipt"
+				mode=="missing client owner"||mode=="unexpected tag"||mode=="changed implication"||mode=="damaged receipt"||
+				mode=="collection changed after receipt"||mode=="collection extra member"||mode=="collection lost result"||mode=="collection damaged result"
 			if (err!=nil)!=bad||(!bad&&recovered!=stored){t.Fatal("unexpected receipt recovery",err)}
 			if err:=a.applyClientExtras(ctx,grant,g,naming,extras);err==nil{t.Fatal("replayed extras")}
 			for _,path:=range []string{final,filepath.Join(dir,"media",f.RelativeName),filepath.Join(stage,grant.Request.OperationID,"sealed","media",f.RelativeName)}{
