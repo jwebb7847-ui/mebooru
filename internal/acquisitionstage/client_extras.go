@@ -188,6 +188,24 @@ func inspectClientResolution(ctx context.Context,g *library.Gallery,row acquisit
 	if !validClientResolutions(out){return nil,ErrStageRecovery}
 	return out,nil
 }
+// Existing resolutions must be exact. A tag absent at planning time
+// may now be canonical only if it belongs to this operation's mapped or
+// derived evidence, or is created by the already-recorded extras attempt.
+func samePlannedJob(a,b contract.JobExtras)bool{return reflect.DeepEqual(a,b)}
+func plannedClientCompatible(before,now []clientResolution,m metadataAttempt,result metadataResult,extrasStarted bool)bool{
+	if len(before)!=len(now)||len(m.Targets)!=1||len(result.Rows)!=1{return false}
+	for i,v:=range now{
+		b:=before[i]
+		if b.Form!=v.Form||b.Category!=v.Category||b.Bare!=v.Bare{return false}
+		if b.ID>0||v.ID==0{
+			if !reflect.DeepEqual(b,v){return false}
+			continue
+		}
+		if !v.Canonical||v.Rejected||len(v.Closure)!=1||v.Closure[0]!=v.ID{return false}
+		if !extrasStarted&&!slices.Contains(m.Targets[0].DerivedTags,v.ID)&&!slices.Contains(result.Rows[0].TagIDs,v.ID){return false}
+	}
+	return true
+}
 func(a *Allocator)extrasContext(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth extrasAuthority)(extrasAttempt,*os.Root,error){
 	return a.extrasContextMode(ctx,grant,g,auth,false)
 }
@@ -216,6 +234,13 @@ func(a *Allocator)extrasContextMode(ctx context.Context,grant workerproto.StageA
 	if err!=nil||!validClientJob(job){return fail(ErrStageRefused)}
 	resolved,err:=inspectClientResolution(ctx,g,rows[0],job)
 	if err!=nil{return fail(err)}
+	plan,_,err:=readPublicationAttempt(p,grant)
+	if err!=nil{return fail(err)}
+	if plan!=nil{
+		_,statErr:=p.Lstat("extras-attempt.json")
+		if statErr!=nil&&!errors.Is(statErr,os.ErrNotExist){return fail(ErrStageRecovery)}
+		if !samePlannedJob(plan.Job,job)||!plannedClientCompatible(plan.Client,resolved,m,result,statErr==nil){return fail(ErrStageRefused)}
+	}
 	s,err:=a.scope(ctx,grant.Request)
 	current,dbErr:=observedDB(r,g)
 	if err!=nil||!matches(r,s)||dbErr!=nil||!sameLandingDB(current,l)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst){return fail(ErrStageRefused)}
