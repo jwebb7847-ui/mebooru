@@ -190,3 +190,40 @@ func(a *Allocator)observeRelationshipsLocked(ctx context.Context,grant workerpro
 	if !sameRelationshipScope(m,current){return ErrStageRecovery}
 	return nil
 }
+
+// Structural inventory validation is intentionally independent of DB
+// reconciliation. A result cannot exist without its exact attempt.
+// The attempt-only state remains inspectable but cannot be replayed.
+func validateRelationshipRecords(p *os.Root,metadata metadataResult,hasResult bool)error{
+	if len(metadata.Rows)!=1{return ErrStageRecovery}
+	mraw,err:=json.Marshal(metadata)
+	if err!=nil{return ErrStageRecovery}
+	raw,err:=boundedRegularBytes(p,"relationship-attempt.json",maxRelationshipRecord)
+	if err!=nil{return err}
+	var m relationshipAttempt
+	if json.Unmarshal(raw,&m)!=nil||m.Version!=1||m.MetadataSHA256!=digestBytes(mraw)||
+		m.ImageID!=metadata.Rows[0].ImageID||m.URL==""||m.Before.Parent<0||
+		m.Before.Children==nil||m.Before.Edges==nil||len(m.Before.Children)>256||len(m.Before.Edges)>257{return ErrStageRecovery}
+	canonical,err:=json.Marshal(m)
+	if err!=nil||!bytes.Equal(raw,canonical){return ErrStageRecovery}
+	for i,id:=range m.Before.Children{
+		if id<=0||(i>0&&id<=m.Before.Children[i-1]){return ErrStageRecovery}
+	}
+	// Verify the planned edge list follows exactly the legacy order.
+	pairs:=make([][2]int64,0)
+	if m.Before.Parent>0&&m.Before.Parent!=m.ImageID{pairs=append(pairs,[2]int64{m.Before.Parent,m.ImageID})}
+	for _,id:=range m.Before.Children{if id!=m.ImageID{pairs=append(pairs,[2]int64{m.ImageID,id})}}
+	if len(pairs)!=len(m.Before.Edges){return ErrStageRecovery}
+	for i,e:=range m.Before.Edges{
+		if e.Source!=pairs[i][0]||e.Child!=pairs[i][1]||e.Prior==nil||len(e.Prior)>64{return ErrStageRecovery}
+		for j,id:=range e.Prior{
+			if id<=0||id==e.Child||(j>0&&id<=e.Prior[j-1]){return ErrStageRecovery}
+		}
+	}
+	if !hasResult{return nil}
+	body,err:=boundedRegularBytes(p,"relationship-result.json",maxRelationshipRecord)
+	if err!=nil{return err}
+	expected,err:=json.Marshal(relationshipResult{Version:1,AttemptSHA256:digestBytes(raw),After:expectedRelationships(m.Before)})
+	if err!=nil||!bytes.Equal(body,expected){return ErrStageRecovery}
+	return nil
+}
