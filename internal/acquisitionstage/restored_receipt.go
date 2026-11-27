@@ -19,6 +19,18 @@ import (
 const restoredReceiptKind = "isolated_named_restored_png_v1"
 const maxRestoredReceipt = 128 << 10
 
+// The pre-restoration invariant contains operator-owned fields that the
+// qualified restoration and no-new-collection source merge must preserve.
+// Source-owned values can legitimately change on refetch, so they are
+// independently reconciled by mapped metadata instead of included here.
+func restorePreservationDigest(ctx context.Context,tx *sql.Tx,id int64)(string,error){
+	return boundedStateDigest(ctx,tx,[]stateQuery{
+		{`SELECT id,origin,note,original_source,is_favorited,is_inbox,series,series_order FROM images WHERE id=?`,[]any{id}},
+		{`SELECT * FROM image_collections WHERE image_id=? ORDER BY name COLLATE BINARY LIMIT 8193`,[]any{id}},
+		{`SELECT * FROM image_annotations WHERE image_id=? AND manual=1 ORDER BY id LIMIT 8193`,[]any{id}},
+	},nil)
+}
+
 // Exact post-merge state, normalized ONLY for the two path columns in
 // the image row and the canonical path row's path. All path-row IDs,
 // old missing alias rows, origin, ratings, notes, source ownership,
@@ -55,7 +67,7 @@ func restoreStateDigest(ctx context.Context,g *library.Gallery,id int64)(string,
 // origin must not be overwritten, and a marked-missing old row remains
 // a noncanonical missing alias. Reconcile its exact persisted form.
 func restoredNamingRows(ctx context.Context,g *library.Gallery,r record,f acquisitionplan.VerifiedTransferFile,id int64,rel,absent string,l landingAttempt)(int64,error){
-	if id!=l.RestoreImageID||id<=0||l.NewOnly||strings.EqualFold(rel,l.RestorePath)||strings.EqualFold(absent,l.RestorePath){return 0,ErrStageRecovery}
+	if id!=l.RestoreImageID||id<=0||l.NewOnly||l.RestorePathID<=0||!validDigest(l.RestorePreservationSHA256)||strings.EqualFold(rel,l.RestorePath)||strings.EqualFold(absent,l.RestorePath){return 0,ErrStageRecovery}
 	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
 	if err!=nil{return 0,ErrStageRecovery}
 	defer tx.Rollback()
@@ -77,7 +89,12 @@ func restoredNamingRows(ctx context.Context,g *library.Gallery,r record,f acquis
 		var n int
 		if err:=tx.QueryRowContext(ctx,q.sql,q.args...).Scan(&n);err!=nil||n!=q.want{return 0,ErrStageRecovery}
 	}
-	if tx.Commit()!=nil||ctx.Err()!=nil{return 0,ErrStageRecovery}
+	if l.RestoreMarkedMissing{
+		var prior int64
+		if err:=tx.QueryRowContext(ctx,`SELECT id FROM image_paths WHERE image_id=? AND path=? AND is_canonical=0`,id,filepath.Join(r.GalleryRoot,l.RestorePath)).Scan(&prior);err!=nil||prior!=l.RestorePathID{return 0,ErrStageRecovery}
+	}
+	preserved,err:=restorePreservationDigest(ctx,tx,id)
+	if err!=nil||preserved!=l.RestorePreservationSHA256||tx.Commit()!=nil||ctx.Err()!=nil{return 0,ErrStageRecovery}
 	return pid,nil
 }
 
@@ -90,6 +107,8 @@ type restoredReceipt struct{
 	NamingSHA256 string `json:"naming_sha256"`
 	RetainedStateSHA256 string `json:"retained_state_sha256"`
 	OldPath string `json:"old_path"`
+	OldPathID int64 `json:"old_path_id"`
+	PreservationSHA256 string `json:"preservation_sha256"`
 	OldMarkedMissing bool `json:"old_marked_missing"`
 	PriorRating string `json:"prior_rating"`
 	Row newReceiptRow `json:"row"`
@@ -99,7 +118,7 @@ type restoredReceipt struct{
 
 func expectedRestoredReceipt(p *os.Root,r record,e SealedEvidence,l landingAttempt,m metadataAttempt,result metadataResult)(restoredReceipt,error){
 	var zero restoredReceipt
-	if l.NewOnly||l.RestoreImageID<=0||len(e.Files)!=1||len(result.Rows)!=1||len(m.Targets)!=1||
+	if l.NewOnly||l.RestoreImageID<=0||l.RestorePathID<=0||!validDigest(l.RestorePreservationSHA256)||len(e.Files)!=1||len(result.Rows)!=1||len(m.Targets)!=1||
 		m.Targets[0].ImageID!=l.RestoreImageID||m.Targets[0].PriorRating!=l.RestoreRating{return zero,ErrStageRecovery}
 	if err:=validateNamingRecords(p,r,e,l,result,true);err!=nil{return zero,err}
 	n,_,err:=readNamingAttempt(p,r,e,result)
@@ -109,7 +128,7 @@ func expectedRestoredReceipt(p *os.Root,r record,e SealedEvidence,l landingAttem
 	f:=e.Files[0]
 	return restoredReceipt{Version:1,Kind:restoredReceiptKind,Allocation:r.Allocation,GalleryIdentity:r.GalleryIdentity,
 		PolicySHA256:m.PolicySHA256,NamingSHA256:digestBytes(raw),RetainedStateSHA256:n.RestoreStateSHA256,
-		OldPath:l.RestorePath,OldMarkedMissing:l.RestoreMarkedMissing,PriorRating:l.RestoreRating,
+		OldPath:l.RestorePath,OldPathID:l.RestorePathID,PreservationSHA256:l.RestorePreservationSHA256,OldMarkedMissing:l.RestoreMarkedMissing,PriorRating:l.RestoreRating,
 		Row:newReceiptRow{PostID:f.ID,ImageID:l.RestoreImageID,Name:n.Final,Size:f.Size,SHA256:f.SHA256},
 		PathID:n.PathID,FileIdentity:n.FileIdentity},nil
 }
