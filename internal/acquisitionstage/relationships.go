@@ -125,7 +125,17 @@ func(a *Allocator)relationshipContext(ctx context.Context,grant workerproto.Stag
 	if err!=nil||!sameLandingDB(current,landing){return fail(ErrStageRecovery)}
 	raw,err:=boundedRegularBytes(p,"metadata-result.json",maxMetadataResultBytes)
 	if err!=nil{return fail(err)}
+	s,err:=a.scope(ctx,grant.Request)
+	if err!=nil||!matches(r,s)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst){return fail(ErrStageRefused)}
+	current,err=observedDB(r,g)
+	if err!=nil||!sameLandingDB(current,landing){return fail(ErrStageRecovery)}
 	return relationshipAttempt{Version:1,MetadataSHA256:digestBytes(raw),ImageID:mapped[0].ImageID,URL:input.URL,ParentURL:input.ParentURL},p,nil
+}
+func sameRelationshipRoot(a,b *os.Root)bool{
+	ai,err:=a.Stat(".")
+	if err!=nil{return false}
+	bi,err:=b.Stat(".")
+	return err==nil&&os.SameFile(ai,bi)
 }
 func sameRelationshipScope(a,b relationshipAttempt)bool{
 	return a.Version==b.Version&&a.MetadataSHA256==b.MetadataSHA256&&a.ImageID==b.ImageID&&a.URL==b.URL&&a.ParentURL==b.ParentURL
@@ -146,8 +156,9 @@ func(a *Allocator)applyRelationships(ctx context.Context,grant workerproto.Stage
 	syncDirectory(p)
 	current,check,err:=a.relationshipContext(ctx,grant,g)
 	if err!=nil{return err}
+	sameRoot:=sameRelationshipRoot(p,check)
 	check.Close()
-	if !sameRelationshipScope(m,current){return ErrStageRecovery}
+	if !sameRoot||!sameRelationshipScope(m,current){return ErrStageRecovery}
 	before,err:=inspectRelationships(ctx,g,m.ImageID,m.URL,m.ParentURL)
 	if err!=nil||!sameRelationships(m.Before,before){return ErrStageRecovery}
 	// Legacy service logs failures. Its return alone is not evidence.
@@ -156,8 +167,9 @@ func(a *Allocator)applyRelationships(ctx context.Context,grant workerproto.Stage
 	if err!=nil||!sameRelationships(expectedRelationships(m.Before),after){return ErrStageRecovery}
 	current,check,err=a.relationshipContext(ctx,grant,g)
 	if err!=nil{return err}
+	sameRoot=sameRelationshipRoot(p,check)
 	check.Close()
-	if !sameRelationshipScope(m,current){return ErrStageRecovery}
+	if !sameRoot||!sameRelationshipScope(m,current){return ErrStageRecovery}
 	result,err:=json.Marshal(relationshipResult{Version:1,AttemptSHA256:digestBytes(raw),After:after})
 	if err!=nil||len(result)>maxRelationshipRecord{return ErrStageLimit}
 	if err:=writeOwnerBytes(ctx,p,"relationship-result.json",result);err!=nil{return err}
@@ -186,8 +198,9 @@ func(a *Allocator)observeRelationshipsLocked(ctx context.Context,grant workerpro
 	if err!=nil||!bytes.Equal(body,expected){return ErrStageRecovery}
 	current,check,err:=a.relationshipContext(ctx,grant,g)
 	if err!=nil{return err}
+	sameRoot:=sameRelationshipRoot(p,check)
 	check.Close()
-	if !sameRelationshipScope(m,current){return ErrStageRecovery}
+	if !sameRoot||!sameRelationshipScope(m,current){return ErrStageRecovery}
 	return nil
 }
 
@@ -203,7 +216,7 @@ func validateRelationshipRecords(p *os.Root,metadata metadataResult,hasResult bo
 	var m relationshipAttempt
 	if json.Unmarshal(raw,&m)!=nil||m.Version!=1||m.MetadataSHA256!=digestBytes(mraw)||
 		m.ImageID!=metadata.Rows[0].ImageID||m.URL==""||m.Before.Parent<0||
-		m.Before.Children==nil||m.Before.Edges==nil||len(m.Before.Children)>256||len(m.Before.Edges)>257{return ErrStageRecovery}
+		(m.ParentURL==""&&m.Before.Parent!=0)||m.Before.Children==nil||m.Before.Edges==nil||len(m.Before.Children)>256||len(m.Before.Edges)>257{return ErrStageRecovery}
 	canonical,err:=json.Marshal(m)
 	if err!=nil||!bytes.Equal(raw,canonical){return ErrStageRecovery}
 	for i,id:=range m.Before.Children{
