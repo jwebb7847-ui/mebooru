@@ -28,6 +28,8 @@ type landingAttempt struct{
 	RestorePath string `json:"restore_path,omitempty"`
 	RestoreRating string `json:"restore_rating,omitempty"`
 	RestoreMarkedMissing bool `json:"restore_marked_missing,omitempty"`
+	RestorePathID int64 `json:"restore_path_id,omitempty"`
+	RestorePreservationSHA256 string `json:"restore_preservation_sha256,omitempty"`
 }
 type landingObservation struct{
 	PostID string
@@ -44,11 +46,13 @@ func readLandingAttempt(p *os.Root,r record)(landingAttempt,error){
 	if json.Unmarshal(body,&attempt)!=nil||attempt.Version!=1||attempt.Allocation!=r.Allocation||
 		attempt.GalleryIdentity!=r.GalleryIdentity||!filepath.IsAbs(attempt.DBPath)||
 		filepath.Clean(attempt.DBPath)!=attempt.DBPath||attempt.DBFileIdentity==""||len(attempt.DBFileIdentity)>128{return zero,ErrStageRecovery}
-	if attempt.RestoreImageID<0{return zero,ErrStageRecovery}
+	if attempt.RestoreImageID<0||attempt.RestorePathID<0{return zero,ErrStageRecovery}
 	if attempt.RestoreImageID==0{
-		if attempt.RestorePath!=""||attempt.RestoreRating!=""||attempt.RestoreMarkedMissing{return zero,ErrStageRecovery}
+		if attempt.RestorePath!=""||attempt.RestoreRating!=""||attempt.RestoreMarkedMissing||attempt.RestorePathID!=0||attempt.RestorePreservationSHA256!=""{return zero,ErrStageRecovery}
 	}else if attempt.NewOnly||!filepath.IsLocal(attempt.RestorePath)||filepath.Base(attempt.RestorePath)!=attempt.RestorePath||
-		attempt.RestorePath=="."||!canonicalRating(attempt.RestoreRating){return zero,ErrStageRecovery}
+		attempt.RestorePath=="."||!canonicalRating(attempt.RestoreRating)||
+		(attempt.RestorePathID==0)!=(attempt.RestorePreservationSHA256=="")||
+		(attempt.RestorePathID>0&&!validDigest(attempt.RestorePreservationSHA256)){return zero,ErrStageRecovery}
 	canonical,err:=json.Marshal(attempt)
 	if err!=nil||!bytes.Equal(body,canonical){return zero,ErrStageRecovery}
 	return attempt,nil
@@ -200,5 +204,7 @@ func sameLandingDB(current,attempt landingAttempt)bool{
 	current.RestorePath=attempt.RestorePath
 	current.RestoreRating=attempt.RestoreRating
 	current.RestoreMarkedMissing=attempt.RestoreMarkedMissing
+	current.RestorePathID=attempt.RestorePathID
+	current.RestorePreservationSHA256=attempt.RestorePreservationSHA256
 	return current==attempt
 }
