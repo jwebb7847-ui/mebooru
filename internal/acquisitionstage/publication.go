@@ -357,7 +357,10 @@ func(a *Allocator)publishPreparedLocked(ctx context.Context,g workerproto.StageA
 		s,err:=a.scope(ctx,g.Request)
 		if err!=nil||!matches(r,s)||!rootsMatch(){return nil,ErrStageRefused}
 		if err:=readChecked(ctx,src,f.RelativeName,f.Size,f.SHA256,io.Discard);err!=nil{return nil,err}
-		if guard!=nil{if err:=guard();err!=nil{return nil,err}}
+		if guard!=nil{if err:=guard();err!=nil{return nil,err}
+			raw,err:=boundedRegularBytes(p,"attempt",maxPlannedAttemptBytes)
+			if err!=nil||!bytes.Equal(raw,marker){return nil,ErrStageRecovery}
+		}
 		if !rootsMatch(){return nil,ErrStageRefused}
 		if err:=common.Link(filepath.Join(from,f.RelativeName),filepath.Join(to,finalName(g,f)));err!=nil{return nil,ErrStageRecovery}
 		syncDirectory(dst)
