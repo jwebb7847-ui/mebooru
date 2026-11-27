@@ -124,8 +124,8 @@ func(a *Allocator)disposeHeldDuplicate(ctx context.Context,grant workerproto.Sta
 
 func(a *Allocator)disposeHeldDuplicateLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,extras extrasAuthority)(heldDuplicate,error){
 	var zero heldDuplicate
-	// Until the generalized receipt composes the collection witness
-	// with post-disposal recovery, do not remove the alias for a claim.
+	// The legacy diagnostic remains narrow. Only the composed path
+	// may remove an alias after a completed collection witness.
 	snapshot,err:=a.boundPolicyLocked(ctx,grant)
 	if err!=nil{return zero,err}
 	for _,row:=range snapshot.Rows{
@@ -194,5 +194,11 @@ func(a *Allocator)disposeHeldDuplicateLocked(ctx context.Context,grant workerpro
 		return nil
 	})
 	if err!=nil{return zero,ErrStageRecovery}
-	return a.observeDuplicateDisposalLocked(ctx,grant,g)
+	got,err:=a.observeDuplicateDisposalLocked(ctx,grant,g)
+	if err!=nil{return zero,err}
+	if extras!=nil{
+		composition,err:=a.observeHeldCompositionLocked(ctx,grant,g,extras,false)
+		if err!=nil||composition.Held!=got{return zero,ErrStageRecovery}
+	}
+	return got,nil
 }
