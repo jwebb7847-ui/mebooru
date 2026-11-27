@@ -3,6 +3,7 @@ package acquisitionstage
 import(
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
