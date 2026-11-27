@@ -63,6 +63,33 @@ func PreviewReceivedNaming(ctx context.Context, database *db.DB, b *Boundary, id
 	if err!=nil{return zero,err}
 	actual,err:=os.Lstat(canonical)
 	if err!=nil||!actual.Mode().IsRegular(){return zero,errors.New("landed row has no regular canonical file")}
+	facts,err:=readNameFacts(ctx,database,req.Gallery,id)
+	if err!=nil{return zero,err}
+	if facts.Base!=filepath.Base(canonical)||facts.Size!=actual.Size()||filepath.Ext(facts.Base)=="" || !strings.EqualFold(filepath.Ext(facts.Base),filepath.Ext(received)) {
+		return zero,errors.New("received extension disagrees with landed row")
+	}
+	return previewReceivedWithFacts(ctx,database,b,req,received,facts,false)
+}
+
+// PreviewUnlandedReceivedNaming is a read-only first pre-publication candidate.
+// Only facts known before ingestion are allowed. ID/time, measured format,
+// dimensions, local MD5 and other landed-only facts are deliberately refused;
+// a template that would fall back to a future row ID also refuses.
+func PreviewUnlandedReceivedNaming(ctx context.Context, database *db.DB, b *Boundary, req ReceivedNamingRequest, sha256 string, size int64) (ReceivedNamingPreview,error) {
+	var zero ReceivedNamingPreview
+	if b==nil||database==nil||ctx.Err()!=nil||req.Gallery==""||len(sha256)!=64||size<=0{return zero,errors.New("invalid unlanded naming scope")}
+	for _,s:=range []string{req.Gallery,req.ReceivedName,req.RequestFolder,req.DefaultFolder,req.DefaultName,req.Source,req.PostID}{
+		if len(s)>4096||strings.IndexByte(s,0)>=0{return zero,errors.New("invalid received naming input")}
+	}
+	if req.ReceivedName==""||strings.ContainsAny(req.ReceivedName,"/\\"){return zero,errors.New("received name must be one filename")}
+	received:=SanitizeReceivedName(req.ReceivedName)
+	if received==""||received=="."||received!=filepath.Base(received)||!filepath.IsLocal(received)||len(received)>255{return zero,errors.New("invalid received filename")}
+	facts:=NameFacts{Gallery:req.Gallery,SHA256:sha256,Size:size}
+	return previewReceivedWithFacts(ctx,database,b,req,received,facts,true)
+}
+
+func previewReceivedWithFacts(ctx context.Context,database *db.DB,b *Boundary,req ReceivedNamingRequest,received string,facts NameFacts,unlanded bool)(ReceivedNamingPreview,error){
+	var zero ReceivedNamingPreview
 	// HTTP trims the request folder before choosing defaults. Legacy
 	// invalid settings log/fall back; a managed preview refuses them.
 	requestFolder:=strings.TrimSpace(req.RequestFolder)
@@ -76,19 +103,28 @@ func PreviewReceivedNaming(ctx context.Context, database *db.DB, b *Boundary, id
 	if err:=b.Check(filepath.Join(dir,received));err!=nil{return zero,err}
 	initial,numbered,err:=previewAvailablePath(ctx,database,b,dir,received,"",uploadSuffix)
 	if err!=nil{return zero,err}
-	facts,err:=readNameFacts(ctx,database,req.Gallery,id)
-	if err!=nil{return zero,err}
-	if facts.Base!=filepath.Base(canonical)||facts.Size!=actual.Size()||filepath.Ext(facts.Base)=="" || !strings.EqualFold(filepath.Ext(facts.Base),filepath.Ext(received)) {
-		return zero,errors.New("received extension disagrees with landed row")
+	if unlanded{
+		for _,tmpl:=range []*NameTemplate{n.Folder,n.Name}{
+			if tmpl==nil{continue}
+			for _,part:=range tmpl.parts{
+				switch part.tok{
+				case tokLiteral,tokName,tokExt,tokHash,tokGallery,tokSize,tokFolder,tokSource,tokPostID:
+				default:return zero,errors.New("naming template requires landed facts")
+				}
+			}
+		}
 	}
-	if facts.MD5=="" && readsMD5([]*NameTemplate{n.Folder,n.Name}) {
-		return zero,errors.New("local MD5 evidence required before naming preview")
-	}
+	if facts.MD5==""&&readsMD5([]*NameTemplate{n.Folder,n.Name}){return zero,errors.New("local MD5 evidence required before naming preview")}
 	facts.Base=filepath.Base(initial)
 	ext:=filepath.Ext(facts.Base)
 	facts.Name=strings.TrimSuffix(facts.Base,ext)
 	facts.Ext=strings.ToLower(strings.TrimPrefix(ext,"."))
 	facts.Folder=FolderPath(b.Root(),initial)
+	if unlanded&&n.Name!=nil{
+		known:=facts
+		known.Source,known.PostID=strings.TrimSpace(req.Source),strings.TrimSpace(req.PostID)
+		if n.Name.render(known)==""{return zero,errors.New("naming requires future row ID")}
+	}
 	folder,name,err:=n.renderArrival(facts,strings.TrimSpace(req.Source),strings.TrimSpace(req.PostID))
 	if err!=nil{return zero,err}
 	base,err:=placementBase(name)
