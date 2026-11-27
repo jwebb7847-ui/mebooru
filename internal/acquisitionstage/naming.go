@@ -175,11 +175,11 @@ func namingRows(ctx context.Context,g *library.Gallery,r record,f acquisitionpla
 }
 // Independently verify upstream evidence without assuming the old
 // diagnostic path is still canonical. No new receipt is issued here.
-func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p *os.Root,auth namingAuthority,client *clientTagState,restore extrasAuthority)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){
+func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p *os.Root,auth namingAuthority,client *clientTagState,restore extrasAuthority,retired bool)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){
 	var l landingAttempt;var result metadataResult;var q gallery.ReceivedNamingRequest
 	fail:=func(err error)(landingAttempt,metadataResult,gallery.ReceivedNamingRequest,error){return l,result,q,err}
 	if g==nil||g.WatcherRunning()||auth==nil||len(e.Files)!=1{return fail(ErrStageRefused)}
-	snapshot,err:=a.boundPolicyLocked(ctx,grant)
+	snapshot,err:=a.boundPolicyModeLocked(ctx,grant,retired)
 	if err!=nil{return fail(err)}
 	rows,err:=newOnlyRowsMode(e,snapshot,true)
 	if err!=nil||len(rows)!=1{return fail(ErrStageRefused)}
@@ -225,8 +225,8 @@ func(a *Allocator)namingEvidence(ctx context.Context,grant workerproto.StageAllo
 		q.Source!=rows[0].SourceLabel||q.PostID!=rows[0].PostID{return fail(ErrStageRefused)}
 	return l,result,q,nil
 }
-func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p,src,dst,parent *os.Root,m namingAttempt,auth namingAuthority,client *clientTagState,restore extrasAuthority)error{
-	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth,client,restore)
+func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,r record,e SealedEvidence,p,src,dst,parent *os.Root,m namingAttempt,auth namingAuthority,client *clientTagState,restore extrasAuthority,retired bool)error{
+	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth,client,restore,retired)
 	if err!=nil||q!=m.Request||len(result.Rows)!=1||result.Rows[0].ImageID!=m.ImageID{return ErrStageRecovery}
 	meta,err:=json.Marshal(result)
 	rel,relErr:=boundedRegularBytes(p,"relationship-result.json",maxRelationshipRecord)
@@ -264,7 +264,7 @@ func(a *Allocator)applyNamingModeLocked(ctx context.Context,grant workerproto.St
 	for _,name:=range []string{"naming-attempt.json","naming-result.json"}{
 		if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
 	}
-	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth,nil,restore)
+	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth,nil,restore,false)
 	if err!=nil{return err}
 	f:=e.Files[0]
 	preview,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),result.Rows[0].ImageID,q)
@@ -295,12 +295,12 @@ func(a *Allocator)applyNamingModeLocked(ctx context.Context,grant workerproto.St
 	m.CollectionSHA256,err=collectionResultDigest(p)
 	if err!=nil{return err}
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,false);err!=nil{return err}
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore,false);err!=nil{return err}
 	raw,err:=json.Marshal(m)
 	if err!=nil||len(raw)>maxNamingRecord{return ErrStageLimit}
 	if err:=writeOwnerBytes(ctx,p,"naming-attempt.json",raw);err!=nil{return err}
 	syncDirectory(p)
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore,false);err!=nil{return err}
 	again,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),m.ImageID,q)
 	if err!=nil||again!=preview{return ErrStageRecovery}
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,false);err!=nil{return err}
@@ -308,7 +308,7 @@ func(a *Allocator)applyNamingModeLocked(ctx context.Context,grant workerproto.St
 	// even interruption here leaves the old canonical and private bytes.
 	if err:=dst.Link(m.Old,m.Final);err!=nil{return ErrStageRecovery}
 	syncDirectory(parent)
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore,false);err!=nil{return err}
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,true);err!=nil{return err}
 	pid,err:=namingRows(ctx,g,r,f,m.ImageID,m.Old,m.Final,l)
 	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
@@ -327,7 +327,7 @@ func(a *Allocator)applyNamingModeLocked(ctx context.Context,grant workerproto.St
 		})
 	})
 	if err!=nil{return ErrStageRecovery}
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore,false);err!=nil{return err}
 	pid,err=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old,l)
 	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,true,true);err!=nil{return err}
@@ -338,7 +338,7 @@ func(a *Allocator)applyNamingModeLocked(ctx context.Context,grant workerproto.St
 	if err:=checkNamingFiles(ctx,src,dst,parent,f,m,false,true);err!=nil{return err}
 	pid,err=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old,l)
 	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,nil,restore,false);err!=nil{return err}
 	body,err:=json.Marshal(namingResult{Version:1,AttemptSHA256:digestBytes(raw)})
 	if err!=nil{return ErrStageRecovery}
 	if err:=writeOwnerBytes(ctx,p,"naming-result.json",body);err!=nil{return err}
@@ -356,13 +356,13 @@ func(a *Allocator)observeNamingWithClientLocked(ctx context.Context,grant worker
 	return a.observeNamingModeLocked(ctx,grant,g,auth,client,nil)
 }
 func(a *Allocator)observeNamingModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority,client *clientTagState,restore extrasAuthority)error{
-	return a.observeNamingAfterReleaseLocked(ctx,grant,g,auth,client,restore,false)
+	return a.observeNamingAfterReleaseLocked(ctx,grant,g,auth,client,restore,false,false)
 }
-func(a *Allocator)observeNamingAfterReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority,client *clientTagState,restore extrasAuthority,released bool)error{
-	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+func(a *Allocator)observeNamingAfterReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,auth namingAuthority,client *clientTagState,restore extrasAuthority,released,retired bool)error{
+	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,retired)
 	if err!=nil{return err}
 	defer p.Close();defer src.Close();defer dst.Close()
-	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth,client,restore)
+	l,result,q,err:=a.namingEvidence(ctx,grant,g,r,e,p,auth,client,restore,retired)
 	if err!=nil{return err}
 	if err:=validateNamingRecords(p,r,e,l,result,true);err!=nil{return err}
 	m,_,err:=readNamingAttempt(p,r,e,result)
@@ -370,12 +370,12 @@ func(a *Allocator)observeNamingAfterReleaseLocked(ctx context.Context,grant work
 	parent,_,err:=namingParent(dst,m.Final)
 	if err!=nil{return err}
 	defer parent.Close()
-	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,client,restore);err!=nil{return err}
+	if err:=a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,client,restore,retired);err!=nil{return err}
 	f:=e.Files[0]
 	pid,err:=namingRows(ctx,g,r,f,m.ImageID,m.Final,m.Old,l)
 	if err!=nil||pid!=m.PathID{return ErrStageRecovery}
 	if released{
 		if err:=verifyReleasedNamingFiles(ctx,src,dst,parent,f,m);err!=nil{return err}
 	}else if err:=checkNamingFiles(ctx,src,dst,parent,f,m,false,true);err!=nil{return err}
-	return a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,client,restore)
+	return a.namingCurrent(ctx,grant,g,r,e,p,src,dst,parent,m,auth,client,restore,retired)
 }
