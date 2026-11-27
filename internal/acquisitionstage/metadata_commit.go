@@ -105,6 +105,11 @@ func verifyMappedRow(ctx context.Context,g *library.Gallery,t metadataTarget,r a
 	if wantRating==""{wantRating=r.Rating}
 	got,err:=readImageRating(ctx,g,t.ImageID)
 	if err!=nil||got!=wantRating{return zero,ErrStageRecovery}
+	seenRejected:=map[string]bool{}
+	for _,name:=range rejected{
+		if !slices.Contains(r.Tags,name)||seenRejected[name]{return zero,ErrStageRecovery}
+		seenRejected[name]=true
+	}
 	var ids []int64
 	for _,name:=range r.Tags{
 		if ctx.Err()!=nil{return zero,ErrStageRefused}
@@ -179,6 +184,18 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 		return err==nil&&c==landing
 	}
 	if !stillCurrent(){return nil,ErrStageRefused}
+	// Bound the worst-case observation record before any mutation.
+	// Rejection strings can echo every projected tag; IDs are at most
+	// 20 decimal digits plus delimiter. JSON escaping can expand names.
+	estimate:=4096+len(rows)*1024
+	for _,row:=range rows{
+		for _,name:=range row.Tags{
+			raw,err:=json.Marshal(name)
+			if err!=nil{return nil,ErrStageRefused}
+			estimate+=len(raw)+24
+			if estimate>maxMetadataResultBytes{return nil,ErrStageLimit}
+		}
+	}
 	body,err:=json.Marshal(m)
 	if err!=nil||len(body)>maxSealRecordBytes{return nil,ErrStageRecovery}
 	if err:=writeOwnerBytes(ctx,p,"metadata-attempt.json",body);err!=nil{return nil,err}
@@ -202,6 +219,20 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 	again,err:=a.observeLandingLocked(ctx,grant,g)
 	if err!=nil||!slices.Equal(observed,again)||!stillCurrent(){return nil,ErrStageRecovery}
 	// Results are deliberately NONTERMINAL. Optional provenance, naming,
-	// duplicate-drop, user extras and durable outcome remain unresolved.
-	return out,nil
+	// duplicate-drop and user extras remain unresolved. Recheck all
+	// rows after the final service write, then persist exact observation.
+	for i,row:=range rows{
+		v,err:=verifyMappedRow(ctx,g,m.Targets[i],row,out[i].Rejected)
+		if err!=nil||!sameMetadataObservation(v,out[i]){return nil,ErrStageRecovery}
+	}
+	if !stillCurrent(){return nil,ErrStageRefused}
+	attemptHash,err:=metadataAttemptDigest(m)
+	if err!=nil{return nil,err}
+	result:=metadataResult{Version:1,AttemptSHA256:attemptHash,Rows:out}
+	raw,err:=json.Marshal(result)
+	if err!=nil||len(raw)>maxMetadataResultBytes{return nil,ErrStageRecovery}
+	if err:=writeOwnerBytes(ctx,p,"metadata-result.json",raw);err!=nil{return nil,err}
+	syncDirectory(p)
+	if !stillCurrent(){return nil,ErrStageRefused}
+	return a.observeMappedMetadataLocked(ctx,grant,g)
 }

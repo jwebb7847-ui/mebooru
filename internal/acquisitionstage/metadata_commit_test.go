@@ -19,7 +19,7 @@ import(
 )
 
 func TestMappedMetadataUsesExistingLibraryServices(t *testing.T){
-	for _,mode:=range []string{"new","duplicate rating","rejected tag","withheld tag","failure after source","unbound","wrong scope"}{
+	for _,mode:=range []string{"new","duplicate rating","rejected tag","withheld tag","failure after source","unbound","wrong scope","lost result","changed source URL","missing tag attribution","changed rating","damaged result"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -88,6 +88,28 @@ func TestMappedMetadataUsesExistingLibraryServices(t *testing.T){
 			a,err=Open(stage,2,4096,auth);if err!=nil{t.Fatal(err)}
 			if got,err:=a.applyMappedMetadata(ctx,grant,g);err==nil||got!=nil{t.Fatal("metadata attempt replayed")}
 			if _,err:=a.observeLanding(ctx,grant,g);err!=nil{t.Fatal("landing evidence lost",err)}
+			resultPath:=filepath.Join(filepath.Dir(marker),"metadata-result.json")
+			switch mode{
+			case "lost result":
+				if err:=os.Remove(resultPath);err!=nil{t.Fatal(err)}
+			case "changed source URL":
+				if _,err:=g.DB.Write.Exec(`UPDATE image_sources SET url='https://example.invalid/different' WHERE image_id=?`,res.Image.ID);err!=nil{t.Fatal(err)}
+			case "missing tag attribution":
+				if _,err:=g.DB.Write.Exec(`DELETE FROM image_tag_sources WHERE image_id=?`,res.Image.ID);err!=nil{t.Fatal(err)}
+			case "changed rating":
+				cat,name,err:=gallery.ResolveCategoryTag(g.DB,"rating:explicit");if err!=nil{t.Fatal(err)}
+				tag,err:=g.TagSvc.GetOrCreateTag(name,cat);if err!=nil{t.Fatal(err)}
+				if _,err:=g.TagSvc.AddTagsToOneImage(res.Image.ID,[]int64{tag.ID},"user");err!=nil{t.Fatal(err)}
+			case "damaged result":
+				if err:=os.WriteFile(resultPath,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+			}
+			reconciled,err:=a.observeMappedMetadata(ctx,grant,g)
+			switch mode{
+			case "failure after source","lost result","changed source URL","missing tag attribution","changed rating","damaged result":
+				if err==nil||reconciled!=nil{t.Fatal("uncertain or changed metadata reconciled")}
+			default:
+				if err!=nil||len(reconciled)!=1||!sameMetadataObservation(got[0],reconciled[0]){t.Fatalf("lost reply %+v %v",reconciled,err)}
+			}
 		})
 	}
 }
