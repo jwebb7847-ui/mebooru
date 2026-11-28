@@ -30,6 +30,10 @@ func TestGuardedExistingExecution(t *testing.T){
 	testExistingPublicationTargetModes(t, []string{"exec held","exec alias","restore exec","restore exec unmarked","exec reopen","exec stale","exec revoked after link intent","exec changed after link","exec revoked after landing intent","exec changed after landing intent","restore exec naming changed","restore exec bad naming","restore exec old path returned","exec lost link","exec lost landing","exec changed after landing"})
 }
 
+func TestGuardedExistingMetadata(t *testing.T){
+	testExistingPublicationTargetModes(t, []string{"exec meta held","restore exec meta","exec meta alias","exec meta reopen","exec meta revoked","exec meta revoked after intent","exec meta changed after intent","exec meta source failure","exec meta source conflict","exec meta changed after result","exec meta changed source","exec meta lost result","exec meta lost intent","exec meta corrupt result","exec meta changed path","exec meta revoked after result"})
+}
+
 func testExistingPublicationTargetModes(t *testing.T, modes []string){
 	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
@@ -64,7 +68,7 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 			}
 			kind := existingHeld
 			if strings.HasPrefix(mode,"restore") { kind = existingRestore }
-			if mode == "held alias" || mode == "restore alias" || mode == "exec alias" {
+			if mode == "held alias" || mode == "restore alias" || mode == "exec alias" || mode == "exec meta alias" {
 				alias := filepath.Join(s.GalleryRoot,"operator.png")
 				if err := os.WriteFile(alias,data,0600); err != nil { t.Fatal(err) }
 				if res,err := g.LandInPlace(ctx,alias,library.LandSpec{Origin:"fixture"}); err != nil || !res.Duplicate { t.Fatal("alias",err) }
@@ -323,8 +327,12 @@ func checkGuardedExistingExecution(t *testing.T,ctx context.Context,ap **Allocat
 	if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("premature receipt")}
 	if got.Kind==existingHeld{
 		if b,err:=os.ReadFile(old);err!=nil||!bytes.Equal(b,data){t.Fatal("canonical bytes",err)}
-		if mode=="exec alias"{if b,err:=os.ReadFile(filepath.Join(g.GalleryPath,"operator.png"));err!=nil||!bytes.Equal(b,data){t.Fatal("operator alias",err)}}
+		if mode=="exec alias"||mode=="exec meta alias"{if b,err:=os.ReadFile(filepath.Join(g.GalleryPath,"operator.png"));err!=nil||!bytes.Equal(b,data){t.Fatal("operator alias",err)}}
 	}else if _,err:=os.Stat(old);!os.IsNotExist(err){t.Fatal("old path reappeared",err)}
+	if strings.Contains(mode,"exec meta"){
+		checkGuardedExistingMetadata(t,ctx,ap,stage,grant,g,got,extras,authority,mode,naming,decision,old,data)
+		return
+	}
 	switch mode{
 	case "exec reopen":
 		if err:=a.Close();err!=nil{t.Fatal(err)}
@@ -340,4 +348,79 @@ func checkGuardedExistingExecution(t *testing.T,ctx context.Context,ap **Allocat
 	if (err==nil)!=want||want&&(row.ImageID!=got.ImageID||row.Canonical!=(got.Kind==existingRestore)){t.Fatal("witness",row,err)}
 	if _,err:=os.Stat(filepath.Join(dir,"attempt"));!os.IsNotExist(err){t.Fatal("legacy attempt",err)}
 	if _,err:=os.Stat(filepath.Join(dir,"landing-attempt.json"));!os.IsNotExist(err){t.Fatal("legacy landing marker",err)}
+}
+
+func checkGuardedExistingMetadata(t *testing.T,ctx context.Context,ap **Allocator,stage string,grant workerproto.StageAllocation,g *library.Gallery,got existingPublicationTarget,extras extrasAuthority,authority Authority,mode string,naming namingAuthority,decision existingDispositionAuthority,old string,data []byte){
+	t.Helper()
+	a:=*ap
+	dir:=filepath.Join(stage,grant.Request.OperationID,"publication")
+	attempt:=filepath.Join(dir,existingMetadataAttemptName)
+	result:=filepath.Join(dir,existingMetadataResultName)
+	managed:=filepath.Join(g.GalleryPath,finalName(grant,got.File))
+	id:=got.ImageID
+	if _,err:=a.observeExistingMetadata(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("premature metadata observation")}
+	if mode=="exec meta source failure"{
+		if _,err:=g.DB.Write.Exec("CREATE TRIGGER reject_fixture_source BEFORE INSERT ON image_sources WHEN NEW.site='derpibooru' BEGIN SELECT RAISE(ABORT,'fixture'); END");err!=nil{t.Fatal(err)}
+	}
+	if mode=="exec meta source conflict"{
+		if _,_,err:=gallery.MergeSource(g.DB,g.TagSvc,id,"derpibooru","other-post","https://example.invalid/other-post","","",gallery.PostFile{},[]string{"prior"},gallery.Withheld{});err!=nil{t.Fatal(err)}
+	}
+	original:=decision
+	injected:=false
+	decision=func(ctx context.Context,grant workerproto.StageAllocation)(string,error){
+		if mode=="exec meta revoked"{return "",ErrStageRefused}
+		if _,err:=os.Stat(attempt);err==nil&&!injected{
+			if mode=="exec meta revoked after intent"{return "",ErrStageRefused}
+			if mode=="exec meta changed after intent"{
+				injected=true
+				if _,err:=g.DB.Write.Exec("UPDATE images SET note='late change' WHERE id=?",id);err!=nil{t.Fatal(err)}
+			}
+		}
+		if mode=="exec meta revoked after result"{if _,err:=os.Stat(result);err==nil{return "",ErrStageRefused}}
+		return original(ctx,grant)
+	}
+	v,err:=a.applyExistingMetadata(ctx,grant,g,decision,extras,naming)
+	pre:=mode=="exec meta revoked"||mode=="exec meta source conflict"
+	partial:=mode=="exec meta revoked after intent"||mode=="exec meta changed after intent"||mode=="exec meta source failure"
+	late:=mode=="exec meta revoked after result"
+	if (err!=nil)!=(pre||partial||late){t.Fatal("metadata",v,err)}
+	if pre{if _,err:=os.Stat(attempt);!os.IsNotExist(err){t.Fatal("premature metadata intent",err)};return}
+	if _,err:=os.Stat(attempt);err!=nil{t.Fatal("missing metadata intent",err)}
+	if partial{
+		if _,err:=os.Stat(result);!os.IsNotExist(err){t.Fatal("partial write got result",err)}
+		if _,err:=a.applyExistingMetadata(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("metadata replay")}
+		if _,err:=a.observeExistingMetadata(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("partial metadata acknowledged")}
+		return
+	}
+	if late{decision=original;v,err=a.observeExistingMetadata(ctx,grant,g,decision,extras,naming);if err!=nil{t.Fatal("lost acknowledgement",err)}}
+	if v.ImageID!=id||v.PostID!=got.File.ID||v.Rating!="explicit"{t.Fatal("wrong metadata evidence",v)}
+	var n int
+	if err:=g.DB.Read.QueryRow("SELECT COUNT(*) FROM image_sources WHERE image_id=? AND site IN ('other','derpibooru')",id).Scan(&n);err!=nil||n!=2{t.Fatal("source memberships",n,err)}
+	if err:=g.DB.Read.QueryRow("SELECT COUNT(*) FROM images WHERE id=? AND note='operator note'",id).Scan(&n);err!=nil||n!=1{t.Fatal("operator note",n,err)}
+	if _,err:=a.applyExistingMetadata(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("metadata replay")}
+	if _,err:=a.applyMappedMetadata(ctx,grant,g);err==nil{t.Fatal("legacy metadata bypass")}
+	if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("premature terminal receipt")}
+	if b,err:=os.ReadFile(managed);err!=nil||!bytes.Equal(b,data){t.Fatal("managed bytes",err)}
+	if got.Kind==existingHeld{if b,err:=os.ReadFile(old);err!=nil||!bytes.Equal(b,data){t.Fatal("canonical bytes",err)}}
+	switch mode{
+	case "exec meta reopen":
+		if err:=a.Close();err!=nil{t.Fatal(err)}
+		next,err:=Open(stage,2,4096,authority);if err!=nil{t.Fatal(err)}
+		*ap=next;a=next
+	case "exec meta changed after result":
+		if _,err:=g.DB.Write.Exec("UPDATE images SET note='new note' WHERE id=?",id);err!=nil{t.Fatal(err)}
+	case "exec meta changed source":
+		if _,err:=g.DB.Write.Exec("UPDATE image_sources SET url='https://example.invalid/changed' WHERE image_id=? AND site='other'",id);err!=nil{t.Fatal(err)}
+	case "exec meta lost result":
+		if err:=os.Remove(result);err!=nil{t.Fatal(err)}
+	case "exec meta lost intent":
+		if err:=os.Remove(attempt);err!=nil{t.Fatal(err)}
+	case "exec meta corrupt result":
+		if err:=os.WriteFile(result,[]byte("bad"),0600);err!=nil{t.Fatal(err)}
+	case "exec meta changed path":
+		if _,err:=g.DB.Write.Exec("UPDATE image_paths SET id=id+10000 WHERE path=?",managed);err!=nil{t.Fatal(err)}
+	}
+	again,err:=a.observeExistingMetadata(ctx,grant,g,decision,extras,naming)
+	want:=mode=="exec meta held"||mode=="restore exec meta"||mode=="exec meta alias"||mode=="exec meta reopen"||mode=="exec meta revoked after result"
+	if (err==nil)!=want||want&&!sameMetadataObservation(again,v){t.Fatal("metadata observation",again,err)}
 }
