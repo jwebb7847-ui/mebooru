@@ -52,17 +52,21 @@ func selectRuntimeWheel(dir string, cfg *windowregistry.LiveConfig) {
 	}
 }
 
+func runtimeFileMatches(path, digest string) bool {
+	hash, err := windowregistry.RuntimeDigest(path)
+	return err == nil && hash == digest
+}
+
 func runtimeOutput(ctx context.Context, path, wheel string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, path, append([]string{"--config-ignore"}, args...)...)
 	cmd.Env = append(os.Environ(), "MEBOORU_RUNTIME_WHEEL="+wheel)
 	cmd.WaitDelay = time.Second
-	var stderr probeOutput
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil || len(stderr.Bytes()) != 0 || stderr.overflow {
+	var stdout, stderr probeOutput
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil || len(stderr.Bytes()) != 0 || stderr.overflow || stdout.overflow {
 		return "", errors.New("gallery-dl could not complete the local runtime check")
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(string(stdout.Bytes())), nil
 }
 
 func (a *managedApplication) readRuntimeStatus(settings *web.AcquisitionSettings) {
@@ -70,29 +74,35 @@ func (a *managedApplication) readRuntimeStatus(settings *web.AcquisitionSettings
 	settings.RuntimeSource = "Configured executable"
 	if launcher, _ := liveRuntimePath(""); cfg.Runtime == launcher {
 		settings.RuntimeSource = "Bundled with Mebooru"
+	} else {
+		// The custodian checks an explicit override at job admission.
+		// Opening Settings does not run that executable.
+		settings.RuntimeConfigured = true
+		return
 	}
 	settings.RuntimeUpdates = cfg.Runtime == macRuntimeLauncher()
 	if cfg.RuntimeWheel != "" {
 		settings.RuntimeSource = "Verified update"
 	}
-	a.runtimeProbe.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-		if version, err := runtimeOutput(ctx, cfg.Runtime, cfg.RuntimeWheel, "--version"); err == nil {
-			a.runtimeVersion = version
-		}
-	})
-	settings.RuntimeVersion = a.runtimeVersion
-	settings.RuntimeReady = a.runtimeVersion == cfg.Version()
+	valid := runtimeFileMatches(cfg.Runtime, cfg.RuntimeSHA256) &&
+		(cfg.RuntimeWheel == "" || runtimeFileMatches(cfg.RuntimeWheel, cfg.RuntimeWheelSHA256))
+	if valid {
+		a.runtimeProbe.Do(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			if version, err := runtimeOutput(ctx, cfg.Runtime, cfg.RuntimeWheel, "--version"); err == nil {
+				a.runtimeVersion = version
+			}
+		})
+		settings.RuntimeVersion = a.runtimeVersion
+		settings.RuntimeReady = a.runtimeVersion == cfg.Version()
+	}
 	if settings.RuntimeUpdates {
 		selected := runtimeUpdateSelected(a.owner.dir)
 		settings.RuntimeRollback = selected || cfg.RuntimeWheel != ""
 		if selected {
 			settings.RuntimeSelection = acquisitionplan.StrictQualifiedUpdateVersion
-			if cfg.RuntimeWheel == "" {
-				hash, err := windowregistry.RuntimeDigest(runtimeWheelPath(a.owner.dir))
-				settings.RuntimeUpdateDamaged = err != nil || hash != updateWheelSHA
-			}
+			settings.RuntimeUpdateDamaged = !runtimeFileMatches(runtimeWheelPath(a.owner.dir), updateWheelSHA)
 		} else {
 			settings.RuntimeSelection = acquisitionplan.StrictQualifiedVersion
 		}
@@ -145,6 +155,9 @@ func (a *managedApplication) RuntimeAction(ctx context.Context, action string) (
 	}
 	if action != "install" {
 		return "", web.ErrManagedImportUnsupported
+	}
+	if !runtimeFileMatches(cfg.Runtime, cfg.RuntimeSHA256) {
+		return "", errors.New("The bundled gallery-dl launcher has changed. Restart Mebooru before installing an update.")
 	}
 	path := runtimeWheelPath(dir)
 	if runtimeUpdateSelected(dir) {

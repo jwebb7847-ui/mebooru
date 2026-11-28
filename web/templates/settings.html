@@ -1362,8 +1362,8 @@
     {{if not .AcquisitionError}}
     <div class="settings-sub">
       <h4>Acquisition runtime</h4>
-      <p>{{.Acquisition.RuntimeSource}}{{if .Acquisition.RuntimeVersion}} · gallery-dl {{.Acquisition.RuntimeVersion}}{{end}} · {{if .Acquisition.RuntimeReady}}Ready{{else}}Unavailable{{end}}</p>
-      {{if .Acquisition.RuntimeUpdateDamaged}}<p role="status">The installed update could not be verified. Mebooru is using the bundled runtime.</p>{{end}}
+      <p>{{.Acquisition.RuntimeSource}}{{if .Acquisition.RuntimeVersion}} · gallery-dl {{.Acquisition.RuntimeVersion}}{{end}} · {{if .Acquisition.RuntimeReady}}Ready{{else if .Acquisition.RuntimeConfigured}}Verified when acquisition starts{{else}}Unavailable{{end}}</p>
+      {{if .Acquisition.RuntimeUpdateDamaged}}<p role="status">The installed update could not be verified. Select the bundled version and restart, or reinstall the update when online.</p>{{end}}
       {{if .RuntimeMessage}}<div class="flash" role="status">{{.RuntimeMessage}}</div>{{end}}
       {{if .Acquisition.RuntimeUpdates}}
       <form method="post" action="/settings/acquisition/runtime" class="settings-actions">

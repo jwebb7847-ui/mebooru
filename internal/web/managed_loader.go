@@ -30,13 +30,13 @@ type managedRetry interface {
 }
 
 type AcquisitionSettings struct {
-	Runtime, PolicyFile                                                 string
-	Blacklist                                                           string
-	SleepRequest                                                        float64
-	MaxItems                                                            int
-	NeedsRestart                                                        bool
-	RuntimeVersion, RuntimeSource, RuntimeSelection                     string
-	RuntimeReady, RuntimeUpdates, RuntimeRollback, RuntimeUpdateDamaged bool
+	Runtime, PolicyFile                                                                    string
+	Blacklist                                                                              string
+	SleepRequest                                                                           float64
+	MaxItems                                                                               int
+	NeedsRestart                                                                           bool
+	RuntimeVersion, RuntimeSource, RuntimeSelection                                        string
+	RuntimeReady, RuntimeUpdates, RuntimeRollback, RuntimeUpdateDamaged, RuntimeConfigured bool
 }
 
 type managedSettingsProvider interface {
