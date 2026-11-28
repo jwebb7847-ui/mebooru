@@ -104,6 +104,9 @@ func TestOwnerBatchMixedAndArchive(t *testing.T){
 				if v.State!=want||v.PostID!=rows[i].PostID{t.Fatal("outcome",v,want)}
 			}
 			again,err:=a.ObserveBatch(ctx,parent);if err!=nil||!reflect.DeepEqual(again,out){t.Fatal("observe",again,err)}
+			wire,err:=a.ObserveWindowOutcome(ctx,parent,hash);if err!=nil||len(wire.Items)!=4||wire.Items[0].Disposition!="new"{t.Fatal("queue outcome",wire,err)}
+			encoded,err:=workerproto.EncodeWindowOutcome(wire,parent,hash);if err!=nil{t.Fatal(err)}
+			if _,err:=workerproto.DecodeWindowOutcome(encoded,parent,hash);err!=nil{t.Fatal(err)}
 			if _,err:=a.CommitBatchForOwner(ctx,parent,set,owner);err==nil{t.Fatal("batch replay")}
 			if partial{return}
 			for _,v:=range out.Items{
