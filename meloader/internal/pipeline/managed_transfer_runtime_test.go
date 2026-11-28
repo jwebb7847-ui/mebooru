@@ -139,8 +139,37 @@ func TestManagedStrictTransferPinnedRuntime(t *testing.T){
 		if child==nil{_ = reader.Close();return nil,err}
 		return &composedRuntimeChild{OperationChild:child,reader:reader,status:status},err
 	}
-	metadata,err:=processguard.NewMetadataOperation(set,gate,q,r,c,func(context.Context)(acquisitionplan.MetadataIdentity,error){return id,nil},
-		func(ctx context.Context,_ workerproto.MetadataKind,args []string)(processguard.StreamProbeChild,error){return start(ctx,args)})
+	// Actual custody owns the runtime processes, while the worker owns
+	// only proxy handles. All wire starts are exact typed requests.
+	root,err:=filepath.EvalSymlinks(t.TempDir());if err!=nil{t.Fatal(err)}
+	custody:=processguard.NewOperationSet(1)
+	var grantMu sync.Mutex
+	var grant workerproto.StageAllocation
+	var completed []acquisitionplan.VerifiedTransferFile
+	cr,cw,err:=os.Pipe();if err!=nil{t.Fatal(err)}
+	sr,sw,err:=os.Pipe();if err!=nil{cr.Close();cw.Close();t.Fatal(err)}
+	defer cr.Close();defer cw.Close();defer sr.Close();defer sw.Close()
+	brokerDone:=make(chan error,1)
+	go func(){brokerDone<-processguard.ServeManagedRuntimeBroker(ctx,sr,cw,custody,processguard.ManagedRuntimeGrant{
+		Metadata:q,Runtime:r,Config:c,
+		Current:func(context.Context)bool{return gate.CurrentGeneration()!=(workerproto.DrainGeneration{})},
+		Transfer:func(context.Context)(workerproto.StageAllocation,string,error){
+			grantMu.Lock();defer grantMu.Unlock()
+			if !workerproto.ValidStageAllocation(grant){return workerproto.StageAllocation{},"",processguard.ErrStrictTransferOperation}
+			return grant,root,nil
+		},
+		Start:start,
+		Complete:func(_ context.Context,g workerproto.StageAllocation,files []acquisitionplan.VerifiedTransferFile)error{
+			grantMu.Lock();defer grantMu.Unlock()
+			if grant!=g{return processguard.ErrStrictTransferOperation}
+			completed=slices.Clone(files);return nil
+		},
+	})}()
+	session,err:=workerproto.OpenSession(ctx,cr,sw,workerproto.OperationRequester,nil)
+	if err!=nil{t.Fatal(err)}
+	defer func(){session.Close();select{case err:=<-brokerDone:if err!=nil{t.Errorf("custody cleanup: %v",err)};case <-time.After(15*time.Second):t.Error("custody cleanup timeout")}}()
+	client,err:=processguard.NewManagedRuntimeClient(session);if err!=nil{t.Fatal(err)}
+	metadata,err:=processguard.NewMetadataOperation(set,gate,q,r,c,func(context.Context)(acquisitionplan.MetadataIdentity,error){return id,nil},client.MetadataStarter(q))
 	if err!=nil{t.Fatal(err)}
 	completion,err:=metadata.RunCompletion(ctx,q)
 	if err!=nil{t.Fatalf("metadata: %v",err)}
@@ -174,14 +203,21 @@ func TestManagedStrictTransferPinnedRuntime(t *testing.T){
 	before=len(requests)
 	lock.Unlock()
 	if before!=0{t.Fatalf("preflight requested media: %d",before)}
-	root,err:=filepath.EvalSymlinks(t.TempDir())
-	if err!=nil{t.Fatal(err)}
+	grantMu.Lock()
+	grant=workerproto.StageAllocation{Request:workerproto.StageAllocateRequest{OperationID:strings.Repeat("a",32),Transfer:result.Approval.Request()},TransferID:strings.Repeat("b",32),MaxFiles:5,MaxBytes:8<<20}
+	g:=grant
+	grantMu.Unlock()
 	var stages []processguard.StrictTransferStage
-	files,err:=result.Approval.runTransferCandidate(ctx,result.Approval.Request(),set,root,func(c context.Context,stage processguard.StrictTransferStage,args []string)(processguard.StreamProbeChild,error){
+	transfer:=client.TransferStarter(g)
+	files,err:=result.Approval.RunAllocatedTransfer(ctx,g,set,root,func(c context.Context,stage processguard.StrictTransferStage,args []string)(processguard.StreamProbeChild,error){
 		stages=append(stages,stage)
-		return start(c,args)
+		return transfer(c,stage,args)
 	})
 	if err!=nil{t.Fatalf("strict transfer stage %v: %v",stages,err)}
+	grantMu.Lock()
+	proof:=slices.Clone(completed)
+	grantMu.Unlock()
+	if !slices.Equal(proof,files){t.Fatalf("custodian completion disagrees with worker: %+v / %+v",proof,files)}
 	expectedHash:=sha256.Sum256([]byte("synthetic fixture bytes"))
 	if len(files)!=1||files[0].ID!="42"||files[0].Size!=int64(len("synthetic fixture bytes"))||files[0].SHA256!=hex.EncodeToString(expectedHash[:]){t.Fatalf("verified files: %+v",files)}
 	if !slices.Equal(stages,[]processguard.StrictTransferStage{processguard.TransferVersion,processguard.TransferNegative,processguard.TransferPositive,processguard.TransferMedia}){t.Fatalf("stages: %v",stages)}
@@ -191,6 +227,7 @@ func TestManagedStrictTransferPinnedRuntime(t *testing.T){
 	if !slices.Equal(got,[]string{"GET /42.jpg"}){t.Fatalf("strict media boundary: requests=%v",got)}
 	if err:=gate.Drain(ctx);err!=nil{t.Fatal(err)}
 	t.Log("PASS: actual alias-aware strict preflight, contained runtime and verified file; only approved unchanged media requested")
+	t.Log("PASS: typed custody broker independently compiled all six actual runtime stages and verified transfer after cleanup")
 }
 
 // Test-only runtime child adapter; no application binary includes this entry.
