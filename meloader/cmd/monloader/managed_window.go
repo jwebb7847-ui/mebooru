@@ -41,13 +41,12 @@ func runManagedWindowWorker(args []string)error{
 	cfg.Tags.Blacklist=[]string{"violence"}
 	mapper,err:=mapping.New(config.NewProvider(cfg),"");if err!=nil{return err}
 	var session atomic.Pointer[workerproto.Session]
-	var used atomic.Bool
-	md:=setup.Metadata()
 	_,mc,identity:=setup.Identity()
 	owner:=&pipeline.SessionJobOwner{
 		Session:session.Load,
 		PrepareWindow:func(c context.Context,j *queue.Job)(*pipeline.ManagedWindowRuntime,error){
-			if j.ID!=md.JobID||j.URL!=md.URL||j.Gallery!=md.Gallery||j.MaxItems!=setup.Count||!used.CompareAndSwap(false,true){return nil,managedqa.ErrFixture}
+			md:=setup.MetadataFor(j.ID)
+			if !workerproto.ValidMetadataPlan(md)||j.URL!=md.URL||j.Gallery!=md.Gallery||j.MaxItems!=setup.Count{return nil,managedqa.ErrFixture}
 			if err:=client.OpenWindow(c,md);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
 			epoch:=gate.CurrentGeneration()
 			current:func(c context.Context)bool{return c.Err()==nil&&epoch!=(workerproto.DrainGeneration{})&&gate.CurrentGeneration()==epoch&&broker.Err()==nil}
@@ -67,7 +66,7 @@ func runManagedWindowWorker(args []string)error{
 		},
 		Workspace:func(_ context.Context,g workerproto.StageAllocation)(string,error){
 			var known managedqa.Grant
-			if err:=managedqa.ReadJSON(dir,managedqa.GrantName,&known,64<<10);err!=nil||known.Allocation!=g{return "",managedqa.ErrFixture}
+			if err:=managedqa.ReadJSON(dir,managedqa.JobFile(managedqa.GrantName,g.Request.Transfer.Metadata.JobID),&known,64<<10);err!=nil||known.Allocation!=g{return "",managedqa.ErrFixture}
 			return managedqa.Workspace(dir,g)
 		},
 	}
@@ -84,7 +83,7 @@ func runManagedWindowWorker(args []string)error{
 		if c.Err()!=nil{return c.Err()}
 		switch op{
 		case workerproto.QueueEnqueue:
-			if cmd.URL==md.URL&&cmd.Gallery==md.Gallery&&cmd.MaxItems==setup.Count&&!used.Load(){return nil}
+			for job:=int64(1);job<=int64(setup.Windows);job++{md:=setup.MetadataFor(job);if cmd.URL==md.URL&&cmd.Gallery==md.Gallery&&cmd.MaxItems==setup.Count{return nil}}
 		case workerproto.QueueGet,workerproto.QueueList,workerproto.QueuePause,workerproto.QueueResume:
 			return nil
 		}

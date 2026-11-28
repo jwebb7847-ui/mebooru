@@ -32,6 +32,7 @@ var ErrFixture=errors.New("disposable managed window refused")
 
 type Setup struct{
 	Count int
+	Windows int
 	Port int
 	Python string
 	ScriptSHA256 string
@@ -69,11 +70,19 @@ func ReadJSON(dir,name string,v any,limit int)error{
 func Load(dir string)(Setup,error){
 	var s Setup
 	if err:=ReadJSON(dir,SetupName,&s,8192);err!=nil{return s,err}
-	if s.Count!=3&&s.Count!=200||s.Port<1||s.Port>65535||!filepath.IsAbs(s.Python)||s.ScriptSHA256!=Digest([]byte(PythonFixture)){return Setup{},ErrFixture}
+	if (s.Count!=3&&s.Count!=200)||(s.Windows!=1&&s.Windows!=2)||s.Windows==2&&s.Count!=3||s.Port<1||s.Port>65535||!filepath.IsAbs(s.Python)||s.ScriptSHA256!=Digest([]byte(PythonFixture)){return Setup{},ErrFixture}
 	b,err:=Read(dir,ScriptName,1<<20);if err!=nil||Digest(b)!=s.ScriptSHA256{return Setup{},ErrFixture}
 	return s,nil
 }
-func(s Setup) Metadata()workerproto.MetadataPlanRequest{return workerproto.MetadataPlanRequest{JobID:1,Gallery:Gallery,Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:Search,First:1,Last:uint32(s.Count)}}
+func(s Setup) Metadata()workerproto.MetadataPlanRequest{return s.MetadataFor(1)}
+func(s Setup) MetadataFor(job int64)workerproto.MetadataPlanRequest{
+	if job<1||job>int64(s.Windows){return workerproto.MetadataPlanRequest{}}
+	url:=Search;if job==2{url+="2"}
+	return workerproto.MetadataPlanRequest{JobID:job,Gallery:Gallery,Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:url,First:1,Last:uint32(s.Count)}
+}
+func JobFile(name string,job int64)string{return strconv.FormatInt(job,10)+"-"+name}
+func ParentID(job int64)string{return fmt.Sprintf("%032x",job)}
+func(s Setup) Offset(job int64)int{return int(job-1)*s.Count}
 func(s Setup) Identity()(acquisitionplan.RuntimeIdentity,acquisitionplan.MetadataConfig,acquisitionplan.MetadataIdentity){
 	r:=acquisitionplan.RuntimeIdentity{Generation:1,Version:acquisitionplan.StrictQualifiedVersion,ArtifactSHA256:s.ScriptSHA256,ManifestSHA256:s.ScriptSHA256}
 	c:=acquisitionplan.MetadataConfig{Generation:1,Source:"derpibooru"}
@@ -81,9 +90,9 @@ func(s Setup) Identity()(acquisitionplan.RuntimeIdentity,acquisitionplan.Metadat
 	return r,c,acquisitionplan.MetadataIdentity{Runtime:r,Config:id}
 }
 func(s Setup) MediaURL(id string)string{return fmt.Sprintf("http://127.0.0.1:%d/%s.png",s.Port,id)}
-func(s Setup) ExpectedIDs()[]string{
+func(s Setup) ExpectedIDs(job int64)[]string{
 	out:=make([]string,0,s.Count-1)
-	for i:=2;i<=s.Count;i++{out=append(out,strconv.Itoa(i))}
+	for i:=2;i<=s.Count;i++{out=append(out,strconv.Itoa(s.Offset(job)+i))}
 	return out
 }
 func Workspace(dir string,g workerproto.StageAllocation)(string,error){
@@ -131,9 +140,10 @@ def checked_lookup(host, service, *a, **k):
     return getaddrinfo(host, service, *a, **k)
 socket.socket.connect, socket.socket.connect_ex, socket.getaddrinfo = checked_connect, checked_connect_ex, checked_lookup
 def posts(self):
-    for ident in range(1, count + 1):
-        tags = ["safe", "violence"] if ident == 1 else ["safe", "fixture"]
-        ids = [1, 3] if ident == 1 else [1, 4]
+    offset = count if sys.argv[-1].endswith("q=fixture2") else 0
+    for ident in range(offset + 1, offset + count + 1):
+        tags = ["safe", "violence"] if ident == offset + 1 else ["safe", "fixture"]
+        ids = [1, 3] if ident == offset + 1 else [1, 4]
         yield {"id": ident, "tags": tags, "tag_ids": ids,
                "created_at": "2020-01-01T00:00:00Z", "format": "png",
                "representations": {"full": base + "/" + str(ident) + ".png"}}

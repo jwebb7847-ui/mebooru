@@ -93,6 +93,13 @@ def verify_pinned_runtime(library, directory):
                 assert window.returncode == 0, window.returncode
                 assert (f"PASS: disposable managed executable window {count} listed, "
                         f"{count - 1} committed, one blocked, exact receipts and cleanup") in window.stdout
+            reuse = subprocess.run(
+                [str(library), "internal-managed-window-probe-v1", "3x2"],
+                stdin=subprocess.DEVNULL, capture_output=True,
+                cwd=directory, env=metadata_env, timeout=120, text=True)
+            print(reuse.stdout, reuse.stderr, sep="")
+            assert reuse.returncode == 0, reuse.returncode
+            assert "PASS: two successive managed executable windows on one worker session, exact durable settlement" in reuse.stdout
             marker.write_text("0" * 64 + "\n", encoding="ascii", newline="\n")
             refused = subprocess.run([str(library), "internal-managed-runtime-version-probe-v1"],
                                      stdin=subprocess.DEVNULL, capture_output=True,
