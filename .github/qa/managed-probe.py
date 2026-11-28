@@ -79,6 +79,20 @@ def verify_pinned_runtime(library, directory):
             subprocess.run(["go", "test", "-count=1", "-timeout=3m", "-v",
                             "-run", "^TestManagedStrictTransferPinnedRuntime$", "./internal/pipeline"],
                            cwd=workspace / "meloader", env=metadata_env, check=True, timeout=240)
+            # Real sibling executables, contained pinned runtime, local
+            # synthetic source, actual owner commit and durable queue.
+            counts = [3]
+            if os.environ.get("MEBOORU_PROBE_FULL_WINDOW") == "1":
+                counts.append(200)
+            for count in counts:
+                window = subprocess.run(
+                    [str(library), "internal-managed-window-probe-v1", str(count)],
+                    stdin=subprocess.DEVNULL, capture_output=True,
+                    cwd=directory, env=metadata_env, timeout=640, text=True)
+                print(window.stdout, window.stderr, sep="")
+                assert window.returncode == 0, window.returncode
+                assert (f"PASS: disposable managed executable window {count} listed, "
+                        f"{count - 1} committed, one blocked, exact receipts and cleanup") in window.stdout
             marker.write_text("0" * 64 + "\n", encoding="ascii", newline="\n")
             refused = subprocess.run([str(library), "internal-managed-runtime-version-probe-v1"],
                                      stdin=subprocess.DEVNULL, capture_output=True,

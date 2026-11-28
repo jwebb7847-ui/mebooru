@@ -466,3 +466,20 @@ func (j *Job) quietWatchCheck() bool {
 	defer j.mu.Unlock()
 	return j.Watch != 0 && j.Root == j.ID && j.Status == JobSucceeded && !j.Capped && j.Summary.Created == 0
 }
+
+// RunManagedWatches is the managed service's clock/wake loop. The
+// existing due-check path enforces explicit watch enablement, offline
+// and retirement under the queue lock. Wake coalesces policy transitions.
+func(q *Queue) RunManagedWatches(ctx context.Context,wake <-chan struct{}){
+	if q.managed==nil{return}
+	t:=time.NewTicker(watchTick);defer t.Stop()
+	for{
+		q.queueDueWatches()
+		select{
+		case <-ctx.Done():return
+		case <-q.stopped:return
+		case <-t.C:
+		case _,ok:=<-wake:if !ok{wake=nil}
+		}
+	}
+}

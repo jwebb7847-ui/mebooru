@@ -75,6 +75,9 @@ func runManagedWindowWorker(args []string)error{
 	st,err:=queue.OpenStore(filepath.Join(dir,"queue"));if err!=nil{return err}
 	defer st.Close()
 	q.UseStore(st);q.Start()
+	wake:=make(chan struct{},1)
+	go q.RunManagedWatches(ctx,wake)
+	notify:=func(){select{case wake<-struct{}{}:default:}}
 	defer func(){stop,done:=context.WithTimeout(context.Background(),20*time.Second);defer done();_ = q.CloseManaged(stop)}()
 	authorize:=func(c context.Context,op workerproto.Operation,cmd workerproto.QueueCommand)error{
 		if c.Err()!=nil{return c.Err()}
@@ -86,7 +89,7 @@ func runManagedWindowWorker(args []string)error{
 		}
 		return managedqa.ErrFixture
 	}
-	s,err:=workerproto.OpenSession(ctx,r,w,workerproto.Worker,q.PrivateDispatch(authorize,nil));if err!=nil{return err}
+	s,err:=workerproto.OpenSession(ctx,r,w,workerproto.Worker,q.PrivateDispatch(authorize,notify));if err!=nil{return err}
 	defer s.Close();session.Store(s)
 	// Session loss cancels all worker admissions, independent of pending
 	// queue commands. The outer custodian still owns the real child proof.

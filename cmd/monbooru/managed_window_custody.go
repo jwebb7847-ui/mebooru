@@ -9,6 +9,7 @@ import(
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"slices"
 	"time"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
@@ -88,6 +89,7 @@ func runManagedWindowRuntimeLeaf(dir,encoded string)error{
 	raw,err:=base64.RawURLEncoding.DecodeString(encoded);if err!=nil||len(raw)>12<<10{return managedqa.ErrFixture}
 	var args []string
 	if json.Unmarshal(raw,&args)!=nil||len(args)==0||len(args)>128||args[0]!="--config-ignore"{return managedqa.ErrFixture}
+	if !validWindowFixtureArgs(dir,setup,args){return managedqa.ErrFixture}
 	cmd:=exec.Command(setup.Python,append([]string{filepath.Join(dir,managedqa.ScriptName)},args...)...)
 	cmd.Dir=dir
 	cmd.Env=append(os.Environ(),"MEBOORU_WINDOW_PORT="+strconv.Itoa(setup.Port),"MEBOORU_WINDOW_COUNT="+strconv.Itoa(setup.Count))
@@ -101,4 +103,24 @@ func runManagedWindowRuntimeLeaf(dir,encoded string)error{
 		if errors.As(err,&exit){result.ExitCode=exit.ExitCode()}else{result.Failed=true}
 	}
 	return json.NewEncoder(os.Stderr).Encode(result)
+}
+
+// The fixture leaf also refuses command shapes outside its exact known
+// job. Its argv originates from the custodian, not the private worker.
+func validWindowFixtureArgs(dir string,setup managedqa.Setup,args []string)bool{
+	q:=setup.Metadata()
+	for _,kind:=range []workerproto.MetadataKind{workerproto.MetadataClassify,workerproto.MetadataStrictResolve}{
+		v:=q;v.Kind=kind;if kind==workerproto.MetadataClassify{v.First,v.Last=0,0}
+		compiled,err:=acquisitionplan.CompileMetadata(v,v)
+		if err==nil{
+			expected:=append([]string{"--config-ignore","-o","timeout=20","-o","retries=2"},compiled[1:]...)
+			if slices.Equal(expected,args){return true}
+		}
+	}
+	var grant managedqa.Grant
+	if managedqa.ReadJSON(dir,managedqa.GrantName,&grant,64<<10)!=nil||grant.Allocation.Request.Transfer.Metadata!=q{return false}
+	path,err:=managedqa.Workspace(dir,grant.Allocation);if err!=nil{return false}
+	_,cfg,_:=setup.Identity()
+	cmd,err:=acquisitionplan.ObservePreparedTransferCommands(grant.Allocation.Request.Transfer,cfg,path)
+	return err==nil&&(slices.Equal(cmd.Version,args)||slices.Equal(cmd.Negative,args)||slices.Equal(cmd.Positive,args)||slices.Equal(cmd.Transfer,args))
 }

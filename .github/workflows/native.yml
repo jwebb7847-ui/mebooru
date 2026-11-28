@@ -62,7 +62,7 @@ jobs:
     runs-on: ubuntu-24.04
     # Bound the entire cold-cache job separately from individual Go test deadlines.
     # A previous 15-minute job expired after passing staging, during the runtime probe.
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -83,8 +83,9 @@ jobs:
       # The all-module test above already includes every staging test.
       # Run it once per consolidated development revision, not twice.
 
-      - name: Verify private executable probe (no acquisition)
+      - name: Verify private executable and disposable managed acquisition
         env:
+          MEBOORU_PROBE_FULL_WINDOW: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
           MEBOORU_PROBE_PINNED_RUNTIME: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
           MEBOORU_PROBE_STANDALONE_RUNTIME: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
         run: python3 .github/qa/managed-probe.py
@@ -97,7 +98,7 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration'
     name: Managed worker Windows development gate
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -121,7 +122,7 @@ jobs:
           cd ../meloader
           go test -count=1 -timeout 3m ./internal/gdl ./internal/taxonomy ./internal/pipeline
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify private executable probe (no acquisition)
+      - name: Verify private executable and disposable managed acquisition
         env:
           MEBOORU_PROBE_PINNED_RUNTIME: '1'
           MEBOORU_PROBE_STANDALONE_RUNTIME: '1'
