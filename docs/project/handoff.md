@@ -2,7 +2,7 @@
 
 **Historical snapshot, not a live roadmap.** Begin with [MEBOORU.md](../../MEBOORU.md) for current decisions, chapter status and next action. Preserve this document for operational context and earlier acceptance evidence. Current branch/PR/CI instructions are in [Development workflow](../../MEBOORU.md#development-workflow); the old per-change PR process and separate repository instructions are superseded.
 
-**Current resume pointer (2026-11-28):** II.6.4a accepted; b isolated verified; c active. Prior full execution gate and auxiliary metadata/held/restore/lifecycle passed. Owner directed consolidated CI cadence, not sequential gates. Exact new code 908e006f, owner commit/fence, still-format eligibility, abandonment, budget monitor; consolidated primary gate pending. Read [exact current evidence](../validation/managed-guarded-acquisition-2026-11-28.md) and [exit review](managed-staging-exit-review.md).
+**Current resume pointer (2026-11-28):** II.6.4a accepted; b isolated verified; c/d/e consolidated implementation active. Prior 054dc12 7/7 passed. New exact code 016b423c covers batch/reclaim/history/destination/queue/PTR/online owner-window integration; one consolidated CI pending. Actual worker dispatch/custody and integrated real runtime, broader parity and Mac remain. [Exact evidence](../validation/managed-guarded-acquisition-2026-11-28.md), [exit review](managed-staging-exit-review.md).
 
 **Snapshot:** 2026-11-25, after visual closeout. **Mebooru working branch:** `mebooru-foundation`, feature merge `3715067d067417dabeec94c05f1b6bb90148f293` (PR #15). **Meloader working branch:** `main`, feature merge `10542e66537430d21cc295449103bb2832e0693a` (PR #25). Recheck live GitHub heads before editing; a snapshot is not a floating reference.
 
