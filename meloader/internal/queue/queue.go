@@ -29,6 +29,8 @@ var errStopping = errors.New("the queue is stopping")
 const ItemsAll = -1
 
 type Options struct {
+	// ManagedIntentID is persisted in the private store, never public job JSON.
+	ManagedIntentID string `json:"-"`
 	Gallery    string   `json:"gallery"`
 	Folder     string   `json:"folder,omitempty"`
 	MaxItems   int      `json:"max_items,omitempty"`

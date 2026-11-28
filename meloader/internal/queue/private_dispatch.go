@@ -23,6 +23,11 @@ func(q *Queue) EnqueueManaged(url string,opts Options)(int64,error){
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.managed==nil||q.store==nil||q.closed||q.managedRetiring||q.managedStoreFault{return 0,errStopping}
+	if opts.ManagedIntentID!=""{
+		id,err:=q.store.ManagedSubmissionJob(opts.ManagedIntentID)
+		if err!=nil{return 0,err}
+		if id!=0{return 0,errors.New("managed submission already assigned; reconcile original job")}
+	}
 	j:=q.enqueueLocked(url,opts)
 	if err:=q.store.SaveJob(j.Snapshot());err!=nil{
 		q.removeFromPendingLocked(j.ID)
@@ -72,7 +77,7 @@ func(q *Queue) PrivateDispatch(authorize CommandAuthority,wake func())workerprot
 			j,err:=q.Get(cmd.JobID);if err!=nil{return fault("not_found")}
 			return respond(j)
 		case workerproto.QueueEnqueue:
-			id,err:=q.EnqueueManaged(cmd.URL,Options{Gallery:cmd.Gallery,Site:workerproto.StrictQueueSource(cmd.URL),MaxItems:cmd.MaxItems})
+			id,err:=q.EnqueueManaged(cmd.URL,Options{Gallery:cmd.Gallery,Site:workerproto.StrictQueueSource(cmd.URL),MaxItems:cmd.MaxItems,ManagedIntentID:cmd.IntentID})
 			return accepted(id,err)
 		case workerproto.QueueRetry:
 			return done(q.Retry(cmd.JobID,cmd.Force))

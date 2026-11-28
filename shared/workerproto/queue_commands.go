@@ -2,6 +2,8 @@ package workerproto
 
 import (
 	"encoding/json"
+	"encoding/hex"
+	"strings"
 	"net/url"
 )
 
@@ -10,6 +12,7 @@ import (
 // No raw command arguments, paths, arbitrary hosts or credentials.
 type QueueCommand struct {
 	JobID int64 `json:"job_id,omitempty"`
+	IntentID string `json:"intent_id,omitempty"`
 	WatchID int64 `json:"watch_id,omitempty"`
 	URL string `json:"url,omitempty"`
 	Gallery string `json:"gallery,omitempty"`
@@ -20,6 +23,11 @@ type QueueCommand struct {
 	Force bool `json:"force,omitempty"`
 }
 
+// ValidQueueIntentID identifies a durable owner submission, not online permission.
+func ValidQueueIntentID(id string)bool{
+	b,err:=hex.DecodeString(id)
+	return err==nil&&len(b)==16&&hex.EncodeToString(b)==id&&id!=strings.Repeat("0",32)
+}
 func StrictQueueSource(raw string) string {
 	u,err:=url.Parse(raw)
 	if err!=nil{return ""}
@@ -50,7 +58,7 @@ func DecodeQueueCommand(op Operation,body []byte)(QueueCommand,error){
 	case QueueRetry:
 		if decodeObject(body,&q,"job_id","force")!=nil||q.JobID<1{return bad()}
 	case QueueEnqueue:
-		if decodeObject(body,&q,"url","gallery","max_items")!=nil||StrictQueueSource(q.URL)==""||!validCatalogName(q.Gallery)||q.MaxItems<1||q.MaxItems>MaxMetadataWindow{return bad()}
+		if decodeObject(body,&q,"url","gallery","max_items","intent_id")!=nil||q.IntentID!=""&&!ValidQueueIntentID(q.IntentID)||StrictQueueSource(q.URL)==""||!validCatalogName(q.Gallery)||q.MaxItems<1||q.MaxItems>MaxMetadataWindow{return bad()}
 	case QueuePause,QueueResume,QueueClear,QueueClearSucceeded,QueueCancelPending,WatchList:
 		if len(body)!=0{return bad()}
 	case WatchAdd:

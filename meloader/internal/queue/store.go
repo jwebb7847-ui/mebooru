@@ -13,6 +13,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 )
 
 // Store is the queue's disk mirror, read only at boot; the in-memory
@@ -29,6 +30,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     status TEXT NOT NULL,
     data   TEXT NOT NULL,
     seq    INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS managed_submissions (
+    intent_id TEXT PRIMARY KEY,
+    job_id INTEGER NOT NULL UNIQUE
 );
 CREATE TABLE IF NOT EXISTS counters (
     name TEXT PRIMARY KEY,
@@ -96,6 +101,7 @@ func (s *Store) Close() error { return s.db.Close() }
 // storedJob carries the jobState fields tagged json:"-": the API drops
 // them but a reloaded job needs them.
 type storedJob struct {
+	ManagedIntentID string `json:"managed_intent_id,omitempty"`
 	Job             jobState  `json:"job"`
 	Subcategory     string    `json:"subcategory,omitempty"`
 	Offset          int       `json:"offset,omitempty"`
@@ -124,6 +130,7 @@ func (s *Store) HighestJobID() (int64, error) {
 
 func (s *Store) SaveJob(j *Job) error {
 	rec := storedJob{
+		ManagedIntentID:j.ManagedIntentID,
 		Job:             j.jobState,
 		Subcategory:     j.Subcategory,
 		Offset:          j.Offset,
@@ -155,6 +162,12 @@ func (s *Store) SaveJob(j *Job) error {
 	)
 	if err != nil {
 		return err
+	}
+	if j.ManagedIntentID!=""{
+		if !workerproto.ValidQueueIntentID(j.ManagedIntentID){return fmt.Errorf("invalid managed submission")}
+		if _,err=tx.Exec("INSERT INTO managed_submissions(intent_id,job_id) VALUES(?,?) ON CONFLICT(intent_id) DO NOTHING",j.ManagedIntentID,j.ID);err!=nil{return err}
+		var assigned int64
+		if err=tx.QueryRow("SELECT job_id FROM managed_submissions WHERE intent_id=?",j.ManagedIntentID).Scan(&assigned);err!=nil||assigned!=j.ID{return fmt.Errorf("managed submission already assigned")}
 	}
 	if _,err=tx.Exec(bumpHighWater,jobIDHighWater,j.ID);err!=nil{return err}
 	return tx.Commit()
@@ -219,6 +232,7 @@ func (s *Store) LoadJobs() ([]*Job, error) {
 			continue
 		}
 		st := rec.Job
+		st.ManagedIntentID=rec.ManagedIntentID
 		st.Subcategory = rec.Subcategory
 		st.Offset = rec.Offset
 		st.Auto = rec.Auto
@@ -355,4 +369,15 @@ func (s *Store) LoadWatches() ([]Watch, error) {
 		out = append(out, w)
 	}
 	return out, rows.Err()
+}
+
+
+// ManagedSubmissionJob remains available after history eviction; job
+// IDs are never recycled and a lost acknowledgement cannot enqueue again.
+func(s *Store) ManagedSubmissionJob(intent string)(int64,error){
+	if !workerproto.ValidQueueIntentID(intent){return 0,fmt.Errorf("invalid managed submission")}
+	var id int64
+	err:=s.db.QueryRow("SELECT job_id FROM managed_submissions WHERE intent_id=?",intent).Scan(&id)
+	if errors.Is(err,sql.ErrNoRows){return 0,nil}
+	return id,err
 }

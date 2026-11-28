@@ -69,3 +69,21 @@ func DecodeWindowNoTransfer(b []byte)(WindowNoTransferProposal,error){
 	raw,err:=EncodeWindowNoTransfer(q);if err!=nil||!bytes.Equal(raw,b){return WindowNoTransferProposal{},ErrMessage}
 	return q,nil
 }
+
+
+// WindowPrepareRequest carries the exact persisted submission ID back
+// to the owner. The owner independently reads both durable records.
+type WindowPrepareRequest struct{
+	Request MetadataPlanRequest `json:"request"`
+	IntentID string `json:"intent_id"`
+}
+func EncodeWindowPrepare(q WindowPrepareRequest)(json.RawMessage,error){
+	if !ValidMetadataPlan(q.Request)||q.Request.Kind!=MetadataStrictResolve||!ValidQueueIntentID(q.IntentID){return nil,ErrMessage}
+	b,err:=json.Marshal(q);if err!=nil||len(b)>64<<10{return nil,ErrMessage};return b,nil
+}
+func DecodeWindowPrepare(b []byte)(WindowPrepareRequest,error){
+	var q WindowPrepareRequest
+	if len(b)>64<<10||json.Unmarshal(b,&q)!=nil{return q,ErrMessage}
+	canonical,err:=EncodeWindowPrepare(q);if err!=nil||!bytes.Equal(canonical,b){return WindowPrepareRequest{},ErrMessage}
+	return q,nil
+}
