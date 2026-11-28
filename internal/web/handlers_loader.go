@@ -112,11 +112,18 @@ func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 	base := s.base(r, "loader", "Loader - "+s.booruName())
 	var panel loaderPanel
 	if path != "" {
-		panel = s.loaderPanel(r, base, path)
+		if s.managedLoader != nil {
+			panel.Message = "This view is unavailable with the managed queue."
+		} else {
+			panel = s.loaderPanel(r, base, path)
+		}
 	}
+	managed := s.managedLoader != nil
 	s.renderTemplate(w, "loader.html", struct {
 		baseData
-		View  string
-		Panel loaderPanel
-	}{base, view, panel})
+		View    string
+		Panel   loaderPanel
+		Managed bool
+		Offline bool
+	}{base, view, panel, managed, managed && s.managedLoader.Offline()})
 }

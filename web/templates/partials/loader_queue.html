@@ -1,6 +1,14 @@
 {{define "loader_queue"}}
 <div class="loader-queue">
-  {{if not .MonloaderPaired}}
+  {{if .Managed}}
+  <form method="post" action="/loader/offline">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <input type="hidden" name="offline" value="{{if .Offline}}false{{else}}true{{end}}">
+    <span>Acquisition is {{if .Offline}}offline{{else}}online{{end}}.</span>
+    <button type="submit">{{if .Offline}}Go online{{else}}Go offline{{end}}</button>
+  </form>
+  {{end}}
+  {{if and (not .Managed) (not .MonloaderPaired)}}
   <p>Connect Meloader in <a href="/settings#plugins">Settings → Plugins</a> to queue imports.</p>
   {{else if not .ActiveGallery}}
   <p>Choose a destination gallery to queue imports.</p>
@@ -20,7 +28,7 @@
   </form>
   {{end}}
   <div id="loader-flash" role="status"></div>
-  {{if .MonloaderPaired}}
+  {{if or .Managed .MonloaderPaired}}
   <div id="loader-jobs" hx-get="/loader/jobs?page=1"
        hx-trigger="load, every 5s [!confirmOpen()], loader-queue-updated from:body"
        hx-target="this" hx-swap="outerHTML">Loading queue…</div>
@@ -58,7 +66,9 @@
             {{end}}
           </td>
           <td>
-            {{if not .Live}}
+            {{if $.Managed}}
+              {{if .Live}}<button type="button" hx-post="/loader/jobs/{{.ID}}/cancel" hx-target="#loader-flash" hx-swap="innerHTML" hx-sync="unset" hx-disabled-elt="this">Cancel</button>{{end}}
+            {{else if not .Live}}
               {{if and (ne .Kind "ptr_lookup") (or (eq .Status "failed") (eq .Status "partial") (eq .Status "interrupted") (eq .Status "canceled"))}}
               <button type="button" id="loader-retry-{{.ID}}" hx-post="/loader/jobs/{{.ID}}/retry" hx-target="#loader-flash" hx-swap="innerHTML" hx-sync="unset" hx-disabled-elt="this">Retry</button>
               {{end}}

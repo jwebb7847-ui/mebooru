@@ -36,6 +36,7 @@ type Setup struct{
 	Port int
 	Python string
 	ScriptSHA256 string
+	Application bool `json:",omitempty"`
 }
 func Digest(b []byte)string{v:=sha256.Sum256(b);return hex.EncodeToString(v[:])}
 func ValidateDir(dir string)error{
@@ -70,7 +71,7 @@ func ReadJSON(dir,name string,v any,limit int)error{
 func Load(dir string)(Setup,error){
 	var s Setup
 	if err:=ReadJSON(dir,SetupName,&s,8192);err!=nil{return s,err}
-	if (s.Count!=3&&s.Count!=200)||(s.Windows<1||s.Windows>3)||s.Windows>1&&s.Count!=3||s.Port<1||s.Port>65535||!filepath.IsAbs(s.Python)||s.ScriptSHA256!=Digest([]byte(PythonFixture)){return Setup{},ErrFixture}
+	if (s.Count!=3&&s.Count!=200&&!(s.Application&&s.Count==1))||(s.Windows<1||s.Windows>3)||s.Windows>1&&s.Count!=3||s.Port<1||s.Port>65535||!filepath.IsAbs(s.Python)||s.ScriptSHA256!=Digest([]byte(PythonFixture)){return Setup{},ErrFixture}
 	b,err:=Read(dir,ScriptName,1<<20);if err!=nil||Digest(b)!=s.ScriptSHA256{return Setup{},ErrFixture}
 	return s,nil
 }
@@ -91,10 +92,12 @@ func(s Setup) Identity()(acquisitionplan.RuntimeIdentity,acquisitionplan.Metadat
 }
 func(s Setup) MediaURL(id string)string{return fmt.Sprintf("http://127.0.0.1:%d/%s.png",s.Port,id)}
 func(s Setup) AllBlocked(job int64)bool{return s.Windows==3&&job==2}
+func(s Setup) Blocked(job int64, index int) bool { return s.AllBlocked(job) || s.Count > 1 && index == 0 }
 func(s Setup) ExpectedIDs(job int64)[]string{
-	out:=make([]string,0,s.Count-1)
-	if s.AllBlocked(job){return out}
-	for i:=2;i<=s.Count;i++{out=append(out,strconv.Itoa(s.Offset(job)+i))}
+	out:=make([]string,0,s.Count)
+	for i:=0;i<s.Count;i++{
+		if !s.Blocked(job,i){out=append(out,strconv.Itoa(s.Offset(job)+i+1))}
+	}
 	return out
 }
 func Workspace(dir string,g workerproto.StageAllocation)(string,error){
@@ -146,7 +149,7 @@ def posts(self):
     job = 3 if sys.argv[-1].endswith("q=fixture3") else 2 if sys.argv[-1].endswith("q=fixture2") else 1
     offset = (job - 1) * count
     for ident in range(offset + 1, offset + count + 1):
-        blocked = ident == offset + 1 or (windows == 3 and job == 2)
+        blocked = (count > 1 and ident == offset + 1) or (windows == 3 and job == 2)
         tags = ["safe", "violence"] if blocked else ["safe", "fixture"]
         ids = [1, 3] if blocked else [1, 4]
         yield {"id": ident, "tags": tags, "tag_ids": ids,

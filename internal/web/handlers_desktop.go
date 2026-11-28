@@ -219,6 +219,10 @@ func (s *Server) desktopPowerFragment(w http.ResponseWriter, r *http.Request) {
 const quitDelay = 300 * time.Millisecond
 
 func (s *Server) settingsQuit(w http.ResponseWriter, r *http.Request) {
+	if !(s.desktop || s.managedLoader != nil) || !desktop.LocalRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
 	s.stopAfterRender(w, r, map[string]any{
 		"Heading": s.booruName() + " has stopped",
 		"Hint":    "You can close this tab. Start it again from the applications menu.",

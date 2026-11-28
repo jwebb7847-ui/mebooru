@@ -28,7 +28,14 @@ func runManagedWindowCustody(dir,generation,token string)error{
 	r,w,err:=processguard.OpenInheritedPipes(token);if err!=nil{return err}
 	defer r.Close();defer w.Close()
 	store,err:=acquisitionpolicy.Open(dir);if err!=nil{return err};defer store.Close()
-	ctx,cancel:=context.WithTimeout(context.Background(),12*time.Minute);defer cancel()
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if setup.Application {
+		ctx, cancel = context.WithCancel(context.Background())
+	} else {
+		ctx, cancel = context.WithTimeout(context.Background(), 12*time.Minute)
+	}
+	defer cancel()
 	current:=func(c context.Context)bool{
 		off,err:=store.Load()
 		_,revoked:=os.Lstat(filepath.Join(dir,managedqa.RevokedName))

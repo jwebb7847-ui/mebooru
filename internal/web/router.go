@@ -105,7 +105,8 @@ type Server struct {
 
 	sched *schedule.Scheduler
 
-	ml *monloader.Link
+	ml            *monloader.Link
+	managedLoader ManagedLoader
 
 	themeWarn *themeWarnings
 
@@ -332,6 +333,15 @@ func (rt *routes) free(pattern string, h http.HandlerFunc) { rt.add(pattern, mod
 
 func (s *Server) StartWatchers() { s.set.StartBackground() }
 
+// AttachManagedLoader installs the local managed queue before serving HTTP.
+func (s *Server) AttachManagedLoader(start func(*library.Set) (ManagedLoader, error)) error {
+	loader, err := start(s.set)
+	if err == nil {
+		s.managedLoader = loader
+	}
+	return err
+}
+
 func (s *Server) background(name string) library.Background {
 	watch, maxMB := s.watcherSettings()
 	return library.Background{Watch: watch, MaxFileSizeMB: maxMB, Naming: s.ingestNaming(name)}
@@ -389,6 +399,7 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.free("GET /loader/jobs", s.loaderJobs)
 	rt.free("GET /loader/jobs/{id}/results", s.loaderJobResults)
 	rt.free("POST /loader/import", s.loaderImport)
+	rt.free("POST /loader/offline", s.loaderOffline)
 	rt.free("POST /loader/jobs/{id}/{action}", s.loaderJobAction)
 	rt.read("GET /", s.notFoundHandler)
 
@@ -514,7 +525,7 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.free("GET /internal/browse", s.localOnly(s.browseDirs))
 	rt.free("POST /internal/open-folder", s.localOnly(s.openFolder))
 	rt.free("POST /settings/desktop", s.localOnly(s.settingsDesktopPost))
-	rt.free("POST /settings/quit", s.localOnly(s.settingsQuit))
+	rt.free("POST /settings/quit", s.settingsQuit)
 	rt.free("POST /settings/restart", s.localOnly(s.settingsRestart))
 	rt.free("GET /internal/desktop-power", s.localOnly(s.desktopPowerFragment))
 	rt.read("POST /settings/maintenance/prune-missing", s.pruneMissingImagesPost)

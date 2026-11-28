@@ -3,10 +3,12 @@
 <section class="loader-page">
   <nav class="loader-tabs" aria-label="Loader">
     <a href="/loader"{{if eq .View "queue"}} aria-current="page"{{end}}>Queue</a>
+    {{if not .Managed}}
     <a href="/loader?view=watches"{{if eq .View "watches"}} aria-current="page"{{end}}>Watches</a>
     <a href="/loader?view=ptr"{{if eq .View "ptr"}} aria-current="page"{{end}}>PTR</a>
     <a href="/loader?view=advanced"{{if eq .View "advanced"}} aria-current="page"{{end}}>Advanced queue</a>
     <a class="loader-settings-link" href="/settings#meloader">Meloader settings</a>
+    {{end}}
   </nav>
   {{if eq .View "queue"}}
     {{template "loader_queue" .}}

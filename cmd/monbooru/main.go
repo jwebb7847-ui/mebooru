@@ -11,21 +11,26 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 	_ "time/tzdata"
 
 	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/managedqa"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/jobs"
+	"github.com/monbooru/monbooru/internal/library"
 	internalweb "github.com/monbooru/monbooru/internal/web"
 	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
 	// Private probe entries must precede console attachment and all app init.
-	if dispatchManagedProbe(os.Args[1:]) { return }
+	if dispatchManagedProbe(os.Args[1:]) {
+		return
+	}
 	// Before anything prints: a Windows GUI build starts with no console.
 	desktop.AttachConsole()
 
@@ -44,6 +49,7 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "with -desktop, do not open a browser at startup")
 	meloaderBinary := flag.String("meloader", "", "start this Meloader executable alongside Mebooru")
 	meloaderConfig := flag.String("meloader-config", "", "config file for the Meloader companion")
+	managedDisposable := flag.String("managed-disposable", "", "start Loader with a prepared disposable managed-acquisition fixture")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
@@ -90,8 +96,21 @@ func main() {
 
 	var seed func(*config.Config)
 	var profile internalweb.Desktop
+	var fixture managedqa.Setup
+	var cfg *config.Config
+	var err error
 	newBundleProfile := false
-	if *desktopMode {
+	if *managedDisposable != "" {
+		if explicitFlag("config", *configPath) != "" || *meloaderBinary != "" || *meloaderConfig != "" {
+			fatalf("the managed disposable fixture uses its own application profile")
+		}
+		*desktopMode = false
+		*configPath = filepath.Join(*managedDisposable, "monbooru.toml")
+		cfg, fixture, err = disposableManagedConfig(*managedDisposable)
+		if err != nil {
+			fatalf("opening disposable managed profile: %v", err)
+		}
+	} else if *desktopMode {
 		dialogOnFatal = true
 		resolved, err := desktop.Resolve(appName, explicitFlag("config", *configPath))
 		if err != nil {
@@ -130,9 +149,11 @@ func main() {
 	if layout.Portable {
 		load = config.LoadPortable
 	}
-	cfg, err := load(*configPath, seed)
-	if err != nil {
-		fatalf("loading config: %v", err)
+	if cfg == nil {
+		cfg, err = load(*configPath, seed)
+		if err != nil {
+			fatalf("loading config: %v", err)
+		}
 	}
 	if layout.Portable {
 		portableGallery(layout, cfg)
@@ -168,6 +189,22 @@ func main() {
 		fatalf("creating web server: %v", err)
 	}
 	defer srv.Close()
+	var managed *managedApplication
+	if *managedDisposable != "" {
+		if err := srv.AttachManagedLoader(func(set *library.Set) (internalweb.ManagedLoader, error) {
+			var err error
+			managed, err = openManagedApplication(*managedDisposable, fixture, set)
+			return managed, err
+		}); err != nil {
+			fatalf("starting managed acquisition: %v", err)
+		}
+		defer func() {
+			if err := managed.Close(); err != nil {
+				reportFatal("shutting down managed acquisition: " + err.Error())
+				exitCode = 1
+			}
+		}()
+	}
 
 	bundledCompanion := false
 	bundledConfigCreated := false
@@ -227,6 +264,9 @@ func main() {
 			srvErr <- err
 		}
 	}()
+	if managed != nil {
+		fmt.Printf("Managed Loader listening at http://%s/loader\n", ln.Addr())
+	}
 
 	if *desktopMode {
 		if !*noBrowser {

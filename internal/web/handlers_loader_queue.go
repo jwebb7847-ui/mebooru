@@ -51,14 +51,20 @@ func (s *Server) loaderJobResults(w http.ResponseWriter, r *http.Request) {
 
 	link := s.monloaderLink()
 	switch {
-	case !link.Paired:
+	case s.managedLoader == nil && !link.Paired:
 		view.Message = "Pair Meloader to see import results."
-	case link.Paused:
+	case s.managedLoader == nil && link.Paused:
 		view.Message = "Resume Meloader to see import results."
 	default:
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
-		result, err := s.ml.ImportResults(ctx, id)
+		queue := interface {
+			ImportResults(context.Context, int64) (monloader.ImportJobResults, error)
+		}(s.ml)
+		if s.managedLoader != nil {
+			queue = s.managedLoader
+		}
+		result, err := queue.ImportResults(ctx, id)
 		view.Live = err == nil && result.Live()
 		switch {
 		case errors.Is(err, monloader.ErrImportJobNotFound):
@@ -121,25 +127,34 @@ func (s *Server) loaderJobs(w http.ResponseWriter, r *http.Request) {
 		monloader.ImportQueuePage
 		Message    string
 		Setup      bool
+		Managed    bool
 		Prev, Next int
 		Latest     map[int64]int64
-	}{}
+	}{Managed: s.managedLoader != nil}
 	w.Header().Set("Cache-Control", "no-store")
 	link := s.monloaderLink()
 	switch {
-	case !link.Paired:
+	case !view.Managed && !link.Paired:
 		view.Message = "Pair Meloader in Settings → Plugins to see import jobs."
 		view.Setup = true
-	case link.Paused:
+	case !view.Managed && link.Paused:
 		view.Message = "Meloader is paused. Resume it from the footer or Settings → Plugins."
 		view.Setup = true
 	default:
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
-		out, err := s.ml.ImportQueue(ctx, page, loaderQueueLimit)
+		queue := interface {
+			ImportQueue(context.Context, int, int) (monloader.ImportQueuePage, error)
+		}(s.ml)
+		if view.Managed {
+			queue = s.managedLoader
+		}
+		out, err := queue.ImportQueue(ctx, page, loaderQueueLimit)
 		if err != nil {
 			var networkErr *net.OpError
-			if errors.As(err, &networkErr) && networkErr.Op == "dial" {
+			if view.Managed {
+				view.Message = "Could not load the managed queue. This view will retry automatically."
+			} else if errors.As(err, &networkErr) && networkErr.Op == "dial" {
 				view.Message = "Meloader is unreachable. Start the companion to restore the queue."
 			} else if peer.IsStatusError(err) {
 				view.Message = "Meloader refused the queue request. Check the connection in Settings → Plugins."
@@ -194,6 +209,15 @@ func (s *Server) loaderImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if s.managedLoader != nil {
+		id, err := s.managedLoader.SubmitImport(r.Context(), source, name, maxItems)
+		if errors.Is(err, ErrManagedImportUnsupported) {
+			externalErr(w, r, "This source URL or post limit is unsupported in the managed queue.", http.StatusBadRequest)
+			return
+		}
+		writeLoaderQueueResult(w, r, id, err)
+		return
+	}
 	if !s.monloaderLink().Paired || s.ml.Paused() {
 		externalErr(w, r, "Connect Meloader in Settings → Plugins before queueing imports.", http.StatusConflict)
 		return
@@ -205,6 +229,23 @@ func (s *Server) loaderImport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) loaderJobAction(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	action := r.PathValue("action")
+	if s.managedLoader != nil && err == nil && id > 0 {
+		if action != "cancel" {
+			externalErr(w, r, "This action is unavailable in the managed queue.", http.StatusConflict)
+			return
+		}
+		if err := s.managedLoader.Cancel(r.Context(), id); err != nil {
+			externalErr(w, r, "The managed queue could not cancel this job.", http.StatusConflict)
+			return
+		}
+		if !isHTMXRequest(r) {
+			http.Redirect(w, r, "/loader", http.StatusSeeOther)
+			return
+		}
+		w.Header().Set("HX-Trigger", "loader-queue-updated")
+		writeInlineFlash(w, "ok", fmt.Sprintf("Cancellation requested for job %d.", id))
+		return
+	}
 	if err != nil || id <= 0 || (action != "retry" && action != "continue") {
 		http.NotFound(w, r)
 		return
@@ -219,7 +260,7 @@ func (s *Server) loaderJobAction(w http.ResponseWriter, r *http.Request) {
 
 func writeLoaderQueueResult(w http.ResponseWriter, r *http.Request, id int64, err error) {
 	if err != nil || id <= 0 {
-		externalErr(w, r, "Meloader did not confirm the request. Check the queue before trying again.", http.StatusBadGateway)
+		externalErr(w, r, "The import queue did not confirm the request. Check the queue before trying again.", http.StatusBadGateway)
 		return
 	}
 	if !isHTMXRequest(r) {

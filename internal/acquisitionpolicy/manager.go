@@ -230,6 +230,15 @@ func(m *Manager)SetOffline(ctx context.Context,offline bool)error{
 
 func(m *Manager)EffectiveOnline()bool{return m.policy.EffectiveOnline()}
 
+func (m *Manager) ConfiguredOffline() bool { return m.policy.ConfiguredOffline() }
+
+// ObserveOnline binds an inbound worker operation to the current consent
+// epoch without waking the worker or taking the lifecycle lock. Its caller
+// already has running queue work, which prevents an idle reservation.
+func (m *Manager) ObserveOnline(ctx context.Context) (*OnlineLease, error) {
+	return m.bindOnline(ctx, nil, func() {})
+}
+
 // Caller holds mu. Failure retains ownership and prevents replacement.
 func(m *Manager)stopPeer(ctx context.Context)error{
 	if m.unconfirmedStart{return ErrWorkerRecoveryRequired}
@@ -288,17 +297,31 @@ func(m *Manager)AcquireOnline(ctx context.Context)(*OnlineLease,error){
 	if err:=m.available(ctx);err!=nil{return nil,err}
 	if m.policy.ConfiguredOffline(){return nil,errors.New("managed acquisition offline")}
 	if err:=m.ensure(ctx);err!=nil{return nil,err}
-	epoch:=m.policy.online.Load()
-	if epoch==nil||!m.policy.EffectiveOnline(){return nil,ErrPeerUnusable}
-	leaseCtx,cancel:=context.WithCancel(ctx)
+	lease, err := m.bindOnline(ctx, m.peer, func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		m.active--
+		m.lastUse = m.now()
+	})
+	if err != nil {
+		return nil, err
+	}
 	m.active++
+	return lease, nil
+}
+
+func (m *Manager) bindOnline(ctx context.Context, peer ManagedPeer, release func()) (*OnlineLease, error) {
+	epoch := m.policy.online.Load()
+	if epoch == nil || !m.policy.EffectiveOnline() || m.lifetime.Err() != nil || ctx.Err() != nil {
+		return nil, ErrPeerUnusable
+	}
+	leaseCtx,cancel:=context.WithCancel(ctx)
 	go func(){
 		select{case <-leaseCtx.Done():case <-epoch.done:case <-epoch.revoked:case <-m.lifetime.Done():}
 		cancel()
 	}()
-	return &OnlineLease{Peer:m.peer,Context:leaseCtx,current:func()bool{return m.policy.online.Load()==epoch&&m.policy.EffectiveOnline()},release:func(){
+	return &OnlineLease{Peer:peer,Context:leaseCtx,current:func()bool{return m.policy.online.Load()==epoch&&m.policy.EffectiveOnline()},release:func(){
 		cancel()
-		m.mu.Lock();defer m.mu.Unlock()
-		m.active--;m.lastUse=m.now()
+		release()
 	}},nil
 }

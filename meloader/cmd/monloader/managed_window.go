@@ -31,7 +31,14 @@ func runManagedWindowWorker(args []string)error{
 	r,w,br,bw,err:=managedProbeChannels(args[1:]);if err!=nil{return err}
 	defer r.Close();defer w.Close();defer br.Close();defer bw.Close()
 	setup,err:=managedqa.Load(dir);if err!=nil{return err}
-	ctx,cancel:=context.WithTimeout(context.Background(),12*time.Minute);defer cancel()
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if setup.Application {
+		ctx, cancel = context.WithCancel(context.Background())
+	} else {
+		ctx, cancel = context.WithTimeout(context.Background(), 12*time.Minute)
+	}
+	defer cancel()
 	broker,err:=workerproto.OpenSession(ctx,br,bw,workerproto.OperationRequester,nil);if err!=nil{return err}
 	defer broker.Close()
 	client,err:=processguard.NewManagedRuntimeClient(broker);if err!=nil{return err}
@@ -76,7 +83,9 @@ func runManagedWindowWorker(args []string)error{
 	q,err:=queue.NewManagedWithGate(gate,proc,1,20);if err!=nil{return err}
 	st,err:=queue.OpenStore(filepath.Join(dir,"queue"));if err!=nil{return err}
 	defer st.Close()
-	q.UseStore(st);q.Start()
+	q.UseStore(st)
+	if setup.Application { q.Pause() }
+	q.Start()
 	wake:=make(chan struct{},1)
 	go q.RunManagedWatches(ctx,wake)
 	notify:=func(){select{case wake<-struct{}{}:default:}}
@@ -87,7 +96,7 @@ func runManagedWindowWorker(args []string)error{
 		case workerproto.QueueEnqueue:
 			if !workerproto.ValidQueueIntentID(cmd.IntentID){return managedqa.ErrFixture}
 			for job:=int64(1);job<=int64(setup.Windows);job++{md:=setup.MetadataFor(job);if cmd.URL==md.URL&&cmd.Gallery==md.Gallery&&cmd.MaxItems==setup.Count{return nil}}
-		case workerproto.QueueGet,workerproto.QueueList,workerproto.QueuePause,workerproto.QueueResume:
+		case workerproto.QueueGet,workerproto.QueueList,workerproto.QueuePause,workerproto.QueueResume,workerproto.QueueCancel:
 			return nil
 		}
 		return managedqa.ErrFixture
