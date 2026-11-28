@@ -2,6 +2,38 @@
 
 **Read this first if a chat ends without a handover.** This is a practical resume index, not a second roadmap. [MEBOORU.md](../../MEBOORU.md) owns product direction and milestone exit criteria. This checkpoint is sufficient to find the exact work, qualification evidence, outstanding tasks and approved operating constraints without relying on chat memory. Re-fetch live refs, CI and PR comments before making changes. Do not assume a documentation-only descendant has been tested by SHA.
 
+## Codex task checkpoint — 2026-11-28
+
+- Task branch `codex/ii6-managed-application` starts at transition `92d0db744cd2da5acefe38337fe4dd1d7f4ebe12`. Application implementation is `281012f8b0c361d22bcb68895fc8c4236ad30f21`, followed by candidate `091e32c91feeb6de0ea4a61c25a7a4fdc42a3afa` with a shorter bulk check. [Draft PR #38](https://github.com/jwebb7847-ui/mebooru/pull/38) still tracks `worker/operation-migration` at `360113279069d0804a6d44076eef1e609ded0380` on `mebooru-foundation` at `c03761ea0aa2feb4da9c67ae509d65e7193671e2`.
+- Apple Silicon can build both sibling executables and test all three modules locally with Go 1.27.4, `GOWORK=off`, Python 3.12 and a disposable venv with gallery-dl 1.32.19. The Codex sandbox prevents loopback bind. Use the approved task shell for real HTTP/process fixtures. A writable `GOCACHE` in the task temp directory avoids the sandboxed global cache.
+- Normal `monbooru` startup with `-managed-disposable` binds loopback and connects the existing Loader import, queue, results, cancellation, offline and Quit routes to the actual private worker and custodian. The test supplies an isolated profile and synthetic source. The owner uses the real running SQLite row, durable submission, stage allocator and gallery publication. Offline jobs park durably and the open app wakes eligible work. Local browsing continues after acquisition is switched offline.
+- Local `go test -count=1 ./...` passed for root, Meloader and shared, and both Apple Silicon binaries built. Targeted race and vet passed. Windows AMD64 cross-builds passed. Pinned runtime checks passed, including race runs for shared metadata/transfer and Meloader's alias-aware managed preflight and legacy strict media boundary.
+- Local app checks passed single-post, three-post and 20-post windows in 7.316 s, 8.563 s and 1m35.466s with other tests running. First-page startup ranged from 29 to 72 ms. The three-post case returned one new image, one duplicate and one blacklist exclusion, then canceled a second parked job. The 20-post case committed 19 and excluded one without requesting its media. The checks restarted the application, inspected imported tags and rating, opened an image offline and quit gracefully. The separate three-window probe passed with an all-blocked middle window.
+- A 200-post app run on the earlier controller expired at 10 minutes while gallery publication was in progress. A sample of the owner process showed repeated rooted filesystem reads in per-item receipt and reclamation phases. The shorter bulk workload is the repeatable smoke check. A completed 200-post run on the new 20-minute controller and bulk throughput work remain outstanding.
+- Latest hosted [Native verification run](https://github.com/jwebb7847-ui/mebooru/actions/runs/46124547077) on the PR head passed six of seven development jobs. [Windows baseline staging](https://github.com/jwebb7847-ui/mebooru/actions/runs/46124547077/job/140916136683) exhausted its 15-minute Go limit in `TestPlannedNewPublication`, with the stack in Windows path resolution through `Allocator.BindPolicy`. The same shard took 619.483 seconds in the [previous 7/7 run](https://github.com/jwebb7847-ui/mebooru/actions/runs/46121534358). Full ready-PR gates were skipped. Revisit the shard budget or partition only when native Windows verification is due.
+- Resume by binding the existing Loader path to real profile, destination and approved runtime/config/policy, then validate one bounded live import with the owner in a disposable Mac profile. Existing fixture authority is synthetic. Same-source refresh, retry/continuation, watch/PTR and advanced settings have no managed Loader path in this candidate. Keep this draft milestone open. Use the moratorium in [AGENTS.md](../../AGENTS.md) when selecting remaining work.
+
+### Repeat the disposable Mac checks
+
+From the candidate checkout with Go 1.27.4 and Python installed:
+
+```sh
+qa="$(mktemp -d "$HOME/Downloads/Projects/Coding/Mebooru/testing/ii6-loader.XXXXXX")"
+mkdir -p "$qa/tmp"
+export GOWORK=off GOTOOLCHAIN=local TMPDIR="$qa/tmp"
+python3 -m venv "$qa/venv"
+"$qa/venv/bin/python" -m pip install gallery-dl==1.32.19
+"$qa/venv/bin/gallery-dl" --version
+go build -mod=readonly -o "$qa/monbooru" ./cmd/monbooru
+(cd meloader && go build -mod=readonly -o "$qa/monloader" ./cmd/monloader)
+export MEBOORU_METADATA_TEST_PYTHON="$qa/venv/bin/python"
+"$qa/monbooru" internal-managed-window-probe-v1 app-1
+"$qa/monbooru" internal-managed-window-probe-v1 app-3
+"$qa/monbooru" internal-managed-window-probe-v1 app-20
+```
+
+The controller starts the normal application with `-managed-disposable` and exercises its Loader forms via HTTP. Profiles and media fixtures live under `$TMPDIR`. Ports are chosen by the OS. The three-post case uses Upload to seed a duplicate, then checks one created image, one duplicate, one blacklist exclusion and cancellation of a parked job. Successful profiles are cleaned up. A failed run prints the retained disposable path. Use `app-200` for a longer performance run with a 20-minute controller budget.
+
 ## 1. Exact repository and evidence boundaries
 
 | Boundary | Exact identity and disposition |
