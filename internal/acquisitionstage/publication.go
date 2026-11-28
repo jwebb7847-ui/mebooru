@@ -120,6 +120,9 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	if names["landing-attempt.json"]{
 		landing,err:=readLandingAttempt(p,r)
 		if err!=nil{return zero,ErrStageRecovery}
+		if plan==nil&&(landing.NewOnly||landing.RestoreImageID>0){
+			for _,f:=range e.Files{if filepath.Ext(f.RelativeName)!=".png"{return zero,ErrStageRecovery}}
+		}
 		if names["metadata-attempt.json"]{
 			m,err:=readMetadataAttempt(p,landing,e)
 			if err!=nil||(plan!=nil&&m.PolicySHA256!=plan.PolicySHA256){return zero,ErrStageRecovery}
