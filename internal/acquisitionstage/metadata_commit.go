@@ -225,6 +225,7 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 			if err!=nil||currentHash!=planHash{return false}
 			id,err:=namingFile(ctx,src,e.Files[0].RelativeName,e.Files[0],2)
 			if err!=nil||id!=plan.FileIdentity{return false}
+			if len(m.Targets)!=1||verifyPlannedImageRow(ctx,g,m.Targets[0].ImageID,e.Files[0],plan.Media)!=nil{return false}
 		}
 		return true
 	}
