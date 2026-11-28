@@ -16,6 +16,7 @@ import(
 	"github.com/jwebb7847-ui/mebooru/shared/managedqa"
 	"github.com/jwebb7847-ui/mebooru/shared/processguard"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/windowregistry"
 	"github.com/monbooru/monbooru/internal/acquisitionpolicy"
 )
 
@@ -33,6 +34,7 @@ func runManagedWindowCustody(dir,generation,token string)error{
 		_,revoked:=os.Lstat(filepath.Join(dir,managedqa.RevokedName))
 		return c.Err()==nil&&err==nil&&!off&&errors.Is(revoked,os.ErrNotExist)
 	}
+	registry,err:=windowregistry.Open(filepath.Join(dir,"windows"));if err!=nil{return err};defer registry.Close()
 	runtime,config,_:=setup.Identity()
 	grant:=processguard.ManagedRuntimeGrant{
 		Metadata:setup.Metadata(),Runtime:runtime,Config:config,Current:current,
@@ -56,6 +58,7 @@ func runManagedWindowCustody(dir,generation,token string)error{
 			return managedqa.WriteJSON(dir,managedqa.ProofName,managedqa.Proof{Allocation:g,Files:files})
 		},
 	}
+	resolver:=&fixtureWindowResolver{registry:registry,generation:generation,grant:grant}
 	return acquisitionpolicy.RunCustodianReady(ctx,dir,generation,os.Stdin,os.Stdout,func(start context.Context)(acquisitionpolicy.CustodyChild,error){
 		if err:=start.Err();err!=nil{return nil,err}
 		set:=processguard.NewOperationSet(1)
@@ -67,7 +70,7 @@ func runManagedWindowCustody(dir,generation,token string)error{
 		brokerCtx,stop:=context.WithCancel(ctx)
 		done:=make(chan struct{})
 		owned:=&probeCustody{primary:primary,set:set,stopBroker:stop,brokerDone:done,done:make(chan struct{})}
-		go func(){owned.brokerErr=processguard.ServeManagedRuntimeBroker(brokerCtx,rr,bw,set,grant);close(done)}()
+		go func(){owned.brokerErr=processguard.ServeManagedRuntimeWindows(brokerCtx,rr,bw,set,resolver);close(done)}()
 		go func(){select{case <-primary.Done():case <-done:};close(owned.done)}()
 		return owned,err
 	})
@@ -123,4 +126,24 @@ func validWindowFixtureArgs(dir string,setup managedqa.Setup,args []string)bool{
 	_,cfg,_:=setup.Identity()
 	cmd,err:=acquisitionplan.ObservePreparedTransferCommands(grant.Allocation.Request.Transfer,cfg,path)
 	return err==nil&&(slices.Equal(cmd.Version,args)||slices.Equal(cmd.Negative,args)||slices.Equal(cmd.Positive,args)||slices.Equal(cmd.Transfer,args))
+}
+
+
+type fixtureWindowResolver struct{
+	registry *windowregistry.Registry
+	generation string
+	grant processguard.ManagedRuntimeGrant
+	active windowregistry.Grant
+}
+func(r *fixtureWindowResolver)Claim(c context.Context,q workerproto.MetadataPlanRequest)(processguard.ManagedRuntimeGrant,error){
+	if q!=r.grant.Metadata||!r.grant.Current(c){return processguard.ManagedRuntimeGrant{},managedqa.ErrFixture}
+	g,err:=r.registry.Claim(c,q,r.generation);if err!=nil{return processguard.ManagedRuntimeGrant{},err}
+	r.active=g
+	v:=r.grant
+	v.Current=func(c context.Context)bool{return r.grant.Current(c)&&r.registry.Current(g)}
+	return v,nil
+}
+func(r *fixtureWindowResolver)Settle(c context.Context,q workerproto.MetadataPlanRequest,phase int,failed bool)error{
+	if q!=r.active.Request{return managedqa.ErrFixture}
+	return r.registry.Settle(c,r.active,phase,failed)
 }

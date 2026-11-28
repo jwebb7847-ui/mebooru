@@ -25,6 +25,7 @@ import(
 	"github.com/jwebb7847-ui/mebooru/shared/managedqa"
 	"github.com/jwebb7847-ui/mebooru/shared/processguard"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/windowregistry"
 	"github.com/monbooru/monbooru/internal/acquisitionpolicy"
 	"github.com/monbooru/monbooru/internal/acquisitionstage"
 	"github.com/monbooru/monbooru/internal/config"
@@ -52,6 +53,9 @@ type windowFixtureOwner struct{
 	set *library.Set
 	a *acquisitionstage.Allocator
 	lease *acquisitionpolicy.OnlineLease
+	registry *windowregistry.Registry
+	window windowregistry.Grant
+	generation string
 	allowed map[string]workerproto.StageAllocateRequest
 	grant workerproto.StageAllocation
 	manifest,projection []byte
@@ -107,7 +111,7 @@ func(o *windowFixtureOwner) authorizeProjection(c context.Context,p workerproto.
 func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,raw json.RawMessage)(json.RawMessage,*workerproto.Fault){
 	o.mu.Lock();defer o.mu.Unlock()
 	fault:=func(err error)(json.RawMessage,*workerproto.Fault){fmt.Fprintln(os.Stderr,"disposable owner:",op,err);return nil,&workerproto.Fault{Code:"refused"}}
-	if !o.current(c){return fault(managedqa.ErrFixture)}
+	if !o.current(c)||o.registry==nil||!o.registry.Current(o.window){return fault(managedqa.ErrFixture)}
 	switch op{
 	case workerproto.StageAllocate:
 		if o.grant!=(workerproto.StageAllocation{}){return fault(managedqa.ErrFixture)}
@@ -172,6 +176,7 @@ func(o *windowFixtureOwner) commit(c context.Context)error{
 	if _,err:=o.a.CompleteTransferredForOwner(c,o.lease,o.set,o.grant,owner);err!=nil{return err}
 	if _,err:=o.a.ArchiveBatch(c,o.grant,reclaim);err!=nil{return err}
 	v,err:=o.a.ObserveWindowOutcome(c,o.grant,o.hash);if err!=nil{return err}
+	if err:=o.registry.RecordOutcome(c,windowregistry.Outcome{Grant:o.window,Kind:"committed",PolicySHA256:v.PolicySHA256,PlanSHA256:v.PlanSHA256});err!=nil{return err}
 	o.result=v
 	return nil
 }
@@ -187,7 +192,7 @@ func runManagedWindowProbe(countArg string)(result error){
 	dir,err:=os.MkdirTemp(temp,managedqa.Prefix);if err!=nil{return err}
 	safe:=false
 	defer func(){if safe{result=errors.Join(result,os.RemoveAll(dir))}else{fmt.Fprintln(os.Stderr,"retained disposable window:",dir)}}()
-	for _,name:=range []string{"stage","gallery","queue"}{if err:=os.Mkdir(filepath.Join(dir,name),0700);err!=nil{return err}}
+	for _,name:=range []string{"stage","gallery","queue","windows"}{if err:=os.Mkdir(filepath.Join(dir,name),0700);err!=nil{return err}}
 	ctx,cancel:=context.WithTimeout(context.Background(),10*time.Minute);defer cancel()
 	ln,err:=net.Listen("tcp4","127.0.0.1:0");if err!=nil{return err}
 	var requestMu sync.Mutex
@@ -213,13 +218,15 @@ func runManagedWindowProbe(countArg string)(result error){
 	cfg:=config.Gallery{Name:managedqa.Gallery,GalleryPath:filepath.Join(dir,"gallery"),DBPath:filepath.Join(dir,"gallery.sqlite"),ThumbnailsPath:filepath.Join(dir,"thumbs")}
 	set,err:=library.OpenSet(windowHost{cfg},jobs.NewManager(),[]config.Gallery{cfg},cfg.Name);if err!=nil{return err}
 	defer set.Close()
-	o:=&windowFixtureOwner{dir:dir,setup:setup,set:set,allowed:map[string]workerproto.StageAllocateRequest{}}
+	registry,err:=windowregistry.Open(filepath.Join(dir,"windows"));if err!=nil{return err};defer registry.Close()
+	o:=&windowFixtureOwner{dir:dir,setup:setup,set:set,allowed:map[string]workerproto.StageAllocateRequest{},registry:registry}
 	a,err:=acquisitionstage.Open(filepath.Join(dir,"stage"),2,32<<20,o.scope);if err!=nil{return err}
 	o.a=a;defer a.Close()
 	lock,err:=acquisitionpolicy.LockProfile(dir);if err!=nil{return err};defer lock.Close()
 	store,err:=acquisitionpolicy.Open(dir);if err!=nil{return err};defer store.Close()
 	policy,err:=acquisitionpolicy.New(store);if err!=nil{return err}
 	manager,err:=acquisitionpolicy.NewManager(ctx,lock,policy,func(start,lifetime context.Context,f *acquisitionpolicy.WorkerFence)(acquisitionpolicy.ManagedPeer,error){
+		o.mu.Lock();o.generation=f.Generation();o.mu.Unlock()
 		cmd:=exec.Command(self,"internal-managed-window-custody-v1",dir,f.Generation())
 		cmd.Stderr=os.Stderr
 		return acquisitionpolicy.StartCustodySession(start,lifetime,cmd,f,o.handle)
@@ -260,7 +267,8 @@ func runManagedWindowProbe(countArg string)(result error){
 	if err:=manager.TickNetworkDemand(ctx,demand.Queued);err!=nil{return err}
 	lease,err:=manager.AcquireOnline(ctx);if err!=nil{return err}
 	defer lease.Release()
-	o.mu.Lock();o.lease=lease;o.mu.Unlock()
+	o.mu.Lock();o.lease=lease;o.window=windowregistry.Grant{Request:setup.Metadata(),OwnerGeneration:o.generation,PolicyGeneration:1};o.mu.Unlock()
+	if err:=registry.Register(ctx,o.window);err!=nil{return err}
 	if _,err:=call(workerproto.QueueResume,nil);err!=nil{return err}
 	for{
 		v,err=readJob();if err!=nil{return err}

@@ -48,8 +48,9 @@ func runManagedWindowWorker(args []string)error{
 		Session:session.Load,
 		PrepareWindow:func(c context.Context,j *queue.Job)(*pipeline.ManagedWindowRuntime,error){
 			if j.ID!=md.JobID||j.URL!=md.URL||j.Gallery!=md.Gallery||j.MaxItems!=setup.Count||!used.CompareAndSwap(false,true){return nil,managedqa.ErrFixture}
+			if err:=client.OpenWindow(c,md);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
 			epoch:=gate.CurrentGeneration()
-			current:=func(c context.Context)bool{return c.Err()==nil&&epoch!=(workerproto.DrainGeneration{})&&gate.CurrentGeneration()==epoch&&broker.Err()==nil}
+			current:func(c context.Context)bool{return c.Err()==nil&&epoch!=(workerproto.DrainGeneration{})&&gate.CurrentGeneration()==epoch&&broker.Err()==nil}
 			return &pipeline.ManagedWindowRuntime{
 				Request:md,Identity:identity,Config:mc,PolicyGeneration:1,Mapper:mapper,Client:client,
 				Scope:func(c context.Context,q workerproto.MetadataPlanRequest)bool{return q==md&&current(c)},
@@ -60,7 +61,7 @@ func runManagedWindowWorker(args []string)error{
 					// custodian cleanup. Do not close the primary broker on
 					// successful job settlement; final profile stop owns it.
 					if broker.Err()!=nil{return processguard.ErrOperationUnconfirmed}
-					return c.Err()
+					return client.CloseWindow(c,md)
 				},
 			},nil
 		},
