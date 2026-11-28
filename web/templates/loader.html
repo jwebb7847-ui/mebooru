@@ -4,6 +4,7 @@
   <nav class="loader-tabs" aria-label="Loader">
     <a href="/loader"{{if eq .View "queue"}} aria-current="page"{{end}}>Queue</a>
     {{if .Managed}}
+    {{if not .Unavailable}}<a href="/loader?view=ptr"{{if eq .View "ptr"}} aria-current="page"{{end}}>PTR</a>{{end}}
     <a class="loader-settings-link" href="/settings#meloader">Acquisition settings</a>
     {{else}}
     <a href="/loader?view=watches"{{if eq .View "watches"}} aria-current="page"{{end}}>Watches</a>
@@ -16,6 +17,24 @@
     <p class="loader-message" role="status">{{.Unavailable}}</p>
   {{else if eq .View "queue"}}
     {{template "loader_queue" .}}
+  {{else if and .Managed (eq .View "ptr")}}
+    <div class="loader-queue">
+      <h2>Public Tag Repository</h2>
+      <form class="loader-import" method="get" action="/loader">
+        <input type="hidden" name="view" value="ptr">
+        <label>Image SHA-256 <input type="text" name="sha256" value="{{.PTR.Query}}" pattern="[0-9A-Fa-f]{64}" size="40" spellcheck="false" required></label>
+        <button type="submit">Find local tags</button>
+      </form>
+      {{if .PTR.Message}}<p role="status">{{.PTR.Message}}</p>
+      {{else if not .PTR.Enabled}}<p role="status">Enable PTR and point it at an existing index in the acquisition settings file.</p>
+      {{else if not .PTR.Indexed}}<p role="status">No local index was found at the configured PTR location.</p>
+      {{else if not .PTR.Query}}<p role="status">Local PTR index available offline.</p>
+      {{else if not .PTR.Found}}<p role="status">This hash is absent from the local index.</p>
+      {{else if not .PTR.Tags}}<p role="status">The index has no tags for this hash.</p>
+      {{else}}
+      <ul>{{range .PTR.Tags}}<li>{{.}}</li>{{end}}</ul>
+      {{end}}
+    </div>
   {{else}}
     {{template "partials/loader_panel.html" (dict "Panel" .Panel "Title" "Meloader" "Lazy" false)}}
   {{end}}

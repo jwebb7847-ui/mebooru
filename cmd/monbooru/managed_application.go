@@ -204,14 +204,18 @@ func (a *managedApplication) Close() error {
 }
 
 func (a *managedApplication) call(ctx context.Context, op workerproto.Operation, cmd workerproto.QueueCommand, result any) error {
+	raw, err := workerproto.EncodeQueueCommand(op, cmd)
+	if err != nil {
+		return err
+	}
+	return a.request(ctx, op, raw, result)
+}
+
+func (a *managedApplication) request(ctx context.Context, op workerproto.Operation, raw json.RawMessage, result any) error {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
-	}
-	raw, err := workerproto.EncodeQueueCommand(op, cmd)
-	if err != nil {
-		return err
 	}
 	lease, err := a.manager.Acquire(ctx)
 	if err != nil {
@@ -227,12 +231,25 @@ func (a *managedApplication) call(ctx context.Context, op workerproto.Operation,
 		if op == workerproto.QueueGet && reply.Error.Code == "not_found" {
 			return monloader.ErrImportJobNotFound
 		}
-		return fmt.Errorf("managed queue %s: %s", op, reply.Error.Code)
+		return fmt.Errorf("managed operation %s: %s", op, reply.Error.Code)
 	}
 	if result != nil {
 		return json.Unmarshal(reply.Payload, result)
 	}
 	return nil
+}
+
+func (a *managedApplication) LocalPTRTags(ctx context.Context, hash string) (workerproto.PTRLocalTags, error) {
+	var result workerproto.PTRLocalTags
+	if a.owner.live == nil {
+		return result, nil
+	}
+	raw, err := json.Marshal(workerproto.PTRLocalTagsRequest{SHA256: hash})
+	if err != nil {
+		return result, err
+	}
+	err = a.request(ctx, workerproto.PTRTags, raw, &result)
+	return result, err
 }
 
 func (a *managedApplication) ImportQueue(ctx context.Context, page, limit int) (monloader.ImportQueuePage, error) {

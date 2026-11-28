@@ -2,13 +2,16 @@ package web
 
 import (
 	"cmp"
+	"context"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/session"
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/peer"
 )
 
@@ -17,6 +20,33 @@ type loaderPanel struct {
 	OpenURL  string
 	Message  string
 	Setup    bool
+}
+
+type localPTRLoader interface {
+	LocalPTRTags(context.Context, string) (workerproto.PTRLocalTags, error)
+}
+
+type loaderPTR struct {
+	Query, Message string
+	workerproto.PTRLocalTags
+}
+
+func (s *Server) loaderLocalPTR(r *http.Request) loaderPTR {
+	hash := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sha256")))
+	if hash != "" && !workerproto.ValidPTRHash(hash) {
+		return loaderPTR{Message: "Enter a 64-character SHA-256 hash."}
+	}
+	reader, _ := s.managedLoader.(localPTRLoader)
+	if reader == nil {
+		return loaderPTR{Message: "The local PTR index is unavailable."}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	result, err := reader.LocalPTRTags(ctx, hash)
+	if err != nil {
+		return loaderPTR{Query: hash, Message: "Could not read the local PTR index."}
+	}
+	return loaderPTR{Query: hash, PTRLocalTags: result}
 }
 
 func (s *Server) loaderPanel(r *http.Request, base baseData, path string) loaderPanel {
@@ -115,8 +145,11 @@ func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 		view, path = "queue", ""
 	}
 	var panel loaderPanel
+	var ptr loaderPTR
 	if path != "" {
-		if s.managedLoader != nil {
+		if view == "ptr" && s.managedLoader != nil {
+			ptr = s.loaderLocalPTR(r)
+		} else if s.managedLoader != nil {
 			panel.Message = "This view is unavailable with the managed queue."
 		} else {
 			panel = s.loaderPanel(r, base, path)
@@ -147,5 +180,6 @@ func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 		Destinations []string
 		Limit        int
 		Unavailable  string
-	}{base, view, panel, s.usesManagedLoader(), managed && s.managedLoader.Offline(), destinations, limit, s.acquisitionUnavailableMessage()})
+		PTR          loaderPTR
+	}{base, view, panel, s.usesManagedLoader(), managed && s.managedLoader.Offline(), destinations, limit, s.acquisitionUnavailableMessage(), ptr})
 }
