@@ -31,7 +31,7 @@ func TestGuardedExistingExecution(t *testing.T){
 }
 
 func TestGuardedExistingMetadata(t *testing.T){
-	testExistingPublicationTargetModes(t, []string{"exec meta held","restore exec meta","exec meta alias","exec meta reopen","exec meta revoked","exec meta revoked after intent","exec meta changed after intent","exec meta source failure","exec meta source conflict","exec meta changed after result","exec meta changed source","exec meta lost result","exec meta lost intent","exec meta corrupt result","exec meta changed path","exec meta revoked after result"})
+	testExistingPublicationTargetModes(t, []string{"exec meta held","restore exec meta","exec meta alias","exec meta reopen","exec meta revoked","exec meta revoked after intent","exec meta changed after intent","exec meta source failure","exec meta source conflict","exec meta changed after result","exec meta changed source","exec meta lost result","exec meta lost intent","exec meta corrupt result","exec meta changed path","exec meta revoked after result","exec meta unexpected claim","exec meta changed membership"})
 }
 
 func testExistingPublicationTargetModes(t *testing.T, modes []string){
@@ -46,6 +46,7 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 			a, stage, s, grant, authority, f := publicationFixtureData(t, "png", data)
 			defer func(){ if err := a.Close(); err != nil { t.Error(err) } }()
 			row := acquisitionplan.ApprovedPolicyRow{PostID:f.ID, NativeSHA256:strings.Repeat("a",64), MediaURL:"https://example.invalid/42.png", SourceLabel:"derpibooru", PostURL:"https://derpibooru.org/images/42", Rating:"general", Tags:[]string{"fixture","rating:general"}, Provenance:&acquisitionplan.ApprovedProvenance{}}
+			if strings.Contains(mode,"exec meta"){row.Provenance.Commentary="fixture commentary";row.Provenance.Original="https://example.invalid/original"}
 			body, hash, err := acquisitionplan.EncodeApprovedPolicy(grant.Request.Transfer, []acquisitionplan.ApprovedPolicyRow{row})
 			if err != nil { t.Fatal(err) }
 			if err := a.BindPolicy(ctx, grant, func(context.Context, workerproto.StageAllocation)([]byte,string,error){return body,hash,nil}); err != nil { t.Fatal(err) }
@@ -65,6 +66,11 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 				id = res.Image.ID
 				if _,_,err := gallery.MergeSource(g.DB,g.TagSvc,id,"other","7","https://example.invalid/7","","",gallery.PostFile{},[]string{"rating:explicit","prior"},gallery.Withheld{}); err != nil { t.Fatal(err) }
 				if _,err := g.DB.Write.Exec("UPDATE images SET note='operator note' WHERE id=?",id); err != nil { t.Fatal(err) }
+				if strings.Contains(mode,"exec meta"){
+					order:=3
+					if err:=gallery.SetHomeCollection(g.DB,id,"original-home",&order);err!=nil{t.Fatal(err)}
+					if _,err:=g.DB.Write.Exec("INSERT INTO image_annotations(image_id,x,y,w,h,body,manual) VALUES(?,1,2,3,4,'operator annotation',1)",id);err!=nil{t.Fatal(err)}
+				}
 			}
 			kind := existingHeld
 			if strings.HasPrefix(mode,"restore") { kind = existingRestore }
@@ -397,6 +403,9 @@ func checkGuardedExistingMetadata(t *testing.T,ctx context.Context,ap **Allocato
 	var n int
 	if err:=g.DB.Read.QueryRow("SELECT COUNT(*) FROM image_sources WHERE image_id=? AND site IN ('other','derpibooru')",id).Scan(&n);err!=nil||n!=2{t.Fatal("source memberships",n,err)}
 	if err:=g.DB.Read.QueryRow("SELECT COUNT(*) FROM images WHERE id=? AND note='operator note'",id).Scan(&n);err!=nil||n!=1{t.Fatal("operator note",n,err)}
+	if err:=g.DB.Read.QueryRow("SELECT COUNT(*) FROM image_collections WHERE image_id=? AND name='original-home' AND position=3",id).Scan(&n);err!=nil||n!=1{t.Fatal("prior collection",n,err)}
+	if err:=g.DB.Read.QueryRow("SELECT COUNT(*) FROM image_annotations WHERE image_id=? AND manual=1 AND body='operator annotation'",id).Scan(&n);err!=nil||n!=1{t.Fatal("prior manual annotation",n,err)}
+	if err:=g.DB.Read.QueryRow("SELECT COUNT(*) FROM image_sources WHERE image_id=? AND site='derpibooru' AND commentary='fixture commentary' AND original='https://example.invalid/original'",id).Scan(&n);err!=nil||n!=1{t.Fatal("source provenance",n,err)}
 	if _,err:=a.applyExistingMetadata(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("metadata replay")}
 	if _,err:=a.applyMappedMetadata(ctx,grant,g);err==nil{t.Fatal("legacy metadata bypass")}
 	if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("premature terminal receipt")}
@@ -417,6 +426,10 @@ func checkGuardedExistingMetadata(t *testing.T,ctx context.Context,ap **Allocato
 		if err:=os.Remove(attempt);err!=nil{t.Fatal(err)}
 	case "exec meta corrupt result":
 		if err:=os.WriteFile(result,[]byte("bad"),0600);err!=nil{t.Fatal(err)}
+	case "exec meta unexpected claim":
+		if _,err:=g.DB.Write.Exec("UPDATE image_sources SET parent_url='https://example.invalid/unapproved' WHERE image_id=? AND site='derpibooru'",id);err!=nil{t.Fatal(err)}
+	case "exec meta changed membership":
+		if _,err:=g.DB.Write.Exec("UPDATE image_collections SET position=99 WHERE image_id=?",id);err!=nil{t.Fatal(err)}
 	case "exec meta changed path":
 		if _,err:=g.DB.Write.Exec("UPDATE image_paths SET id=id+10000 WHERE path=?",managed);err!=nil{t.Fatal(err)}
 	}

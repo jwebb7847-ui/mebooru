@@ -84,7 +84,7 @@ func existingPreservedState(ctx context.Context,g *library.Gallery,id int64,sour
 	rest,err:=boundedStateDigest(ctx,tx,[]stateQuery{
 		{`SELECT * FROM image_sources WHERE image_id=? AND site<>? ORDER BY site COLLATE BINARY,post_id COLLATE BINARY LIMIT 8193`,[]any{id,source}},
 		{`SELECT * FROM image_annotations WHERE image_id=? AND (manual=1 OR site<>?) ORDER BY id LIMIT 8193`,[]any{id,source}},
-		{`SELECT * FROM image_tag_sources WHERE image_id=? AND source<>? ORDER BY tag_id,source COLLATE BINARY LIMIT 8193`,[]any{id,source}},
+		{`SELECT ts.*, it.tag_id FROM image_tag_sources ts LEFT JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source<>? ORDER BY ts.tag_id,ts.source COLLATE BINARY LIMIT 8193`,[]any{id,source}},
 		{`SELECT * FROM image_paths WHERE image_id=? ORDER BY id LIMIT 8193`,[]any{id}},
 		{`SELECT * FROM derivative_edges WHERE source_image_id=? OR derivative_image_id=? ORDER BY source_image_id,derivative_image_id LIMIT 8193`,[]any{id,id}},
 	},nil)
@@ -102,6 +102,30 @@ func existingMetadataSourceEligible(ctx context.Context,g *library.Gallery,id in
 		if err:=g.DB.Read.QueryRowContext(ctx,q.sql,q.args...).Scan(&n);err!=nil||n!=0{return ErrStageRefused}
 	}
 	return nil
+}
+
+// For this new-site-only case require even omitted source claims to be
+// empty and the complete source attribution ledger to match the result.
+func verifyExistingMappedRow(ctx context.Context,g *library.Gallery,m existingMetadataAttempt,row acquisitionplan.ApprovedPolicyRow,rejected []string)(metadataObservation,error){
+	var zero metadataObservation
+	v,err:=verifyMappedRow(ctx,g,m.Target,row,rejected)
+	if err!=nil{return zero,err}
+	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
+	if err!=nil{return zero,ErrStageRecovery}
+	defer tx.Rollback()
+	in,md5,err:=normalizedMappedSource(row)
+	if err!=nil||verifySourceClaimsMode(ctx,tx,v.ImageID,in,md5,true)!=nil{return zero,ErrStageRecovery}
+	for _,q:=range []struct{sql string;args []any;want int}{
+		{`SELECT COUNT(*) FROM image_sources WHERE image_id=? AND site=?`,[]any{v.ImageID,row.SourceLabel},1},
+		{`SELECT COUNT(*) FROM image_sources WHERE (site=? AND post_id=?) OR url=?`,[]any{row.SourceLabel,row.PostID,row.PostURL},1},
+		{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=? AND source=?`,[]any{v.ImageID,row.SourceLabel},len(v.TagIDs)},
+		{`SELECT COUNT(*) FROM image_tag_sources ts JOIN image_tags it ON it.image_id=ts.image_id AND it.tag_id=ts.tag_id WHERE ts.image_id=? AND ts.source=? AND it.stale=0 AND it.is_implied=0`,[]any{v.ImageID,row.SourceLabel},len(v.TagIDs)},
+	}{
+		var n int
+		if err:=tx.QueryRowContext(ctx,q.sql,q.args...).Scan(&n);err!=nil||n!=q.want{return zero,ErrStageRecovery}
+	}
+	if tx.Commit()!=nil||ctx.Err()!=nil{return zero,ErrStageRecovery}
+	return v,nil
 }
 
 type existingMetadataEvidence struct{
@@ -197,7 +221,7 @@ func(a *Allocator) applyExistingMetadata(ctx context.Context,grant workerproto.S
 	if err!=nil||len(warnings)!=0||!sum.SourceAdded||sum.TagsRetired!=0{return zero,ErrStageRecovery}
 	after,err:=a.existingMetadataEvidenceLocked(ctx,grant,g,disposition,extras,naming,&stored)
 	if err!=nil{return zero,err}
-	v,err:=verifyMappedRow(ctx,g,stored.Target,after.Row,sum.RejectedTags)
+	v,err:=verifyExistingMappedRow(ctx,g,stored,after.Row,sum.RejectedTags)
 	if err!=nil{return zero,err}
 	again,err:=a.existingMetadataEvidenceLocked(ctx,grant,g,disposition,extras,naming,&stored)
 	if err!=nil||!reflect.DeepEqual(after,again){return zero,ErrStageRecovery}
@@ -226,7 +250,7 @@ func(a *Allocator) observeExistingMetadataLocked(ctx context.Context,grant worke
 	for i:=0;i<2;i++{
 		current,err:=a.existingMetadataEvidenceLocked(ctx,grant,g,disposition,extras,naming,&m)
 		if err!=nil||current.StateSHA256!=result.StateSHA256{return zero,ErrStageRecovery}
-		v,err:=verifyMappedRow(ctx,g,m.Target,current.Row,result.Row.Rejected)
+		v,err:=verifyExistingMappedRow(ctx,g,m,current.Row,result.Row.Rejected)
 		if err!=nil||!sameMetadataObservation(v,result.Row){return zero,ErrStageRecovery}
 	}
 	again,err:=readExistingMetadataAttempt(p,plan,link)
