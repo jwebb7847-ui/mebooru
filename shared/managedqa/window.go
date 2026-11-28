@@ -71,9 +71,12 @@ func ReadJSON(dir,name string,v any,limit int)error{
 func Load(dir string)(Setup,error){
 	var s Setup
 	if err:=ReadJSON(dir,SetupName,&s,8192);err!=nil{return s,err}
-	if (s.Count!=3&&s.Count!=200&&!(s.Application&&s.Count==1))||(s.Windows<1||s.Windows>3)||s.Windows>1&&s.Count!=3||s.Port<1||s.Port>65535||!filepath.IsAbs(s.Python)||s.ScriptSHA256!=Digest([]byte(PythonFixture)){return Setup{},ErrFixture}
+	if !ValidCount(s.Count,s.Application)||(s.Windows<1||s.Windows>3)||s.Windows>1&&s.Count!=3||s.Port<1||s.Port>65535||!filepath.IsAbs(s.Python)||s.ScriptSHA256!=Digest([]byte(PythonFixture)){return Setup{},ErrFixture}
 	b,err:=Read(dir,ScriptName,1<<20);if err!=nil||Digest(b)!=s.ScriptSHA256{return Setup{},ErrFixture}
 	return s,nil
+}
+func ValidCount(count int, application bool) bool {
+	return count == 3 || count == 200 || application && (count == 1 || count == 20)
 }
 func(s Setup) Metadata()workerproto.MetadataPlanRequest{return s.MetadataFor(1)}
 func(s Setup) MetadataFor(job int64)workerproto.MetadataPlanRequest{

@@ -226,7 +226,7 @@ func runManagedWindowProbe(countArg string)(result error){
 		if countArg == "3" { windows = 2 }
 	}
 	if countArg=="3x2"{windows=2;countArg="3"}else if countArg=="3x3"{windows=3;countArg="3"}
-	count,err:=strconv.Atoi(countArg);if err!=nil||count!=3&&count!=200&&!(app&&count==1){return managedqa.ErrFixture}
+	count,err:=strconv.Atoi(countArg);if err!=nil||!managedqa.ValidCount(count,app){return managedqa.ErrFixture}
 	python:=os.Getenv("MEBOORU_METADATA_TEST_PYTHON")
 	if !filepath.IsAbs(python){return managedqa.ErrFixture}
 	if _,err:=processguard.ProbeSibling("monbooru","monloader");err!=nil{return err}
@@ -237,7 +237,11 @@ func runManagedWindowProbe(countArg string)(result error){
 	safe:=false
 	defer func(){if safe{result=errors.Join(result,os.RemoveAll(dir))}else{fmt.Fprintln(os.Stderr,"retained disposable window:",dir)}}()
 	for _,name:=range []string{"stage","gallery","queue","windows","data"}{if err:=os.Mkdir(filepath.Join(dir,name),0700);err!=nil{return err}}
-	ctx,cancel:=context.WithTimeout(context.Background(),10*time.Minute);defer cancel()
+	timeout := 10 * time.Minute
+	if app && count == 200 {
+		timeout = 20 * time.Minute
+	}
+	ctx,cancel:=context.WithTimeout(context.Background(),timeout);defer cancel()
 	ln,err:=net.Listen("tcp4","127.0.0.1:0");if err!=nil{return err}
 	var requestMu sync.Mutex
 	requests:=map[int]int{}
