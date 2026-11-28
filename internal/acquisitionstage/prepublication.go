@@ -130,7 +130,7 @@ func(a *Allocator)newPublicationPlanLocked(ctx context.Context,grant workerproto
 	if err!=nil{return zero,err}
 	req,err:=naming(ctx,grant)
 	if err!=nil||!validNamingRequest(req)||req.Gallery!=g.Name||req.ReceivedName!=f.RelativeName||req.Source!=row.SourceLabel||req.PostID!=row.PostID{return zero,ErrStageRefused}
-	preview,err:=gallery.PreviewUnlandedReceivedNaming(ctx,g.DB,g.Boundary(),req,f.SHA256,f.Size)
+	preview,err:=gallery.PreviewMeasuredReceivedNaming(ctx,g.DB,g.Boundary(),req,f.SHA256,f.Size,media.Format,media.Width,media.Height,media.MD5)
 	if err!=nil{return zero,ErrStageRefused}
 	var destinations [2]string
 	for i,path:=range []string{preview.InitialPath,preview.FinalPath}{
