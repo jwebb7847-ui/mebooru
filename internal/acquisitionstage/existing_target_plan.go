@@ -36,7 +36,7 @@ func validExistingTargetPlan(m existingTargetPlan, r record, f acquisitionplan.V
 	db := landingAttempt{Version:1, Allocation:r.Allocation, GalleryIdentity:r.GalleryIdentity, DBPath:v.DB.DBPath, DBFileIdentity:v.DB.DBFileIdentity}
 	if m.Version != 1 || v.DB != db || !filepath.IsAbs(db.DBPath) || filepath.Clean(db.DBPath) != db.DBPath ||
 		db.DBFileIdentity == "" || len(db.DBFileIdentity) > 128 || v.File != f || !validResultFile(f) ||
-		filepath.Ext(f.RelativeName) != ".png" || !validPlannedImageFacts(f,&v.Media) ||
+		guardedImageFormat(f.RelativeName) == "" || !validPlannedImageFacts(f,&v.Media) ||
 		!validDigest(v.PolicySHA256) || !validDigest(v.StateSHA256) || v.ImageID <= 0 ||
 		v.FileIdentity == "" || len(v.FileIdentity) > 128 {
 		return false

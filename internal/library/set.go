@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -565,4 +566,28 @@ func (s *Set) quiesce(cx *Gallery) error {
 	}
 	cx.Close()
 	return nil
+}
+
+// WithAcquisitionFence holds the actual set write lock and job lane.
+// A running watcher is refused, not stopped implicitly. Callers must
+// not reenter Set or wait for watcher ingests during the callback.
+// Cooperative owner exclusion, not a lock on arbitrary DB writers.
+func (s *Set) WithAcquisitionFence(ctx context.Context,name string,run func(*Gallery,func()error)error)error{
+	if s==nil||s.jobs==nil||run==nil||ctx.Err()!=nil{return fmt.Errorf("acquisition fence unavailable")}
+	lane,err:=s.jobs.Reserve()
+	if err!=nil{return ErrJobRunning}
+	defer lane.Release()
+	s.Lock()
+	defer s.Unlock()
+	g:=s.Get(name)
+	if g==nil||g.Closed()||g.Degraded{return fmt.Errorf("acquisition gallery unavailable")}
+	if err:=g.exportBusy();err!=nil{return err}
+	g.bgMu.Lock()
+	defer g.bgMu.Unlock()
+	current:=func()error{
+		if ctx.Err()!=nil||lane.Cancelled()||g.Closed()||g.WatcherRunning()||s.Get(name)!=g{return fmt.Errorf("acquisition fence revoked")}
+		return nil
+	}
+	if err:=current();err!=nil{return err}
+	return run(g,current)
 }

@@ -17,7 +17,7 @@ import (
 // intentionally NOT a publication attempt format, a disposition grant,
 // a deletion permission, or a new caller of the diagnostic ingest path.
 // Keep held and restore explicit; never infer one from failure of the other.
-// First scope: single PNG, no parent/collection, empty client job.
+// Single measured still image, new incoming site, no parent/collection, empty client job.
 const (
 	existingHeld = "held"
 	existingRestore = "restore"
@@ -44,7 +44,7 @@ func sameExistingPublicationTarget(a, b existingPublicationTarget) bool {
 func observeExistingTarget(ctx context.Context, g *library.Gallery, r record, e SealedEvidence, snapshot acquisitionplan.ApprovedPolicySnapshot, dst *os.Root, kind string, media plannedImageFacts) (existingPublicationTarget, error) {
 	var zero existingPublicationTarget
 	rows, err := newOnlyRows(e, snapshot)
-	if err != nil || len(rows) != 1 || len(e.Files) != 1 || filepath.Ext(e.Files[0].RelativeName) != ".png" || !validPlannedImageFacts(e.Files[0], &media) {
+	if err != nil || len(rows) != 1 || len(e.Files) != 1 || guardedImageFormat(e.Files[0].RelativeName) == "" || !validPlannedImageFacts(e.Files[0], &media) {
 		return zero, ErrStageRefused
 	}
 	f, row := e.Files[0], rows[0]
@@ -89,6 +89,8 @@ func observeExistingTarget(ctx context.Context, g *library.Gallery, r record, e 
 	if tx.Commit() != nil || ctx.Err() != nil {
 		return zero, ErrStageRecovery
 	}
+	// Refuse unsupported same-site merges before any managed link or landing.
+	if err := existingMetadataSourceEligible(ctx,g,id,row); err != nil { return zero,err }
 	if err := verifyPlannedImageRow(ctx, g, id, f, &media); err != nil {
 		return zero, err
 	}

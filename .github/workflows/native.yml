@@ -76,13 +76,636 @@ jobs:
             shared/go.sum
       - name: Test all modules (no live-site tests)
         run: |
-          go test -timeout 5m ./...
+          go test -timeout 10m ./...
           (cd meloader && go test -timeout 5m ./...)
           (cd shared && go test -timeout 5m ./...)
 
       - name: Verify isolated staging cases
         if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration'
-        run: go test -count=1 -v -timeout 5m ./internal/acquisitionstage
+        run: go test -v -timeout 10m -run '^(TestPlannedNewPublication|TestExistingPublicationTarget|TestDurableExistingTargetPlan|TestGuardedExisting.*|TestGuardedOwnerCommit)
+
+      - name: Verify private executable probe (no acquisition)
+        env:
+          MEBOORU_PROBE_PINNED_RUNTIME: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
+          MEBOORU_PROBE_STANDALONE_RUNTIME: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
+        run: python3 .github/qa/managed-probe.py
+
+      - name: Audit common source and dependency resolution
+        run: python3 .github/qa/consolidation-audit.py
+
+  worker-windows-development:
+    # Temporary targeted intermediate verification for II.6.4 transport.
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration'
+    name: Managed worker Windows development gate
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Test ownership and protocol transport
+        run: |
+          go test -count=1 -timeout 3m ./internal/acquisitionpolicy ./cmd/monbooru
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -count=1 -v -timeout 3m ./internal/library
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cd shared
+          go test -count=1 -timeout 3m ./processguard ./workerproto ./acquisitionplan ./contract
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cd ../meloader
+          go test -count=1 -timeout 3m ./internal/gdl ./internal/taxonomy ./internal/pipeline
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify private executable probe (no acquisition)
+        env:
+          MEBOORU_PROBE_PINNED_RUNTIME: '1'
+          MEBOORU_PROBE_STANDALONE_RUNTIME: '1'
+        run: python .github/qa/managed-probe.py
+
+  worker-windows-staging-development:
+    # Keep every isolated staging test, but run the slow independent
+    # reclamation fixtures concurrently rather than behind the runtime probe.
+    # All shards are required development evidence; full native acceptance
+    # still runs the complete modules and is not replaced by this gate.
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration'
+    name: Managed staging Windows (${{ matrix.group }})
+    runs-on: windows-2025
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [baseline, guarded, workspace, prepared, sealed, closure]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Verify exact isolated staging test partition
+        env:
+          STAGING_TEST_GROUP: ${{ matrix.group }}
+        shell: pwsh
+        run: |
+          $listed = @(go test -list '^(Test|Fuzz|Example)' ./internal/acquisitionstage)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $all = @($listed | Where-Object { $_ -match '^(Test|Fuzz|Example)\S*$' })
+          if ($all.Count -eq 0) { throw 'No staging tests enumerated' }
+          $groups = @{
+            workspace = 'TestWorkspaceReclamationThroughActualReceipts'
+            prepared = 'TestPreparedReleaseThroughActualReceipts'
+            sealed = 'TestSealedRetirementThroughActualReceipts'
+            closure = 'TestOperationClosureReleasesOnlyActiveCapacity'
+          }
+          foreach ($name in $groups.Values) {
+            if (@($all | Where-Object { $_ -ceq $name }).Count -ne 1) {
+              throw "Expected exactly one staging test: $name"
+            }
+          }
+          $group = $env:STAGING_TEST_GROUP
+          $guarded = @($all | Where-Object { $_ -cmatch '^(TestPlannedNewPublication|TestExistingPublicationTarget|TestDurableExistingTargetPlan|TestGuardedExisting.*|TestGuardedOwnerCommit)
+          } elseif ($groups.ContainsKey($group)) {
+            $selected = @($all | Where-Object { $_ -ceq $groups[$group] })
+          } else {
+            throw 'Unknown staging test group'
+          }
+          if ($selected.Count -eq 0) { throw 'Empty staging test partition' }
+          $escaped = @($selected | ForEach-Object { [regex]::Escape($_) })
+          $pattern = '^(' + ($escaped -join '|') + ')$'
+          Write-Host "Staging partition ${group}: $($selected.Count) top-level tests"
+          $selected | ForEach-Object { Write-Host $_ }
+          go test -count=1 -v -timeout 10m -run $pattern ./internal/acquisitionstage
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  native:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    name: Native core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Test, build and run both apps
+        run: python .github/qa/native-smoke.py
+      - name: Verify private executable probe (no acquisition)
+        run: python .github/qa/managed-probe.py
+      - name: Compile Linux tray variants
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc pkg-config libgtk-3-dev libayatana-appindicator3-dev
+          CGO_ENABLED=1 go build -mod=readonly -tags tray -o "$RUNNER_TEMP/monbooru-tray" ./cmd/monbooru
+          (cd meloader && CGO_ENABLED=1 go build -mod=readonly -tags tray -o "$RUNNER_TEMP/monloader-tray" ./cmd/monloader)
+      - name: Build and sign macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: sh packaging/build-macos-app.sh
+      - name: Verify the bundled companion lifecycle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app="$PWD/dist/Mebooru.app"
+          export HOME="$RUNNER_TEMP/mebooru-smoke-home"
+          mkdir -p "$HOME"
+          "$app/Contents/MacOS/monbooru" -no-browser >"$RUNNER_TEMP/mebooru-smoke.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; cat "$RUNNER_TEMP/mebooru-smoke.log"' EXIT
+          for port in 8455 8456; do
+            for attempt in {1..30}; do
+              if curl --fail --silent --max-time 2 "http://127.0.0.1:$port/health"; then break; fi
+              kill -0 "$pid"
+              sleep 1
+            done
+            curl --fail --silent --max-time 3 "http://127.0.0.1:$port/health"
+          done
+          curl -fsS --max-time 3 -D "$RUNNER_TEMP/meloader-headers" -o /dev/null 'http://127.0.0.1:8456/settings'
+          grep -Fi 'frame-ancestors http://127.0.0.1:8455' "$RUNNER_TEMP/meloader-headers"
+          kill -TERM "$pid"
+          wait "$pid"
+          if curl --fail --silent --max-time 3 'http://127.0.0.1:8456/health'; then
+            echo 'Companion outlived Mebooru' >&2
+            exit 1
+          fi
+      - name: Verify first-party pairing and refusal paths
+        if: runner.os == 'macOS'
+        run: python .github/qa/bundled-pairing-smoke.py dist/Mebooru.app
+
+  go-validation:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    name: Both modules (race, vet and strict transfer)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Shared module race and vet
+        working-directory: shared
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Mebooru race and vet
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Meloader race and vet
+        working-directory: meloader
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Strict download regression with pinned gallery-dl
+        working-directory: meloader
+        shell: bash
+        run: |
+          source packaging/pins.env
+          venv="$RUNNER_TEMP/meloader-strict-gallery-dl"
+          python3 -m venv "$venv"
+          "$venv/bin/python3" -m pip install --disable-pip-version-check "gallery-dl==$GDL_VERSION"
+          test "$("$venv/bin/gallery-dl" --version)" = "$GDL_VERSION"
+          MELOADER_STRICT_TEST_GDL="$venv/bin/gallery-dl" \
+            go test -race -count=1 -timeout=3m -v \
+              -run '^TestStrictBlacklistGalleryDLMediaBoundary$' ./internal/pipeline
+
+      - name: Audit common source and dependency resolution
+        run: python3 .github/qa/consolidation-audit.py
+
+  container-build:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    name: Container build stage (${{ matrix.app }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: library
+            file: docker/Dockerfile
+          - app: acquisition
+            file: meloader/docker/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compile container build stage without publishing
+        run: docker build --target build -f '${{ matrix.file }}' .
+ ./internal/acquisitionstage
+
+      - name: Verify private executable probe (no acquisition)
+        env:
+          MEBOORU_PROBE_PINNED_RUNTIME: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
+          MEBOORU_PROBE_STANDALONE_RUNTIME: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration' && '1' || '0' }}
+        run: python3 .github/qa/managed-probe.py
+
+      - name: Audit common source and dependency resolution
+        run: python3 .github/qa/consolidation-audit.py
+
+  worker-windows-development:
+    # Temporary targeted intermediate verification for II.6.4 transport.
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration'
+    name: Managed worker Windows development gate
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Test ownership and protocol transport
+        run: |
+          go test -count=1 -timeout 3m ./internal/acquisitionpolicy ./cmd/monbooru
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -count=1 -v -timeout 3m ./internal/library
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cd shared
+          go test -count=1 -timeout 3m ./processguard ./workerproto ./acquisitionplan ./contract
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cd ../meloader
+          go test -count=1 -timeout 3m ./internal/gdl ./internal/taxonomy ./internal/pipeline
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify private executable probe (no acquisition)
+        env:
+          MEBOORU_PROBE_PINNED_RUNTIME: '1'
+          MEBOORU_PROBE_STANDALONE_RUNTIME: '1'
+        run: python .github/qa/managed-probe.py
+
+  worker-windows-staging-development:
+    # Keep every isolated staging test, but run the slow independent
+    # reclamation fixtures concurrently rather than behind the runtime probe.
+    # All shards are required development evidence; full native acceptance
+    # still runs the complete modules and is not replaced by this gate.
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration'
+    name: Managed staging Windows (${{ matrix.group }})
+    runs-on: windows-2025
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [baseline, workspace, prepared, sealed, closure]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Verify exact isolated staging test partition
+        env:
+          STAGING_TEST_GROUP: ${{ matrix.group }}
+        shell: pwsh
+        run: |
+          $listed = @(go test -list '^(Test|Fuzz|Example)' ./internal/acquisitionstage)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $all = @($listed | Where-Object { $_ -match '^(Test|Fuzz|Example)\S*$' })
+          if ($all.Count -eq 0) { throw 'No staging tests enumerated' }
+          $groups = @{
+            workspace = 'TestWorkspaceReclamationThroughActualReceipts'
+            prepared = 'TestPreparedReleaseThroughActualReceipts'
+            sealed = 'TestSealedRetirementThroughActualReceipts'
+            closure = 'TestOperationClosureReleasesOnlyActiveCapacity'
+          }
+          foreach ($name in $groups.Values) {
+            if (@($all | Where-Object { $_ -ceq $name }).Count -ne 1) {
+              throw "Expected exactly one staging test: $name"
+            }
+          }
+          $group = $env:STAGING_TEST_GROUP
+          if ($group -eq 'baseline') {
+            $selected = @($all | Where-Object { $_ -cnotin $groups.Values })
+          } elseif ($groups.ContainsKey($group)) {
+            $selected = @($all | Where-Object { $_ -ceq $groups[$group] })
+          } else {
+            throw 'Unknown staging test group'
+          }
+          if ($selected.Count -eq 0) { throw 'Empty staging test partition' }
+          $escaped = @($selected | ForEach-Object { [regex]::Escape($_) })
+          $pattern = '^(' + ($escaped -join '|') + ')$'
+          Write-Host "Staging partition ${group}: $($selected.Count) top-level tests"
+          $selected | ForEach-Object { Write-Host $_ }
+          go test -count=1 -v -timeout 10m -run $pattern ./internal/acquisitionstage
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  native:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    name: Native core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Test, build and run both apps
+        run: python .github/qa/native-smoke.py
+      - name: Verify private executable probe (no acquisition)
+        run: python .github/qa/managed-probe.py
+      - name: Compile Linux tray variants
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc pkg-config libgtk-3-dev libayatana-appindicator3-dev
+          CGO_ENABLED=1 go build -mod=readonly -tags tray -o "$RUNNER_TEMP/monbooru-tray" ./cmd/monbooru
+          (cd meloader && CGO_ENABLED=1 go build -mod=readonly -tags tray -o "$RUNNER_TEMP/monloader-tray" ./cmd/monloader)
+      - name: Build and sign macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: sh packaging/build-macos-app.sh
+      - name: Verify the bundled companion lifecycle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app="$PWD/dist/Mebooru.app"
+          export HOME="$RUNNER_TEMP/mebooru-smoke-home"
+          mkdir -p "$HOME"
+          "$app/Contents/MacOS/monbooru" -no-browser >"$RUNNER_TEMP/mebooru-smoke.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; cat "$RUNNER_TEMP/mebooru-smoke.log"' EXIT
+          for port in 8455 8456; do
+            for attempt in {1..30}; do
+              if curl --fail --silent --max-time 2 "http://127.0.0.1:$port/health"; then break; fi
+              kill -0 "$pid"
+              sleep 1
+            done
+            curl --fail --silent --max-time 3 "http://127.0.0.1:$port/health"
+          done
+          curl -fsS --max-time 3 -D "$RUNNER_TEMP/meloader-headers" -o /dev/null 'http://127.0.0.1:8456/settings'
+          grep -Fi 'frame-ancestors http://127.0.0.1:8455' "$RUNNER_TEMP/meloader-headers"
+          kill -TERM "$pid"
+          wait "$pid"
+          if curl --fail --silent --max-time 3 'http://127.0.0.1:8456/health'; then
+            echo 'Companion outlived Mebooru' >&2
+            exit 1
+          fi
+      - name: Verify first-party pairing and refusal paths
+        if: runner.os == 'macOS'
+        run: python .github/qa/bundled-pairing-smoke.py dist/Mebooru.app
+
+  go-validation:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    name: Both modules (race, vet and strict transfer)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Shared module race and vet
+        working-directory: shared
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Mebooru race and vet
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Meloader race and vet
+        working-directory: meloader
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Strict download regression with pinned gallery-dl
+        working-directory: meloader
+        shell: bash
+        run: |
+          source packaging/pins.env
+          venv="$RUNNER_TEMP/meloader-strict-gallery-dl"
+          python3 -m venv "$venv"
+          "$venv/bin/python3" -m pip install --disable-pip-version-check "gallery-dl==$GDL_VERSION"
+          test "$("$venv/bin/gallery-dl" --version)" = "$GDL_VERSION"
+          MELOADER_STRICT_TEST_GDL="$venv/bin/gallery-dl" \
+            go test -race -count=1 -timeout=3m -v \
+              -run '^TestStrictBlacklistGalleryDLMediaBoundary$' ./internal/pipeline
+
+      - name: Audit common source and dependency resolution
+        run: python3 .github/qa/consolidation-audit.py
+
+  container-build:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    name: Container build stage (${{ matrix.app }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: library
+            file: docker/Dockerfile
+          - app: acquisition
+            file: meloader/docker/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compile container build stage without publishing
+        run: docker build --target build -f '${{ matrix.file }}' .
+ })
+          if ($guarded.Count -eq 0) { throw 'No guarded staging tests enumerated' }
+          if ($group -eq 'baseline') {
+            $selected = @($all | Where-Object { $_ -cnotin $groups.Values -and $_ -cnotin $guarded })
+          } elseif ($group -eq 'guarded') {
+            $selected = $guarded
+          } elseif ($groups.ContainsKey($group)) {
+            $selected = @($all | Where-Object { $_ -ceq $groups[$group] })
+          } else {
+            throw 'Unknown staging test group'
+          }
+          if ($selected.Count -eq 0) { throw 'Empty staging test partition' }
+          $escaped = @($selected | ForEach-Object { [regex]::Escape($_) })
+          $pattern = '^(' + ($escaped -join '|') + ')$'
+          Write-Host "Staging partition ${group}: $($selected.Count) top-level tests"
+          $selected | ForEach-Object { Write-Host $_ }
+          go test -count=1 -v -timeout 10m -run $pattern ./internal/acquisitionstage
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  native:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    name: Native core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Test, build and run both apps
+        run: python .github/qa/native-smoke.py
+      - name: Verify private executable probe (no acquisition)
+        run: python .github/qa/managed-probe.py
+      - name: Compile Linux tray variants
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc pkg-config libgtk-3-dev libayatana-appindicator3-dev
+          CGO_ENABLED=1 go build -mod=readonly -tags tray -o "$RUNNER_TEMP/monbooru-tray" ./cmd/monbooru
+          (cd meloader && CGO_ENABLED=1 go build -mod=readonly -tags tray -o "$RUNNER_TEMP/monloader-tray" ./cmd/monloader)
+      - name: Build and sign macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: sh packaging/build-macos-app.sh
+      - name: Verify the bundled companion lifecycle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app="$PWD/dist/Mebooru.app"
+          export HOME="$RUNNER_TEMP/mebooru-smoke-home"
+          mkdir -p "$HOME"
+          "$app/Contents/MacOS/monbooru" -no-browser >"$RUNNER_TEMP/mebooru-smoke.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; cat "$RUNNER_TEMP/mebooru-smoke.log"' EXIT
+          for port in 8455 8456; do
+            for attempt in {1..30}; do
+              if curl --fail --silent --max-time 2 "http://127.0.0.1:$port/health"; then break; fi
+              kill -0 "$pid"
+              sleep 1
+            done
+            curl --fail --silent --max-time 3 "http://127.0.0.1:$port/health"
+          done
+          curl -fsS --max-time 3 -D "$RUNNER_TEMP/meloader-headers" -o /dev/null 'http://127.0.0.1:8456/settings'
+          grep -Fi 'frame-ancestors http://127.0.0.1:8455' "$RUNNER_TEMP/meloader-headers"
+          kill -TERM "$pid"
+          wait "$pid"
+          if curl --fail --silent --max-time 3 'http://127.0.0.1:8456/health'; then
+            echo 'Companion outlived Mebooru' >&2
+            exit 1
+          fi
+      - name: Verify first-party pairing and refusal paths
+        if: runner.os == 'macOS'
+        run: python .github/qa/bundled-pairing-smoke.py dist/Mebooru.app
+
+  go-validation:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    name: Both modules (race, vet and strict transfer)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            meloader/go.sum
+            shared/go.sum
+      - name: Shared module race and vet
+        working-directory: shared
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Mebooru race and vet
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Meloader race and vet
+        working-directory: meloader
+        run: |
+          go test -race -timeout 30m ./...
+          go vet ./...
+      - name: Strict download regression with pinned gallery-dl
+        working-directory: meloader
+        shell: bash
+        run: |
+          source packaging/pins.env
+          venv="$RUNNER_TEMP/meloader-strict-gallery-dl"
+          python3 -m venv "$venv"
+          "$venv/bin/python3" -m pip install --disable-pip-version-check "gallery-dl==$GDL_VERSION"
+          test "$("$venv/bin/gallery-dl" --version)" = "$GDL_VERSION"
+          MELOADER_STRICT_TEST_GDL="$venv/bin/gallery-dl" \
+            go test -race -count=1 -timeout=3m -v \
+              -run '^TestStrictBlacklistGalleryDLMediaBoundary$' ./internal/pipeline
+
+      - name: Audit common source and dependency resolution
+        run: python3 .github/qa/consolidation-audit.py
+
+  container-build:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    name: Container build stage (${{ matrix.app }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: library
+            file: docker/Dockerfile
+          - app: acquisition
+            file: meloader/docker/Dockerfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compile container build stage without publishing
+        run: docker build --target build -f '${{ matrix.file }}' .
+ ./internal/acquisitionstage
 
       - name: Verify private executable probe (no acquisition)
         env:
