@@ -582,6 +582,13 @@ func (s *Set) WithAcquisitionFence(ctx context.Context,name string,run func(*Gal
 	g:=s.Get(name)
 	if g==nil||g.Closed()||g.Degraded{return fmt.Errorf("acquisition gallery unavailable")}
 	if err:=g.exportBusy();err!=nil{return err}
+	s.boundsMu.Lock()
+	defer s.boundsMu.Unlock()
+	for _,other:=range s.All(){
+		if other!=g&&(gallery.SameFolder(other.GalleryPath,g.GalleryPath)||gallery.Encloses(other.GalleryPath,g.GalleryPath)||gallery.Encloses(g.GalleryPath,other.GalleryPath)){
+			return fmt.Errorf("overlapping gallery roots require separate acquisition custody")
+		}
+	}
 	g.bgMu.Lock()
 	defer g.bgMu.Unlock()
 	current:=func()error{
