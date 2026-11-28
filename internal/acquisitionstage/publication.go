@@ -49,7 +49,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	for _,entry:=range entries{
 		name:=entry.Name()
 		switch name{
-		case "media","intent.json",existingTargetPlanName,existingTargetAnchorName,"attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json","operation-closed.json":
+		case "media","intent.json",existingTargetPlanName,existingTargetAnchorName,existingLinkAttemptName,existingLandingAttemptName,"attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json","operation-closed.json":
 			names[name]=true
 		default:return zero,ErrStageRecovery
 		}
@@ -107,9 +107,21 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	// Existing-target planning is mutually exclusive with all later markers.
 	// Its reservation uses the same bounded allowance as the publication attempt,
 	// plus a small independent anchor. Partial records fail closed.
-	if names[existingTargetPlanName]||names[existingTargetAnchorName]{
-		if !names[existingTargetPlanName]||!names[existingTargetAnchorName]||len(names)!=4||len(e.Files)!=1{return zero,ErrStageRecovery}
-		if _,err:=readExistingTargetPlan(p,r,e.Files[0]);err!=nil{return zero,ErrStageRecovery}
+	if names[existingTargetPlanName]||names[existingTargetAnchorName]||names[existingLinkAttemptName]||names[existingLandingAttemptName]{
+		if !names[existingTargetPlanName]||!names[existingTargetAnchorName]||len(e.Files)!=1{return zero,ErrStageRecovery}
+		plan,err:=readExistingTargetPlan(p,r,e.Files[0]);if err!=nil{return zero,ErrStageRecovery}
+		expected:=4
+		if names[existingLinkAttemptName]{
+			expected++
+			link,err:=readExistingLinkAttempt(p,r,plan);if err!=nil{return zero,ErrStageRecovery}
+			if names[existingLandingAttemptName]{
+				expected++
+				if err:=readExistingLandingAttempt(p,link);err!=nil{return zero,ErrStageRecovery}
+			}
+		}else if names[existingLandingAttemptName]{return zero,ErrStageRecovery}
+		// No legacy landing, metadata, naming, receipts or reclamation
+		// may consume an existing-target execution marker in this increment.
+		if len(names)!=expected{return zero,ErrStageRecovery}
 	}
 	var plan *newPublicationPlan
 	if names["attempt"]{
@@ -273,6 +285,9 @@ func inspectPlacements(ctx context.Context,g workerproto.StageAllocation,e Seale
 	if _,_,err:=readPublicationAttempt(p,g);err==nil{
 		attempted=true
 	}else if _,err:=p.Lstat("attempt");!errors.Is(err,os.ErrNotExist){return nil,ErrStageRecovery}
+	// The separate existing-image link marker is validated by readPublication
+	// at each rooted entry point; it never becomes a legacy attempt.
+	if _,err:=p.Lstat(existingLinkAttemptName);err==nil{attempted=true}else if !errors.Is(err,os.ErrNotExist){return nil,ErrStageRecovery}
 	out:=make([]placement,0,len(e.Files))
 	for _,f:=range e.Files{
 		name:=finalName(g,f)

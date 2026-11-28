@@ -17,9 +17,9 @@ import (
 
 // A durable prepublication decision, not yet a publication attempt.
 // It is deliberately mutually exclusive with diagnostic/new-only
-// publication and landing records. No executor can consume it yet.
-// A future version must bind actual owner duplicate policy, naming and
-// downstream writes; this callback is an isolated owner fixture only.
+// publication and landing records. Only the separate isolated executor
+// can consume it. Actual owner duplicate policy and downstream receipt
+// integration remain outstanding; this callback is a fixture only.
 const existingTargetPlanName = "existing-target-plan.json"
 const existingTargetAnchorName = "existing-target-anchor"
 const maxExistingTargetAnchorBytes = 64

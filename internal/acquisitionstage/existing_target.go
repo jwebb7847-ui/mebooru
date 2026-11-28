@@ -131,7 +131,14 @@ func (a *Allocator) inspectExistingPublicationTarget(ctx context.Context, grant 
 }
 
 func (a *Allocator) inspectExistingPublicationTargetLocked(ctx context.Context, grant workerproto.StageAllocation, g *library.Gallery, kind string, extras extrasAuthority) (existingPublicationTarget, error) {
+	return a.inspectExistingPublicationTargetModeLocked(ctx,grant,g,kind,extras,"prepared")
+}
+
+func (a *Allocator) inspectExistingPublicationTargetModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,kind string,extras extrasAuthority,phase string)(existingPublicationTarget,error){
 	var zero existingPublicationTarget
+	if phase!="prepared"&&phase!="absent"&&phase!="placed"{return zero,ErrStageRefused}
+	links:=uint64(1)
+	if phase=="placed"{links=2}
 	if g == nil || g.WatcherRunning() || extras == nil || (kind != existingHeld && kind != existingRestore) {
 		return zero, ErrStageRefused
 	}
@@ -155,7 +162,7 @@ func (a *Allocator) inspectExistingPublicationTargetLocked(ctx context.Context, 
 			return zero, ErrStageRefused
 		}
 		places, err := inspectPlacements(ctx, grant, e, p, src, dst)
-		if err != nil || len(places) != 1 || places[0].State != "prepared" {
+		if err != nil || len(places) != 1 || places[0].State != phase {
 			return zero, ErrStageRecovery
 		}
 		snapshot, err := a.boundPolicyLocked(ctx, grant)
@@ -166,11 +173,11 @@ func (a *Allocator) inspectExistingPublicationTargetLocked(ctx context.Context, 
 		if err != nil {
 			return zero, ErrStageRecovery
 		}
-		identity, err := namingFile(ctx, src, f.RelativeName, f, 1)
+		identity, err := namingFile(ctx, src, f.RelativeName, f, links)
 		if err != nil {
 			return zero, err
 		}
-		media, err := inspectPlannedImage(ctx, src, f, 1)
+		media, err := inspectPlannedImage(ctx, src, f, links)
 		if err != nil {
 			return zero, err
 		}
@@ -178,7 +185,7 @@ func (a *Allocator) inspectExistingPublicationTargetLocked(ctx context.Context, 
 		if err != nil {
 			return zero, err
 		}
-		current, err := namingFile(ctx, src, f.RelativeName, f, 1)
+		current, err := namingFile(ctx, src, f.RelativeName, f, links)
 		if err != nil || current != identity {
 			return zero, ErrStageRecovery
 		}
