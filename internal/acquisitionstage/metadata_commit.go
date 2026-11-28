@@ -198,7 +198,7 @@ func(a *Allocator)applyMappedMetadata(ctx context.Context,grant workerproto.Stag
 	_,hash,err:=acquisitionplan.EncodeApprovedPolicy(snapshot.Transfer,snapshot.Rows)
 	if err!=nil{return nil,ErrStageRecovery}
 	plan,planHash,err:=readPublicationAttempt(p,grant)
-	if err!=nil||planHash!=landing.PlanSHA256||(plan!=nil&&plan.PolicySHA256!=hash){return nil,ErrStageRecovery}
+	if err!=nil||planHash!=landing.PlanSHA256||(plan!=nil&&(plan.PolicySHA256!=hash||len(rows)!=1||!matchesCollectionClaim(plan.Collection,rows[0].Provenance))){return nil,ErrStageRecovery}
 	m:=metadataAttempt{Version:1,Landing:landing,PolicySHA256:hash,Targets:make([]metadataTarget,0,len(rows))}
 	seen:=map[int64]bool{}
 	for i,v:=range observed{
