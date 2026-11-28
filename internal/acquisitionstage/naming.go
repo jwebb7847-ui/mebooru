@@ -256,6 +256,7 @@ func(a *Allocator)namingCurrent(ctx context.Context,grant workerproto.StageAlloc
 	plan,_,err:=readPublicationAttempt(p,grant)
 	if err!=nil||(plan!=nil&&!matchesPlanNaming(r,*plan,m)){return ErrStageRecovery}
 	if err:=verifyPlanDestinations(r,dst,plan);err!=nil{return err}
+	if plan!=nil{if err:=verifyPlannedImageRow(ctx,g,m.ImageID,e.Files[0],plan.Media);err!=nil{return err}}
 	if g.Boundary().Check(filepath.Join(r.GalleryRoot,m.Final))!=nil||g.Boundary().Check(filepath.Join(r.GalleryRoot,m.Old))!=nil{return ErrStageRefused}
 	if restore!=nil{
 		if _,err:=dst.Lstat(l.RestorePath);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
