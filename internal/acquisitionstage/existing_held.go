@@ -87,11 +87,14 @@ type existingHeldEvidence struct{
 // link with its exact row still present; completed removal of both.
 // Never infer one from the other, or replay after a partial attempt.
 func(a *Allocator) existingHeldEvidenceLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,disposition existingDispositionAuthority,extras extrasAuthority,phase string)(existingHeldEvidence,error){
+	return a.existingHeldEvidenceModeLocked(ctx,grant,g,disposition,extras,phase,false,false)
+}
+func(a *Allocator) existingHeldEvidenceModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,disposition existingDispositionAuthority,extras extrasAuthority,phase string,released,retired bool)(existingHeldEvidence,error){
 	var zero existingHeldEvidence
-	if g==nil||g.WatcherRunning()||(phase!="placed"&&phase!="unlinked"&&phase!="disposed"){return zero,ErrStageRefused}
+	if g==nil||g.WatcherRunning()||(phase!="placed"&&phase!="unlinked"&&phase!="disposed")||(retired&&!released)||(released&&phase!="disposed"){return zero,ErrStageRefused}
 	auth:=existingPlanAuthority(existingHeld,disposition,extras)
 	if auth==nil{return zero,ErrStageRefused}
-	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,retired)
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
 	if len(e.Files)!=1{return zero,ErrStageRecovery}
@@ -110,7 +113,7 @@ func(a *Allocator) existingHeldEvidenceLocked(ctx context.Context,grant workerpr
 	for i:=0;i<2;i++{
 		job,err:=auth(ctx,grant);if err!=nil||!job.Empty(){return zero,ErrStageRefused}
 		current,err:=observedDB(r,g);if err!=nil||current!=plan.Target.DB{return zero,ErrStageRecovery}
-		snapshot,err:=a.boundPolicyLocked(ctx,grant);if err!=nil{return zero,err}
+		snapshot,err:=a.boundPolicyModeLocked(ctx,grant,retired);if err!=nil{return zero,err}
 		_,hash,err:=acquisitionplan.EncodeApprovedPolicy(snapshot.Transfer,snapshot.Rows)
 		rows,rowErr:=newOnlyRows(e,snapshot)
 		if err!=nil||rowErr!=nil||len(rows)!=1||hash!=m.PolicySHA256||rows[0].SourceLabel!=m.Source||rows[0].PostURL!=m.URL{return zero,ErrStageRecovery}
@@ -118,12 +121,17 @@ func(a *Allocator) existingHeldEvidenceLocked(ctx context.Context,grant workerpr
 		if err!=nil||!sameMetadataObservation(actual,v.Row){return zero,ErrStageRecovery}
 		graph,err:=inspectRelationships(ctx,g,h.Held.ImageID,m.URL,"")
 		if err!=nil||graph.Parent!=0||len(graph.Children)!=0||len(graph.Edges)!=0{return zero,ErrStageRecovery}
-		places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
-		want,links:="absent",uint64(1)
-		if phase=="placed"{want,links="placed",2}
-		if err!=nil||len(places)!=1||places[0].State!=want{return zero,ErrStageRecovery}
-		identity,err:=namingFile(ctx,src,f.RelativeName,f,links)
-		if err!=nil||identity!=plan.Target.FileIdentity||verifyPlannedImageRow(ctx,g,h.Held.ImageID,f,&plan.Target.Media)!=nil{return zero,ErrStageRecovery}
+		if released{
+			if err:=verifyCompletedHeldPlacement(ctx,grant,e,p,src,dst,true);err!=nil{return zero,err}
+		}else{
+			places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
+			want,links:="absent",uint64(1)
+			if phase=="placed"{want,links="placed",2}
+			if err!=nil||len(places)!=1||places[0].State!=want{return zero,ErrStageRecovery}
+			identity,err:=namingFile(ctx,src,f.RelativeName,f,links)
+			if err!=nil||identity!=plan.Target.FileIdentity{return zero,ErrStageRecovery}
+		}
+		if verifyPlannedImageRow(ctx,g,h.Held.ImageID,f,&plan.Target.Media)!=nil{return zero,ErrStageRecovery}
 		var count int
 		if err:=g.DB.Read.QueryRowContext(ctx,`SELECT COUNT(*) FROM images WHERE id=? AND canonical_path=? AND sha256=? AND is_missing=0`,h.Held.ImageID,filepath.Join(r.GalleryRoot,h.Held.CanonicalPath),f.SHA256).Scan(&count);err!=nil||count!=1{return zero,ErrStageRecovery}
 		path:=filepath.Join(r.GalleryRoot,name)

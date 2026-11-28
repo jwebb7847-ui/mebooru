@@ -80,25 +80,25 @@ func(a *Allocator)closedCharge(ctx context.Context,r record)(bool,uint64,error){
 	if ctx.Err()!=nil||!a.liveSealedMedia(r.Allocation,media){return false,0,ErrStageRefused}
 	return true,c.RetainedPayloadBytes,nil
 }
-func(a *Allocator)closeRetiredOperation(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize closureAuthority)(operationClosure,error){
+func(a *Allocator)closeRetiredOperation(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize closureAuthority,dispositions ...existingDispositionAuthority)(operationClosure,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	return a.closedOperationLocked(ctx,grant,g,naming,extras,authorize,true)
+	return a.closedOperationLocked(ctx,grant,g,naming,extras,authorize,true,dispositions...)
 }
-func(a *Allocator)observeClosedOperation(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize closureAuthority)(operationClosure,error){
+func(a *Allocator)observeClosedOperation(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize closureAuthority,dispositions ...existingDispositionAuthority)(operationClosure,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	return a.closedOperationLocked(ctx,grant,g,naming,extras,authorize,false)
+	return a.closedOperationLocked(ctx,grant,g,naming,extras,authorize,false,dispositions...)
 }
-func(a *Allocator)closedOperationLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize closureAuthority,write bool)(operationClosure,error){
+func(a *Allocator)closedOperationLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize closureAuthority,write bool,dispositions ...existingDispositionAuthority)(operationClosure,error){
 	var zero operationClosure
 	if authorize==nil{return zero,ErrStageRefused}
-	w,err:=a.observeTerminalReceiptPhaseLocked(ctx,grant,g,naming,extras,true,true)
+	w,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,true,true,dispositions...)
 	if err!=nil{return zero,err}
 	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,true)
 	if err!=nil{return zero,err};defer p.Close();defer src.Close();defer dst.Close()
 	want,err:=expectedOperationClosure(p,r,e)
 	if err!=nil||want.Witness!=w{return zero,ErrStageRecovery}
 	if err:=authorize(ctx,grant,w);err!=nil{return zero,ErrStageRefused}
-	again,err:=a.observeTerminalReceiptPhaseLocked(ctx,grant,g,naming,extras,true,true)
+	again,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,true,true,dispositions...)
 	if err!=nil||again!=w||ctx.Err()!=nil||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRecovery}
 	current,err:=expectedOperationClosure(p,r,e)
 	if err!=nil||current!=want{return zero,ErrStageRecovery}
@@ -108,5 +108,5 @@ func(a *Allocator)closedOperationLocked(ctx context.Context,grant workerproto.St
 	if err!=nil||len(body)>maxClosureRecord{return zero,ErrStageLimit}
 	if err:=writeOwnerBytes(ctx,p,"operation-closed.json",body);err!=nil{return zero,err}
 	syncDirectory(p)
-	return a.closedOperationLocked(ctx,grant,g,naming,extras,authorize,false)
+	return a.closedOperationLocked(ctx,grant,g,naming,extras,authorize,false,dispositions...)
 }

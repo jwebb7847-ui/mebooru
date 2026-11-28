@@ -133,9 +133,9 @@ func checkRetiredSeal(op,media *os.Root,r record,e SealedEvidence)error{
 	if err!=nil{return err}
 	return verifySealedRetirementInventory(context.Background(),media,m,true,false)
 }
-func(a *Allocator)beginSealedRetirementLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority)error{
+func(a *Allocator)beginSealedRetirementLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority,dispositions ...existingDispositionAuthority)error{
 	if authorize==nil{return ErrStageRefused}
-	w,err:=a.observeTerminalReceiptModeLocked(ctx,grant,g,naming,extras,true)
+	w,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,true,false,dispositions...)
 	if err!=nil{return err}
 	if err:=authorize(ctx,grant,w);err!=nil{return ErrStageRefused}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
@@ -166,10 +166,10 @@ func(a *Allocator)beginSealedRetirementLocked(ctx context.Context,grant workerpr
 	m.Sidecar,err=workspaceFileFor(ctx,media,f.RelativeName+".json",f.SidecarSize,f.SidecarSHA256)
 	if err!=nil{return err}
 	if err:=verifySealedRetirementInventory(ctx,media,m,false,true);err!=nil{return err}
-	again,err:=a.observeTerminalReceiptModeLocked(ctx,grant,g,naming,extras,true)
+	again,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,true,false,dispositions...)
 	if err!=nil||again!=w{return ErrStageRecovery}
 	if err:=authorize(ctx,grant,w);err!=nil{return ErrStageRefused}
-	again,err=a.observeTerminalReceiptModeLocked(ctx,grant,g,naming,extras,true)
+	again,err=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,true,false,dispositions...)
 	if err!=nil||again!=w||!a.livePublicationRoots(grant,r,p,src,dst)||!a.liveSealedMedia(grant,media){return ErrStageRecovery}
 	if err:=verifySealedRetirementInventory(ctx,media,m,false,true);err!=nil{return err}
 	raw,err:=json.Marshal(m)
@@ -183,20 +183,20 @@ func(a *Allocator)liveSealedMedia(grant workerproto.StageAllocation,media *os.Ro
 	held,e:=media.Stat(".")
 	return a.live()&&err==nil&&e==nil&&os.SameFile(current,held)
 }
-func(a *Allocator)retireSealedMedia(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority)(sealedRetirementResult,error){
+func(a *Allocator)retireSealedMedia(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority,dispositions ...existingDispositionAuthority)(sealedRetirementResult,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	if err:=a.beginSealedRetirementLocked(ctx,grant,g,naming,extras,authorize);err!=nil{return sealedRetirementResult{},err}
-	return a.resumeSealedRetirementLocked(ctx,grant,g,naming,extras,authorize,true)
+	if err:=a.beginSealedRetirementLocked(ctx,grant,g,naming,extras,authorize,dispositions...);err!=nil{return sealedRetirementResult{},err}
+	return a.resumeSealedRetirementLocked(ctx,grant,g,naming,extras,authorize,true,dispositions...)
 }
-func(a *Allocator)resumeSealedRetirement(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority)(sealedRetirementResult,error){
+func(a *Allocator)resumeSealedRetirement(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority,dispositions ...existingDispositionAuthority)(sealedRetirementResult,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	return a.resumeSealedRetirementLocked(ctx,grant,g,naming,extras,authorize,true)
+	return a.resumeSealedRetirementLocked(ctx,grant,g,naming,extras,authorize,true,dispositions...)
 }
-func(a *Allocator)observeSealedRetirement(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority)(sealedRetirementResult,error){
+func(a *Allocator)observeSealedRetirement(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority,dispositions ...existingDispositionAuthority)(sealedRetirementResult,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	return a.resumeSealedRetirementLocked(ctx,grant,g,naming,extras,authorize,false)
+	return a.resumeSealedRetirementLocked(ctx,grant,g,naming,extras,authorize,false,dispositions...)
 }
-func(a *Allocator)resumeSealedRetirementLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority,write bool)(sealedRetirementResult,error){
+func(a *Allocator)resumeSealedRetirementLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize sealedRetirementAuthority,write bool,dispositions ...existingDispositionAuthority)(sealedRetirementResult,error){
 	var zero sealedRetirementResult
 	if authorize==nil||!workerproto.ValidStageAllocation(grant)||!a.live(){return zero,ErrStageRefused}
 	op,err:=openDir(a.root,grant.Request.OperationID)
@@ -218,10 +218,10 @@ func(a *Allocator)resumeSealedRetirementLocked(ctx context.Context,grant workerp
 		retired:=errors.Is(err,os.ErrNotExist)
 		if err!=nil&&!retired{return false,ErrStageRecovery}
 		if err:=verifySealedRetirementInventory(ctx,media,m,retired,true);err!=nil{return false,err}
-		w,err:=a.observeTerminalReceiptPhaseLocked(ctx,grant,g,naming,extras,true,retired)
+		w,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,true,retired,dispositions...)
 		if err!=nil||w!=m.Witness{return false,ErrStageRecovery}
 		if err:=authorize(ctx,grant,w);err!=nil{return false,ErrStageRefused}
-		again,err:=a.observeTerminalReceiptPhaseLocked(ctx,grant,g,naming,extras,true,retired)
+		again,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,true,retired,dispositions...)
 		if err!=nil||again!=w||ctx.Err()!=nil||!a.liveSealedMedia(grant,media){return false,ErrStageRecovery}
 		_,current,err:=directory(filepath.Join(a.path,grant.Request.OperationID,"publication"))
 		held,e:=p.Stat(".")
@@ -247,5 +247,5 @@ func(a *Allocator)resumeSealedRetirementLocked(ctx context.Context,grant workerp
 	if err!=nil{return zero,ErrStageRecovery}
 	if err:=writeOwnerBytes(ctx,p,"sealed-retirement-result.json",body);err!=nil{return zero,err}
 	syncDirectory(p)
-	return a.resumeSealedRetirementLocked(ctx,grant,g,naming,extras,authorize,false)
+	return a.resumeSealedRetirementLocked(ctx,grant,g,naming,extras,authorize,false,dispositions...)
 }

@@ -70,6 +70,8 @@ func receiptRecordName(kind string)(string,int64){
 	case composedReceiptKind,guardedImageReceiptKind:return "composed-receipt.json",maxComposedReceipt
 	case heldReceiptKind:return "held-receipt.json",maxHeldReceipt
 	case restoredReceiptKind:return "restored-receipt.json",maxRestoredReceipt
+	case existingHeldReceiptKind:return existingHeldReceiptName,maxExistingHeldRecordBytes
+	case existingRestoreReceiptKind:return existingRestoreReceiptName,maxExistingRestoreRecordBytes
 	default:return "",0
 	}
 }
@@ -178,9 +180,9 @@ func validateWorkspaceReclaimRecords(op,p *os.Root,r record,e SealedEvidence,has
 // explicit current custody/owner permission. Retain exact original
 // manifest and probe, sealed media/sidecar and publication evidence.
 // No allocator reservation release at this first reclaim boundary.
-func(a *Allocator)beginWorkspaceReclaimLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority)error{
+func(a *Allocator)beginWorkspaceReclaimLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority,dispositions ...existingDispositionAuthority)error{
 	if authorize==nil{return ErrStageRefused}
-	witness,err:=a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
+	witness,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,false,false,dispositions...)
 	if err!=nil{return err}
 	if err:=authorize(ctx,grant,witness);err!=nil{return ErrStageRefused}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
@@ -210,7 +212,7 @@ func(a *Allocator)beginWorkspaceReclaimLocked(ctx context.Context,grant workerpr
 	m.Files[1],err=workspaceFileFor(ctx,media,f.RelativeName+".json",f.SidecarSize,f.SidecarSHA256)
 	if err!=nil{return err}
 	if progress,err:=workspaceProgress(ctx,w,media,m,true);err!=nil||progress!=0{return ErrStageRecovery}
-	again,err:=a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
+	again,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,false,false,dispositions...)
 	if err!=nil||again!=witness{return ErrStageRecovery}
 	if err:=authorize(ctx,grant,witness);err!=nil{return ErrStageRefused}
 	if !a.livePublicationRoots(grant,r,p,src,dst)||ctx.Err()!=nil{return ErrStageRefused}
@@ -221,22 +223,22 @@ func(a *Allocator)beginWorkspaceReclaimLocked(ctx context.Context,grant workerpr
 	syncDirectory(p)
 	return nil
 }
-func(a *Allocator)reclaimWorkspace(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority)(workspaceReclaimResult,error){
+func(a *Allocator)reclaimWorkspace(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority,dispositions ...existingDispositionAuthority)(workspaceReclaimResult,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	if err:=a.beginWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize);err!=nil{return workspaceReclaimResult{},err}
-	return a.resumeWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize,true)
+	if err:=a.beginWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize,dispositions...);err!=nil{return workspaceReclaimResult{},err}
+	return a.resumeWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize,true,dispositions...)
 }
 // Explicit resume, not implicit replay by Allocate, Seal or receipt
 // observation. Reconcile exact prefix and reauthorize each next step.
-func(a *Allocator)resumeWorkspaceReclaim(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority)(workspaceReclaimResult,error){
+func(a *Allocator)resumeWorkspaceReclaim(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority,dispositions ...existingDispositionAuthority)(workspaceReclaimResult,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	return a.resumeWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize,true)
+	return a.resumeWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize,true,dispositions...)
 }
-func(a *Allocator)observeWorkspaceReclaim(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority)(workspaceReclaimResult,error){
+func(a *Allocator)observeWorkspaceReclaim(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority,dispositions ...existingDispositionAuthority)(workspaceReclaimResult,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	return a.resumeWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize,false)
+	return a.resumeWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize,false,dispositions...)
 }
-func(a *Allocator)resumeWorkspaceReclaimLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority,write bool)(workspaceReclaimResult,error){
+func(a *Allocator)resumeWorkspaceReclaimLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize reclaimAuthority,write bool,dispositions ...existingDispositionAuthority)(workspaceReclaimResult,error){
 	var zero workspaceReclaimResult
 	if authorize==nil{return zero,ErrStageRefused}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
@@ -251,10 +253,10 @@ func(a *Allocator)resumeWorkspaceReclaimLocked(ctx context.Context,grant workerp
 	media,err:=openDir(w,"media")
 	if err!=nil{return zero,err};defer media.Close()
 	recheck:=func()(int,error){
-		witness,err:=a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
+		witness,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,false,false,dispositions...)
 		if err!=nil||witness!=m.Witness{return 0,ErrStageRecovery}
 		if err:=authorize(ctx,grant,witness);err!=nil{return 0,ErrStageRefused}
-		again,err:=a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
+		again,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,false,false,dispositions...)
 		if err!=nil||again!=witness{return 0,ErrStageRecovery}
 		if !a.livePublicationRoots(grant,r,p,src,dst)||ctx.Err()!=nil{return 0,ErrStageRefused}
 		for _,v:=range []struct{path string;root *os.Root}{
@@ -289,5 +291,5 @@ func(a *Allocator)resumeWorkspaceReclaimLocked(ctx context.Context,grant workerp
 	if err!=nil{return zero,ErrStageRecovery}
 	if err:=writeOwnerBytes(ctx,p,"workspace-reclaim-result.json",body);err!=nil{return zero,err}
 	syncDirectory(p)
-	return a.resumeWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize,false)
+	return a.resumeWorkspaceReclaimLocked(ctx,grant,g,naming,extras,authorize,false,dispositions...)
 }

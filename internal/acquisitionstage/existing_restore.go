@@ -97,11 +97,14 @@ type existingRestoreEvidence struct{
 // Four exact observations: original managed canonical, new link with
 // old DB row, repointed DB with both links, final canonical only.
 func(a *Allocator) existingRestoreEvidenceLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,disposition existingDispositionAuthority,extras extrasAuthority,naming namingAuthority,phase string)(existingRestoreEvidence,error){
+	return a.existingRestoreEvidenceModeLocked(ctx,grant,g,disposition,extras,naming,phase,false,false)
+}
+func(a *Allocator) existingRestoreEvidenceModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,disposition existingDispositionAuthority,extras extrasAuthority,naming namingAuthority,phase string,released,retired bool)(existingRestoreEvidence,error){
 	var zero existingRestoreEvidence
-	if g==nil||g.WatcherRunning()||naming==nil||(phase!="placed"&&phase!="linked"&&phase!="repointed"&&phase!="named"){return zero,ErrStageRefused}
+	if g==nil||g.WatcherRunning()||naming==nil||(phase!="placed"&&phase!="linked"&&phase!="repointed"&&phase!="named")||(retired&&!released)||(released&&phase!="named"){return zero,ErrStageRefused}
 	auth:=existingPlanAuthority(existingRestore,disposition,extras)
 	if auth==nil{return zero,ErrStageRefused}
-	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
+	r,e,p,src,dst,err:=a.publicationRootsMode(ctx,grant,retired)
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
 	if len(e.Files)!=1{return zero,ErrStageRecovery}
@@ -123,7 +126,7 @@ func(a *Allocator) existingRestoreEvidenceLocked(ctx context.Context,grant worke
 		job,err:=auth(ctx,grant);if err!=nil||!job.Empty(){return zero,ErrStageRefused}
 		q,err:=naming(ctx,grant);if err!=nil||q!=move.Request{return zero,ErrStageRefused}
 		current,err:=observedDB(r,g);if err!=nil||current!=plan.Target.DB{return zero,ErrStageRecovery}
-		snapshot,err:=a.boundPolicyLocked(ctx,grant);if err!=nil{return zero,err}
+		snapshot,err:=a.boundPolicyModeLocked(ctx,grant,retired);if err!=nil{return zero,err}
 		_,hash,err:=acquisitionplan.EncodeApprovedPolicy(snapshot.Transfer,snapshot.Rows)
 		rows,rowErr:=newOnlyRows(e,snapshot)
 		if err!=nil||rowErr!=nil||len(rows)!=1||hash!=m.PolicySHA256||rows[0].SourceLabel!=m.Source||rows[0].PostURL!=m.URL{return zero,ErrStageRecovery}
@@ -140,7 +143,9 @@ func(a *Allocator) existingRestoreEvidenceLocked(ctx context.Context,grant worke
 		if phase=="repointed"||phase=="named"{rel,absent=move.Final,move.Old}
 		pid,err:=restoredNamingRows(ctx,g,r,f,move.ImageID,rel,absent,l)
 		if err!=nil||pid!=move.PathID{return zero,ErrStageRecovery}
-		if err:=checkNamingFiles(ctx,src,dst,parent,f,move,old,new);err!=nil{return zero,err}
+		if released{
+			if err:=verifyReleasedNamingFiles(ctx,src,dst,parent,f,move);err!=nil{return zero,err}
+		}else if err:=checkNamingFiles(ctx,src,dst,parent,f,move,old,new);err!=nil{return zero,err}
 		check:=newPublicationPlan{File:f,Preview:*link.Preview,DestinationIdentity:link.DestinationIdentity}
 		if err:=verifyPlanDestinations(r,dst,&check);err!=nil{return zero,err}
 		if phase=="placed"{

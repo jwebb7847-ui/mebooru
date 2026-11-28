@@ -74,7 +74,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		(names["held-composition.json"]&&(!names["relationship-result.json"]||names["naming-attempt.json"]||names["new-receipt.json"]))||
 		(names["held-composition.json"]&&names["collection-attempt.json"]&&!names["collection-result.json"])||
 		(names["held-receipt.json"]&&(!names["held-composition.json"]||!names["duplicate-attempt.json"]))||
-		(names["workspace-reclaim-attempt.json"]&&(!names["composed-receipt.json"]&&!names["held-receipt.json"]&&!names["restored-receipt.json"]))||
+		(names["workspace-reclaim-attempt.json"]&&(!names["composed-receipt.json"]&&!names["held-receipt.json"]&&!names["restored-receipt.json"]&&!names[existingHeldReceiptName]&&!names[existingRestoreReceiptName]))||
 		(names["workspace-reclaim-result.json"]&&!names["workspace-reclaim-attempt.json"])||
 		(names["prepared-release-attempt.json"]&&!names["workspace-reclaim-result.json"])||
 		(names["prepared-release-result.json"]&&!names["prepared-release-attempt.json"])||
@@ -111,6 +111,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		if !names[existingTargetPlanName]||!names[existingTargetAnchorName]||len(e.Files)!=1{return zero,ErrStageRecovery}
 		plan,err:=readExistingTargetPlan(p,r,e.Files[0]);if err!=nil{return zero,ErrStageRecovery}
 		expected:=4
+		var guardedWitness terminalReceiptWitness
 		if names[existingLinkAttemptName]{
 			expected++
 			link,err:=readExistingLinkAttempt(p,r,plan);if err!=nil{return zero,ErrStageRecovery}
@@ -128,7 +129,8 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 							h,err:=readExistingHeldAttempt(p,plan,m,result);if err!=nil{return zero,ErrStageRecovery}
 							if names[existingHeldReceiptName]{
 								expected++
-								if _,err:=readExistingHeldReceipt(p,r,plan,m,result,h);err!=nil{return zero,ErrStageRecovery}
+								receipt,err:=readExistingHeldReceipt(p,r,plan,m,result,h);if err!=nil{return zero,ErrStageRecovery}
+								guardedWitness,err=guardedWitnessDigest(receipt.Witness,receipt);if err!=nil{return zero,ErrStageRecovery}
 							}
 						}
 						if names[existingRestoreAttemptName]{
@@ -136,15 +138,43 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 							n,err:=readExistingRestoreAttempt(p,r,plan,link,m,result);if err!=nil{return zero,ErrStageRecovery}
 							if names[existingRestoreReceiptName]{
 								expected++
-								if _,err:=readExistingRestoreReceipt(p,r,plan,m,n);err!=nil{return zero,ErrStageRecovery}
+								receipt,err:=readExistingRestoreReceipt(p,r,plan,m,n);if err!=nil{return zero,ErrStageRecovery}
+								guardedWitness,err=guardedWitnessDigest(receipt.Witness,receipt);if err!=nil{return zero,ErrStageRecovery}
 							}
 						}
 					}
 				}
 			}
 		}else if names[existingLandingAttemptName]{return zero,ErrStageRecovery}
-		// No legacy landing, metadata, naming, receipts or reclamation
-		// may consume an existing-target execution marker in this increment.
+		// A guarded receipt permits the same bounded reclamation record
+		// grammar, but every witness must match the exact distinct receipt.
+		// No old landing/metadata/naming/receipt marker may coexist.
+		if names["workspace-reclaim-attempt.json"]{
+			if guardedWitness.Kind==""{return zero,ErrStageRecovery}
+			expected++
+			w,_,err:=readWorkspaceReclaimAttempt(p,r,e)
+			if err!=nil||w.Witness!=guardedWitness{return zero,ErrStageRecovery}
+			if names["workspace-reclaim-result.json"]{expected++}
+			if err:=validateWorkspaceReclaimRecords(operation,p,r,e,names["workspace-reclaim-result.json"]);err!=nil{return zero,err}
+		}
+		if names["prepared-release-attempt.json"]{
+			expected++
+			if names["prepared-release-result.json"]{expected++}
+			if err:=validatePreparedReleaseRecords(p,media,r,e,names["prepared-release-result.json"]);err!=nil{return zero,err}
+		}
+		if names["sealed-retirement-attempt.json"]{
+			expected++
+			m,raw,err:=readSealedRetirementAttempt(p,r,e)
+			if err!=nil||m.Witness!=guardedWitness{return zero,ErrStageRecovery}
+			if names["sealed-retirement-result.json"]{
+				expected++
+				if _,err:=readSealedRetirementResult(p,m,raw);err!=nil{return zero,err}
+			}
+		}
+		if names["operation-closed.json"]{
+			expected++
+			if _,err:=readOperationClosure(p,r,e);err!=nil{return zero,err}
+		}
 		if len(names)!=expected{return zero,ErrStageRecovery}
 	}
 	var plan *newPublicationPlan

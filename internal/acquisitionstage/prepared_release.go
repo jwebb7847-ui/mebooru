@@ -32,7 +32,7 @@ type preparedReleaseResult struct{
 	SharedCanonical bool `json:"shared_canonical"`
 }
 func preparedLinks(w terminalReceiptWitness)uint64{
-	if w.Kind==heldReceiptKind{return 1}
+	if w.Kind==heldReceiptKind||w.Kind==existingHeldReceiptKind{return 1}
 	return 2
 }
 func readPreparedReleaseAttempt(p *os.Root,r record,e SealedEvidence)(preparedReleaseAttempt,[]byte,error){
@@ -127,9 +127,9 @@ func verifyCompletedHeldPlacement(ctx context.Context,grant workerproto.StageAll
 	// original canonical, every retained alias and exact database state.
 	return nil
 }
-func(a *Allocator)beginPreparedReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority)error{
+func(a *Allocator)beginPreparedReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority,dispositions ...existingDispositionAuthority)error{
 	if authorize==nil{return ErrStageRefused}
-	witness,err:=a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
+	witness,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,false,false,dispositions...)
 	if err!=nil{return err}
 	if err:=authorize(ctx,grant,witness);err!=nil{return ErrStageRefused}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
@@ -153,10 +153,10 @@ func(a *Allocator)beginPreparedReleaseLocked(ctx context.Context,grant workerpro
 	m.Prepared=workspaceFile{Name:f.RelativeName,Size:f.Size,SHA256:f.SHA256,Identity:id}
 	if (id==witness.FileIdentity)!=(preparedLinks(witness)==2){return ErrStageRecovery}
 	if err:=verifyPreparedReleaseInventory(src,m,false);err!=nil{return err}
-	again,err:=a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
+	again,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,false,false,dispositions...)
 	if err!=nil||again!=witness{return ErrStageRecovery}
 	if err:=authorize(ctx,grant,witness);err!=nil{return ErrStageRefused}
-	again,err=a.observeTerminalReceiptLocked(ctx,grant,g,naming,extras)
+	again,err=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,false,false,dispositions...)
 	if err!=nil||again!=witness||!a.livePublicationRoots(grant,r,p,src,dst){return ErrStageRecovery}
 	if err:=verifyPreparedReleaseInventory(src,m,false);err!=nil{return err}
 	body,err:=json.Marshal(m)
@@ -165,20 +165,20 @@ func(a *Allocator)beginPreparedReleaseLocked(ctx context.Context,grant workerpro
 	syncDirectory(p)
 	return nil
 }
-func(a *Allocator)releasePrepared(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority)(preparedReleaseResult,error){
+func(a *Allocator)releasePrepared(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority,dispositions ...existingDispositionAuthority)(preparedReleaseResult,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	if err:=a.beginPreparedReleaseLocked(ctx,grant,g,naming,extras,authorize);err!=nil{return preparedReleaseResult{},err}
-	return a.resumePreparedReleaseLocked(ctx,grant,g,naming,extras,authorize,true)
+	if err:=a.beginPreparedReleaseLocked(ctx,grant,g,naming,extras,authorize,dispositions...);err!=nil{return preparedReleaseResult{},err}
+	return a.resumePreparedReleaseLocked(ctx,grant,g,naming,extras,authorize,true,dispositions...)
 }
-func(a *Allocator)resumePreparedRelease(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority)(preparedReleaseResult,error){
+func(a *Allocator)resumePreparedRelease(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority,dispositions ...existingDispositionAuthority)(preparedReleaseResult,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	return a.resumePreparedReleaseLocked(ctx,grant,g,naming,extras,authorize,true)
+	return a.resumePreparedReleaseLocked(ctx,grant,g,naming,extras,authorize,true,dispositions...)
 }
-func(a *Allocator)observePreparedRelease(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority)(preparedReleaseResult,error){
+func(a *Allocator)observePreparedRelease(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority,dispositions ...existingDispositionAuthority)(preparedReleaseResult,error){
 	a.mu.Lock();defer a.mu.Unlock()
-	return a.resumePreparedReleaseLocked(ctx,grant,g,naming,extras,authorize,false)
+	return a.resumePreparedReleaseLocked(ctx,grant,g,naming,extras,authorize,false,dispositions...)
 }
-func(a *Allocator)resumePreparedReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority,write bool)(preparedReleaseResult,error){
+func(a *Allocator)resumePreparedReleaseLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,naming namingAuthority,extras extrasAuthority,authorize preparedReleaseAuthority,write bool,dispositions ...existingDispositionAuthority)(preparedReleaseResult,error){
 	var zero preparedReleaseResult
 	if authorize==nil{return zero,ErrStageRefused}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
@@ -190,10 +190,10 @@ func(a *Allocator)resumePreparedReleaseLocked(ctx context.Context,grant workerpr
 		released:=errors.Is(err,os.ErrNotExist)
 		if err!=nil&&!released{return false,ErrStageRecovery}
 		if err:=verifyPreparedReleaseInventory(src,m,released);err!=nil{return false,err}
-		w,err:=a.observeTerminalReceiptModeLocked(ctx,grant,g,naming,extras,released)
+		w,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,released,false,dispositions...)
 		if err!=nil||w!=m.Witness{return false,ErrStageRecovery}
 		if err:=authorize(ctx,grant,w);err!=nil{return false,ErrStageRefused}
-		again,err:=a.observeTerminalReceiptModeLocked(ctx,grant,g,naming,extras,released)
+		again,err:=a.observeLifecycleWitnessLocked(ctx,grant,g,naming,extras,released,false,dispositions...)
 		if err!=nil||again!=w||ctx.Err()!=nil||!a.livePublicationRoots(grant,r,p,src,dst){return false,ErrStageRecovery}
 		if err:=verifyPreparedReleaseInventory(src,m,released);err!=nil{return false,err}
 		if !released{
@@ -222,5 +222,5 @@ func(a *Allocator)resumePreparedReleaseLocked(ctx context.Context,grant workerpr
 	if err!=nil{return zero,ErrStageRecovery}
 	if err:=writeOwnerBytes(ctx,p,"prepared-release-result.json",body);err!=nil{return zero,err}
 	syncDirectory(p)
-	return a.resumePreparedReleaseLocked(ctx,grant,g,naming,extras,authorize,false)
+	return a.resumePreparedReleaseLocked(ctx,grant,g,naming,extras,authorize,false,dispositions...)
 }
