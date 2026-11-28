@@ -129,6 +129,14 @@ func (q *Queue) runJob(j *Job, ctx context.Context) {
 	if q.managed!=nil {
 		if q.store==nil { j.interrupt(q.now());return }
 		if err:=q.store.SaveJob(j.Snapshot());err!=nil{q.mu.Lock();q.managedStoreFault=true;q.mu.Unlock();j.interrupt(q.now());return}
+		j.mu.Lock()
+		j.persistManaged=func(snap *Job)error{
+			err:=q.store.SaveJob(snap)
+			if err!=nil{q.mu.Lock();q.managedStoreFault=true;q.mu.Unlock()}
+			return err
+		}
+		j.mu.Unlock()
+		defer func(){j.mu.Lock();j.persistManaged=nil;j.mu.Unlock()}()
 	} else { q.persist(j) }
 	q.stampWatch(j)
 

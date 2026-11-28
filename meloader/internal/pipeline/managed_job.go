@@ -107,6 +107,7 @@ func(p *ManagedJobProcessor) ProcessManaged(ctx context.Context,j *queue.Job)(re
 	if json.Unmarshal(body,&projection)!=nil||projection.Transfer!=plan{return errManagedJob,nil}
 	grant,root,err:=p.Owner.Allocate(ctx,plan,body,hash)
 	if err!=nil||!workerproto.ValidStageAllocation(grant)||grant.Request.Transfer!=plan{return errors.Join(errManagedJob,err),nil}
+	if err:=j.BindManagedWindow(grant,hash);err!=nil{return err,nil}
 	files,err:=approval.RunAllocatedTransfer(ctx,grant,proxies,root,r.Client.TransferStarter(grant))
 	if err!=nil{return err,nil}
 	if _,again,err:=approval.policyEvidence(ctx,plan);err!=nil||again!=hash{return errManagedJob,nil}
@@ -114,7 +115,7 @@ func(p *ManagedJobProcessor) ProcessManaged(ctx context.Context,j *queue.Job)(re
 	if !workerproto.ValidWindowOutcome(observed,grant,hash){return errors.Join(errManagedJob,commitErr),nil}
 	mapped,err:=mapManagedWindowOutcome(items,projection,files,observed)
 	if err!=nil{return err,nil}
-	j.SetItems(mapped)
+	if err:=j.RecordManagedWindowOutcome(observed,mapped,commitErr==nil);err!=nil{return err,nil}
 	if commitErr!=nil{j.CutShort(outcome.ErrCodeMonbooruRejected,"managed acquisition requires reconciliation")}
 	// Partial per-item receipts are retained as such. No automatic retry
 	// of unresolved operations and no false blacklist/archive outcome.
@@ -142,7 +143,7 @@ func mapManagedWindowOutcome(items []queue.Item,projection acquisitionplan.Appro
 		delete(observed,it.PostID)
 		switch v.State{
 		case "committed":
-			it.Status=queue.ItemDone;it.MonbooruID=v.ImageID;it.SHA256=v.SHA256
+			it.Status=queue.ItemDone;it.MonbooruID=v.ImageID;it.SHA256=v.SHA256;it.ManagedReceiptSHA256=v.ReceiptSHA256
 			switch v.Disposition{
 			case "new":it.Outcome=outcome.Created
 			case "held":it.Outcome=outcome.Duplicate;it.MergeNote="Verified existing media and merged source"

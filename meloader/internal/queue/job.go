@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monloader/internal/outcome"
 )
 
@@ -68,6 +69,7 @@ type Item struct {
 	Outcome     outcome.Outcome `json:"outcome,omitempty"`
 	MonbooruID  int64           `json:"monbooru_id,omitempty"`
 	SHA256      string          `json:"sha256,omitempty"`
+	ManagedReceiptSHA256 string `json:"managed_receipt_sha256,omitempty"`
 	TagWarnings []string        `json:"tag_warnings,omitempty"`
 	MergeNote   string          `json:"merge_note,omitempty"`
 	TagsSent    int             `json:"tags_sent,omitempty"`
@@ -113,6 +115,7 @@ type jobState struct {
 	ErrorCode  string    `json:"error_code,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	Items      []Item    `json:"items"`
+	ManagedWindow *ManagedWindowBinding `json:"managed_window,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	StartedAt  time.Time `json:"started_at,omitzero"`
 	FinishedAt time.Time `json:"finished_at,omitzero"`
@@ -132,6 +135,7 @@ type Job struct {
 	itemCount  int
 	seq        uint64
 	priorItems map[string]Item
+	persistManaged func(*Job)error
 }
 
 func validItemTransition(from, to ItemStatus) bool {
@@ -476,6 +480,7 @@ func (j *Job) reset(force bool, now time.Time) error {
 	if j.Status == JobQueued || j.Status == JobRunning {
 		return fmt.Errorf("cannot retry a %s job", j.Status)
 	}
+	if j.ManagedWindow!=nil&&j.ManagedWindow.State!="complete"{return fmt.Errorf("managed window requires receipt reconciliation before retry")}
 	if j.Kind == KindPTRLookup {
 		// The endpoint answered in process; a worker would take the row
 		// for a URL-less download and wipe the sweep.
@@ -553,6 +558,7 @@ func (j *Job) snapshot(withItems bool) *Job {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	state := j.jobState
+	if state.ManagedWindow!=nil{v:=*state.ManagedWindow;state.ManagedWindow=&v}
 	if withItems {
 		// Not slices.Clone: a nil list must still marshal as [] for the
 		// extension.
@@ -673,4 +679,45 @@ func (j *Job) restorePriorLinksLocked() {
 
 func itemKey(postID string, num int) string {
 	return postID + "#" + strconv.Itoa(num)
+}
+
+
+// ManagedWindowBinding is durable queue history, not a capability.
+// Allocation identity is persisted BEFORE transfer. A failed or
+// uncertain commit must not be reset to an unrelated fresh operation.
+type ManagedWindowBinding struct{
+	Allocation workerproto.StageAllocation `json:"allocation"`
+	PolicySHA256 string `json:"policy_sha256"`
+	State string `json:"state"`
+}
+
+func(j *Job) BindManagedWindow(grant workerproto.StageAllocation,policy string)error{
+	j.mu.Lock()
+	if j.Status!=JobRunning||j.finalized||j.persistManaged==nil||j.ManagedWindow!=nil||
+		!workerproto.ValidStageAllocation(grant)||grant.Request.Transfer.Metadata.JobID!=j.ID||
+		grant.Request.Transfer.Metadata.Gallery!=j.Gallery||len(policy)!=64{
+		j.mu.Unlock();return fmt.Errorf("invalid managed window binding")
+	}
+	j.ManagedWindow=&ManagedWindowBinding{Allocation:grant,PolicySHA256:policy,State:"allocated"}
+	save:=j.persistManaged
+	j.mu.Unlock()
+	return save(j.Snapshot())
+}
+
+func(j *Job) RecordManagedWindowOutcome(result workerproto.WindowOutcome,items []Item,complete bool)error{
+	j.mu.Lock()
+	if j.Status!=JobRunning||j.finalized||j.persistManaged==nil||j.ManagedWindow==nil||
+		j.ManagedWindow.State!="allocated"||!workerproto.ValidWindowOutcome(result,j.ManagedWindow.Allocation,j.ManagedWindow.PolicySHA256){
+		j.mu.Unlock();return fmt.Errorf("invalid managed receipt binding")
+	}
+	state:="complete"
+	if !complete{state="reconcile"}
+	for _,it:=range result.Items{if it.State=="unresolved"{state="reconcile"}}
+	next:=*j.ManagedWindow
+	next.State=state
+	j.ManagedWindow=&next
+	j.Items=slices.Clone(items)
+	save:=j.persistManaged
+	j.mu.Unlock()
+	return save(j.Snapshot())
 }
