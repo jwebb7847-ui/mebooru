@@ -17,6 +17,7 @@ import (
 // No duplicate or restore
 // and no permission to reclaim stage. No production caller yet.
 const composedReceiptKind = "isolated_named_new_png_client_v1"
+const guardedImageReceiptKind = "isolated_named_new_guarded_image_client_v1"
 const maxComposedReceipt = 128 << 10
 type composedReceipt struct{
 	Version int `json:"version"`
@@ -43,7 +44,13 @@ func expectedComposedReceipt(p *os.Root,r record,e SealedEvidence,l landingAttem
 	extras,err:=boundedRegularBytes(p,"extras-result.json",maxExtrasRecord)
 	if err!=nil{return zero,err}
 	f:=e.Files[0];v:=metadata.Rows[0]
-	return composedReceipt{Version:1,Kind:composedReceiptKind,Allocation:r.Allocation,GalleryIdentity:r.GalleryIdentity,
+	kind:=composedReceiptKind
+	if guardedImageFormat(f.RelativeName)!="png"{
+		plan,_,err:=readPublicationAttempt(p,r.Allocation)
+		if err!=nil||plan==nil||!validPlannedImageFacts(f,plan.Media){return zero,ErrStageRecovery}
+		kind=guardedImageReceiptKind
+	}
+	return composedReceipt{Version:1,Kind:kind,Allocation:r.Allocation,GalleryIdentity:r.GalleryIdentity,
 		PolicySHA256:m.PolicySHA256,NamingSHA256:digestBytes(naming),CollectionSHA256:n.CollectionSHA256,ExtrasSHA256:digestBytes(extras),
 		Row:newReceiptRow{PostID:f.ID,ImageID:v.ImageID,Name:n.Final,Size:f.Size,SHA256:f.SHA256},PathID:n.PathID,FileIdentity:n.FileIdentity},nil
 }
