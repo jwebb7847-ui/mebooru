@@ -3,6 +3,7 @@ package acquisitionstage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/png"
 	"os"
@@ -40,6 +41,10 @@ func TestGuardedExistingHeldReceipt(t *testing.T){
 
 func TestGuardedExistingRestoreReceipt(t *testing.T){
 	testExistingPublicationTargetModes(t, []string{"restore exec meta name marked","restore exec meta name unmarked","restore exec meta name nested","restore exec meta name reopen","restore exec meta name collision","restore exec meta name changed request","restore exec meta name changed target dir","restore exec meta name revoked after intent","restore exec meta name revoked after link","restore exec meta name revoked after repoint","restore exec meta name DB failure","restore exec meta name old path returned","restore exec meta name receipt revoked","restore exec meta name lost receipt","restore exec meta name changed retained","restore exec meta name replaced final"})
+}
+
+func TestGuardedExistingLifecycle(t *testing.T){
+	testExistingPublicationTargetModes(t, []string{"exec meta dispose lifecycle held","restore exec meta name lifecycle restored","exec meta dispose lifecycle reopen","restore exec meta name lifecycle reopen","exec meta dispose lifecycle missing authority","restore exec meta name lifecycle wrong authority","exec meta dispose lifecycle workspace interruption","restore exec meta name lifecycle prepared interruption","exec meta dispose lifecycle sealed interruption","restore exec meta name lifecycle closure interruption","exec meta dispose lifecycle operator edit","restore exec meta name lifecycle damaged closure"})
 }
 
 func testExistingPublicationTargetModes(t *testing.T, modes []string){
@@ -522,6 +527,7 @@ func checkGuardedExistingHeldReceipt(t *testing.T,ctx context.Context,ap **Alloc
 	if err!=nil||v.Witness.Kind!=existingHeldReceiptKind||v.Witness.Row.ImageID!=id||v.Witness.FileIdentity!=got.Held.CanonicalIdentity{t.Fatal("receipt",v,err)}
 	if _,err:=a.finishExistingHeldReceipt(ctx,grant,g,decision,extras);err==nil{t.Fatal("receipt overwritten")}
 	if _,err:=a.observeTerminalReceipt(ctx,grant,g,nil,extras);err==nil{t.Fatal("legacy reclamation accepted guarded receipt")}
+	if strings.Contains(mode,"lifecycle"){checkGuardedExistingLifecycle(t,ctx,ap,stage,grant,g,got,extras,authority,mode,nil,decision,old,data);return}
 	switch mode{
 	case "exec meta dispose reopen":
 		if err:=a.Close();err!=nil{t.Fatal(err)}
@@ -610,6 +616,7 @@ func checkGuardedExistingRestoreReceipt(t *testing.T,ctx context.Context,ap **Al
 	if err!=nil||v.Witness.Kind!=existingRestoreReceiptKind||v.Witness.Row.ImageID!=id||v.Witness.FileIdentity!=got.FileIdentity||filepath.Join(g.GalleryPath,v.Witness.Row.Name)!=final{t.Fatal("receipt",v,err)}
 	if _,err:=a.finishExistingRestoreReceipt(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("receipt overwritten")}
 	if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("legacy reclamation accepted guarded receipt")}
+	if strings.Contains(mode,"lifecycle"){checkGuardedExistingLifecycle(t,ctx,ap,stage,grant,g,got,extras,authority,mode,naming,decision,final,data);return}
 	switch mode{
 	case "restore exec meta name reopen":
 		if err:=a.Close();err!=nil{t.Fatal(err)}
@@ -626,4 +633,118 @@ func checkGuardedExistingRestoreReceipt(t *testing.T,ctx context.Context,ap **Al
 	again,err:=a.observeExistingRestoreReceipt(ctx,grant,g,decision,extras,naming)
 	want:=mode!="restore exec meta name lost receipt"&&mode!="restore exec meta name changed retained"&&mode!="restore exec meta name replaced final"
 	if (err==nil)!=want||want&&again!=v{t.Fatal("receipt witness",again,err)}
+}
+
+func checkGuardedExistingLifecycle(t *testing.T,ctx context.Context,ap **Allocator,stage string,grant workerproto.StageAllocation,g *library.Gallery,got existingPublicationTarget,extras extrasAuthority,authority Authority,mode string,naming namingAuthority,decision existingDispositionAuthority,final string,data []byte){
+	t.Helper()
+	a:=*ap
+	op:=filepath.Join(stage,grant.Request.OperationID)
+	workspace:=filepath.Join(op,grant.TransferID)
+	original:=filepath.Join(workspace,"media",got.File.RelativeName)
+	sidecar:=original+".json"
+	prepared:=filepath.Join(op,"publication","media",got.File.RelativeName)
+	sealed:=filepath.Join(op,"sealed","media",got.File.RelativeName)
+	native:=sealed+".json"
+	closure:=filepath.Join(op,"publication","operation-closed.json")
+	absent:=func(path string)bool{_,err:=os.Lstat(path);return os.IsNotExist(err)}
+	checkBytes:=func(path string,want []byte){t.Helper();b,err:=os.ReadFile(path);if err!=nil||!bytes.Equal(b,want){t.Fatal("bytes",path,err)}}
+	nativeBytes,err:=os.ReadFile(native);if err!=nil{t.Fatal(err)}
+	manifest:=filepath.Join(workspace,"strict-blacklist.json")
+	probe:=filepath.Join(workspace,"strict-blacklist-probe.json")
+	manifestBytes,err:=os.ReadFile(manifest);if err!=nil{t.Fatal(err)}
+	probeBytes,err:=os.ReadFile(probe);if err!=nil{t.Fatal(err)}
+	kind:=existingHeldReceiptKind;if got.Kind==existingRestore{kind=existingRestoreReceiptKind}
+	var witness terminalReceiptWitness
+	check:=func(_ context.Context,q workerproto.StageAllocation,w terminalReceiptWitness)error{
+		if q!=grant||w.Allocation!=grant||w.Kind!=kind||w.Row.ImageID!=got.ImageID||w.Row.SHA256!=got.File.SHA256||
+			filepath.Join(g.GalleryPath,w.Row.Name)!=final||!validDigest(w.ReceiptSHA256){t.Fatal("incorrect lifecycle witness",w)}
+		if witness.Kind==""{witness=w}else if witness!=w{t.Fatal("changed witness")}
+		return nil
+	}
+	reclaim:=reclaimAuthority(check)
+	release:=preparedReleaseAuthority(check)
+	retire:=sealedRetirementAuthority(check)
+	closeAuth:=closureAuthority(check)
+	if _,err:=a.reclaimWorkspace(ctx,grant,g,naming,extras,reclaim);err==nil{t.Fatal("legacy authority reclaimed guarded workspace")}
+	if _,err:=a.reclaimWorkspace(ctx,grant,g,naming,extras,reclaim,nil);err==nil{t.Fatal("nil disposition accepted")}
+	if _,err:=a.reclaimWorkspace(ctx,grant,g,naming,extras,reclaim,decision,decision);err==nil{t.Fatal("ambiguous disposition accepted")}
+	if _,err:=a.reclaimWorkspace(ctx,grant,g,naming,extras,nil,decision);err==nil{t.Fatal("missing custody authority accepted")}
+	if _,err:=a.releasePrepared(ctx,grant,g,naming,extras,release,decision);err==nil{t.Fatal("prepared released before workspace")}
+	if _,err:=a.retireSealedMedia(ctx,grant,g,naming,extras,retire,decision);err==nil{t.Fatal("sealed retired before prepared")}
+	if _,err:=a.closeRetiredOperation(ctx,grant,g,naming,extras,closeAuth,decision);err==nil{t.Fatal("closure before retirement")}
+	if mode=="exec meta dispose lifecycle missing authority"||mode=="restore exec meta name lifecycle wrong authority"{
+		wrong:=existingDispositionAuthority(func(context.Context,workerproto.StageAllocation)(string,error){if got.Kind==existingHeld{return existingRestore,nil};return existingHeld,nil})
+		if _,err:=a.reclaimWorkspace(ctx,grant,g,naming,extras,reclaim,wrong);err==nil{t.Fatal("wrong disposition reclaimed")}
+		if absent(original)||absent(sidecar)||absent(prepared)||absent(sealed)||!absent(filepath.Join(op,"publication","workspace-reclaim-attempt.json")){t.Fatal("premature cleanup")}
+		return
+	}
+	a.maxCount=1
+	a.maxBytes=grant.MaxBytes+uint64(got.File.SidecarSize)
+	second:=grant.Request;second.OperationID=strings.Repeat("d",32);second.Transfer.Metadata.JobID++
+	if _,err:=a.Allocate(ctx,second);!errors.Is(err,ErrStageLimit){t.Fatal("unclosed capacity released",err)}
+	originalDecision:=decision
+	decision=func(ctx context.Context,q workerproto.StageAllocation)(string,error){
+		if strings.Contains(mode,"workspace interruption")&&absent(original){return "",ErrStageRefused}
+		if strings.Contains(mode,"prepared interruption")&&absent(prepared){return "",ErrStageRefused}
+		if strings.Contains(mode,"sealed interruption")&&absent(sealed){return "",ErrStageRefused}
+		if strings.Contains(mode,"closure interruption")&&!absent(closure){return "",ErrStageRefused}
+		return originalDecision(ctx,q)
+	}
+	_,err=a.reclaimWorkspace(ctx,grant,g,naming,extras,reclaim,decision)
+	if strings.Contains(mode,"workspace interruption"){
+		if err==nil||!absent(original)||absent(sidecar){t.Fatal("workspace interruption",err)}
+		if _,err:=a.resumeWorkspaceReclaim(ctx,grant,g,naming,extras,reclaim);err==nil{t.Fatal("legacy resumed guarded cleanup")}
+		decision=originalDecision
+		_,err=a.resumeWorkspaceReclaim(ctx,grant,g,naming,extras,reclaim,decision)
+	}
+	if err!=nil||!absent(original)||!absent(sidecar)||absent(prepared)||absent(sealed){t.Fatal("workspace",err)}
+	_,err=a.releasePrepared(ctx,grant,g,naming,extras,release,decision)
+	if strings.Contains(mode,"prepared interruption"){
+		if err==nil||!absent(prepared)||absent(sealed){t.Fatal("prepared interruption",err)}
+		if _,err:=a.resumePreparedRelease(ctx,grant,g,naming,extras,release);err==nil{t.Fatal("legacy resumed guarded release")}
+		decision=originalDecision
+		_,err=a.resumePreparedRelease(ctx,grant,g,naming,extras,release,decision)
+	}
+	if err!=nil||!absent(prepared)||absent(sealed){t.Fatal("prepared",err)}
+	checkBytes(final,data)
+	_,err=a.retireSealedMedia(ctx,grant,g,naming,extras,retire,decision)
+	if strings.Contains(mode,"sealed interruption"){
+		if err==nil||!absent(sealed){t.Fatal("sealed interruption",err)}
+		if _,err:=a.resumeSealedRetirement(ctx,grant,g,naming,extras,retire);err==nil{t.Fatal("legacy resumed guarded retirement")}
+		decision=originalDecision
+		_,err=a.resumeSealedRetirement(ctx,grant,g,naming,extras,retire,decision)
+	}
+	if err!=nil||!absent(sealed){t.Fatal("retire",err)}
+	if _,err:=a.Allocate(ctx,second);!errors.Is(err,ErrStageLimit){t.Fatal("preclosure capacity released",err)}
+	closed,err:=a.closeRetiredOperation(ctx,grant,g,naming,extras,closeAuth,decision)
+	if strings.Contains(mode,"closure interruption"){
+		if err==nil||absent(closure){t.Fatal("closure interruption",err)}
+		decision=originalDecision
+		closed,err=a.observeClosedOperation(ctx,grant,g,naming,extras,closeAuth,decision)
+	}
+	if err!=nil||closed.Witness!=witness||closed.RetainedPayloadBytes!=uint64(got.File.SidecarSize){t.Fatal("closure",closed,err)}
+	checkBytes(final,data);checkBytes(native,nativeBytes);checkBytes(manifest,manifestBytes);checkBytes(probe,probeBytes)
+	if strings.Contains(mode,"reopen"){
+		if err:=a.Close();err!=nil{t.Fatal(err)}
+		next,err:=Open(stage,1,grant.MaxBytes+uint64(got.File.SidecarSize),authority);if err!=nil{t.Fatal(err)}
+		*ap=next;a=next
+	}
+	if _,err:=a.observeClosedOperation(ctx,grant,g,naming,extras,closeAuth);err==nil{t.Fatal("legacy observed guarded closure")}
+	if next,err:=a.observeClosedOperation(ctx,grant,g,naming,extras,closeAuth,decision);err!=nil||next!=closed{t.Fatal("closure observation",next,err)}
+	if _,err:=a.closeRetiredOperation(ctx,grant,g,naming,extras,closeAuth,decision);err==nil{t.Fatal("closure replay")}
+	if _,err:=a.Allocate(ctx,grant.Request);!errors.Is(err,ErrStageRefused){t.Fatal("closed operation identity reusable",err)}
+	if strings.Contains(mode,"damaged closure"){
+		if err:=os.WriteFile(closure,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+		if _,err:=a.Allocate(ctx,second);err==nil{t.Fatal("damaged closure released capacity")}
+		return
+	}
+	if strings.Contains(mode,"operator edit"){
+		if err:=os.WriteFile(final,[]byte("operator changed"),0600);err!=nil{t.Fatal(err)}
+		if _,err:=a.observeClosedOperation(ctx,grant,g,naming,extras,closeAuth,decision);err==nil{t.Fatal("historical closure treated as live receipt")}
+	}
+	_,closures,reserved,err:=a.inventoryWithClosure(ctx)
+	if err!=nil||!closures[grant.Request.OperationID]||reserved!=uint64(got.File.SidecarSize){t.Fatal("historical capacity",closures,reserved,err)}
+	next,err:=a.Allocate(ctx,second)
+	if err!=nil||next.TransferID==grant.TransferID{t.Fatal("active capacity not released",next,err)}
+	checkBytes(native,nativeBytes)
 }
