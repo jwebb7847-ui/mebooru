@@ -3,7 +3,11 @@ package acquisitionstage
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"image"
+	"image/color"
+	"image/gif"
+	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -20,7 +24,7 @@ import (
 )
 
 func TestPlannedNewPublication(t *testing.T){
-	for _,mode:=range []string{"plain","template","collision","nested","unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","changed naming","changed job","changed collision","changed directory","forged plan","revoked after intent","changed after intent","DB reopen","changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt","changed after landing","changed job after naming","changed client after landing","shared source tag","legacy marker substitution","lost attempt after receipt","full closure"}{
+	for _,mode:=range []string{"plain","template","collision","nested","unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","changed naming","changed job","changed collision","changed directory","forged plan","revoked after intent","changed after intent","DB reopen","changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt","changed after landing","changed job after naming","changed client after landing","shared source tag","legacy marker substitution","lost attempt after receipt","full closure","JPEG","JPEG extension","animated GIF","WebP","bad JPEG","mismatched GIF","unsupported video","media facts changed","media facts changed after receipt","forged media facts"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -28,6 +32,29 @@ func TestPlannedNewPublication(t *testing.T){
 			data:=buf.Bytes();ext:="png"
 			if mode=="bad PNG"{data=[]byte("not a PNG")}
 			if mode=="wrong extension"{ext="jpg"}
+			switch mode{
+			case "JPEG","JPEG extension","media facts changed","media facts changed after receipt","forged media facts":
+				var out bytes.Buffer
+				if err:=jpeg.Encode(&out,image.NewRGBA(image.Rect(0,0,16,16)),nil);err!=nil{t.Fatal(err)}
+				data=out.Bytes();ext="jpg"
+				if mode=="JPEG extension"{ext="jpeg"}
+			case "animated GIF":
+				palette:=color.Palette{color.Black,color.White}
+				first:=image.NewPaletted(image.Rect(0,0,16,16),palette)
+				second:=image.NewPaletted(image.Rect(0,0,16,16),palette)
+				second.SetColorIndex(4,4,1)
+				var out bytes.Buffer
+				if err:=gif.EncodeAll(&out,&gif.GIF{Image:[]*image.Paletted{first,second},Delay:[]int{10,10}});err!=nil{t.Fatal(err)}
+				data=out.Bytes();ext="gif"
+			case "WebP":
+				var err error
+				data,err=base64.StdEncoding.DecodeString("UklGRh4AAABXRUJQVlA4TBEAAAAvD8ADAAdQvEIVuf+BiOh/AAA=")
+				if err!=nil{t.Fatal(err)}
+				ext="webp"
+			case "bad JPEG":data=[]byte("not a JPEG");ext="jpg"
+			case "mismatched GIF":ext="gif"
+			case "unsupported video":ext="mp4"
+			}
 			a,stage,s,grant,authority,f:=publicationFixtureData(t,ext,data)
 			defer func(){if err:=a.Close();err!=nil{t.Error(err)}}()
 			row:=acquisitionplan.ApprovedPolicyRow{PostID:f.ID,NativeSHA256:strings.Repeat("a",64),MediaURL:"https://example.invalid/42."+ext,
@@ -101,7 +128,7 @@ func TestPlannedNewPublication(t *testing.T){
 			if _,err:=os.Stat(diagnostic);!os.IsNotExist(err){t.Fatal("planning published media",err)}
 			if count()!=before{t.Fatal("planning mutated gallery rows")}
 			switch mode{
-			case "unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority":
+			case "unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","bad JPEG","mismatched GIF","unsupported video":
 				if err==nil{t.Fatal("unsupported plan accepted")}
 				if _,err:=a.publishPlannedNew(ctx,grant,g,naming,extras,plan);err==nil{t.Fatal("unsupported publication accepted")}
 				if _,err:=os.Stat(intent);!os.IsNotExist(err){t.Fatal("unsupported case wrote intent",err)}
@@ -110,6 +137,7 @@ func TestPlannedNewPublication(t *testing.T){
 				return
 			}
 			if err!=nil{t.Fatal("plan",err)}
+			if !validPlannedImageFacts(f,plan.Media)||plan.Media.Width!=16||plan.Media.Height!=16{t.Fatal("missing measured media facts",plan.Media)}
 			switch mode{
 			case "changed naming":req.DefaultName="changed"
 			case "changed job":job.Tags=[]string{"changed"}
@@ -120,10 +148,11 @@ func TestPlannedNewPublication(t *testing.T){
 				if err:=os.Rename(old,filepath.Join(s.GalleryRoot,"old"));err!=nil{t.Fatal(err)}
 				if err:=os.Mkdir(old,0700);err!=nil{t.Fatal(err)}
 			case "forged plan":plan.FileIdentity="wrong"
+			case "forged media facts":plan.Media.Width++
 			}
 			places,err:=a.publishPlannedNew(ctx,grant,g,naming,extras,plan)
 			switch mode{
-			case "changed naming","changed job","changed collision","changed directory","forged plan","revoked after intent","changed after intent":
+			case "changed naming","changed job","changed collision","changed directory","forged plan","forged media facts","revoked after intent","changed after intent":
 				if err==nil{t.Fatal("changed plan published")}
 				_,statErr:=os.Stat(intent)
 				partial:=mode=="revoked after intent"||mode=="changed after intent"
@@ -171,6 +200,12 @@ func TestPlannedNewPublication(t *testing.T){
 			mapped,err:=a.applyMappedMetadata(ctx,grant,g)
 			if err!=nil||len(mapped)!=1{t.Fatal("metadata",err)}
 			if err:=a.applyRelationships(ctx,grant,g);err!=nil{t.Fatal(err)}
+			if mode=="media facts changed"{
+				if _,err:=g.DB.Write.Exec("UPDATE images SET width=17 WHERE id=?",mapped[0].ImageID);err!=nil{t.Fatal(err)}
+				if err:=a.applyNaming(ctx,grant,g,naming);err==nil{t.Fatal("changed measured width accepted")}
+				if _,err:=os.Stat(filepath.Join(filepath.Dir(intent),"naming-attempt.json"));!os.IsNotExist(err){t.Fatal("unexpected naming attempt",err)}
+				return
+			}
 			if _,err:=a.finishNewReceipt(ctx,grant,g);err==nil{t.Fatal("narrow receipt bypassed guarded plan")}
 			if mode=="changed after landing"{
 				req.DefaultName="changed"
@@ -194,16 +229,22 @@ func TestPlannedNewPublication(t *testing.T){
 				return
 			}
 			if err!=nil{t.Fatal(err)}
-			if _,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);err!=nil{t.Fatal(err)}
+			receipt,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);if err!=nil{t.Fatal(err)}
+			if ext!="png"&&receipt.Kind!=guardedImageReceiptKind{t.Fatal("wrong receipt kind",receipt.Kind)}
 			if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err!=nil{t.Fatal(err)}
 			if got,err:=os.ReadFile(preview.FinalPath);err!=nil||!bytes.Equal(got,data){t.Fatal("canonical bytes",err)}
 			if mode=="collision"{if got,err:=os.ReadFile(filepath.Join(s.GalleryRoot,f.RelativeName));err!=nil||string(got)!="operator"{t.Fatal("operator bytes changed",err)}}
+			if mode=="media facts changed after receipt"{
+				if _,err:=g.DB.Write.Exec("UPDATE images SET file_type='png' WHERE id=?",mapped[0].ImageID);err!=nil{t.Fatal(err)}
+				if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("changed type accepted")}
+				return
+			}
 			if mode=="lost attempt after receipt"{
 				if err:=os.Remove(intent);err!=nil{t.Fatal(err)}
 				if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("lost guarded marker accepted")}
 				return
 			}
-			if mode=="full closure"{
+			if mode=="full closure"||mode=="JPEG"||mode=="JPEG extension"||mode=="animated GIF"||mode=="WebP"{
 				auth:=func(context.Context,workerproto.StageAllocation,terminalReceiptWitness)error{return nil}
 				if _,err:=a.reclaimWorkspace(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("reclaim",err)}
 				if _,err:=a.releasePrepared(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("release",err)}
