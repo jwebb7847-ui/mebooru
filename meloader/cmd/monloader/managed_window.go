@@ -51,7 +51,7 @@ func runManagedWindowWorker(args []string)error{
 			if err:=owner.RegisterWindow(c,md);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
 			if err:=client.OpenWindow(c,md);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
 			epoch:=gate.CurrentGeneration()
-			current:func(c context.Context)bool{return c.Err()==nil&&epoch!=(workerproto.DrainGeneration{})&&gate.CurrentGeneration()==epoch&&broker.Err()==nil}
+			current:=func(c context.Context)bool{return c.Err()==nil&&epoch!=(workerproto.DrainGeneration{})&&gate.CurrentGeneration()==epoch&&broker.Err()==nil}
 			return &pipeline.ManagedWindowRuntime{
 				Request:md,Identity:identity,Config:mc,PolicyGeneration:1,Mapper:mapper,Client:client,
 				Scope:func(c context.Context,q workerproto.MetadataPlanRequest)bool{return q==md&&current(c)},
