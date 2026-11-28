@@ -9,19 +9,28 @@ import (
 	"github.com/monbooru/monbooru/internal/library"
 )
 
+// OwnerReceipt is the read-only terminal witness. It is not a custody grant.
+type OwnerReceipt = terminalReceiptWitness
+
+const (
+	OwnerDispositionNew = "new"
+	OwnerDispositionHeld = existingHeld
+	OwnerDispositionRestore = existingRestore
+)
+
 // OwnerCommit binds local owner decisions; never accept these from a worker.
 type OwnerCommit struct{
 	Current func(context.Context,workerproto.StageAllocation)error
 	Disposition func(context.Context,workerproto.StageAllocation)(string,error)
 	Naming func(context.Context,workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error)
 	Extras func(context.Context,workerproto.StageAllocation)(contract.JobExtras,error)
-	Cleanup func(context.Context,workerproto.StageAllocation,terminalReceiptWitness)error
+	Cleanup func(context.Context,workerproto.StageAllocation,OwnerReceipt)error
 }
 
 // CommitSealedForOwner accepts a fresh, already verified/bound sealed
 // operation. No automatic replay, network handler or scheduler installed.
 // The caller must independently prove current writer custody and policy.
-func(a *Allocator) CommitSealedForOwner(ctx context.Context,grant workerproto.StageAllocation,set *library.Set,auth OwnerCommit)(terminalReceiptWitness,error){
+func(a *Allocator) CommitSealedForOwner(ctx context.Context,grant workerproto.StageAllocation,set *library.Set,auth OwnerCommit)(OwnerReceipt,error){
 	var out terminalReceiptWitness
 	if set==nil||auth.Current==nil||auth.Disposition==nil||auth.Naming==nil||auth.Extras==nil||auth.Cleanup==nil{return out,ErrStageRefused}
 	err:=set.WithAcquisitionFence(ctx,grant.Request.Transfer.Metadata.Gallery,func(g *library.Gallery,fence func()error)error{
