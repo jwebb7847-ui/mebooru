@@ -116,3 +116,17 @@ func(a *Allocator) AbandonPrepublication(ctx context.Context,q workerproto.Stage
 	if err!=nil||observed!=m||authorize(ctx,r.Allocation)!=nil{return zero,ErrStageRecovery}
 	return observed,nil
 }
+
+// ObserveAbandoned reconciles lost acknowledgement without recreating
+// the marker or issuing a new workspace.
+func(a *Allocator) ObserveAbandoned(ctx context.Context,q workerproto.StageAbandonRequest)(AbandonedOperation,error){
+	a.mu.Lock();defer a.mu.Unlock()
+	var zero AbandonedOperation
+	if !workerproto.ValidStageAbandon(q)||ctx.Err()!=nil||!a.live(){return zero,ErrStageRefused}
+	r,err:=a.load(q.OperationID)
+	if err!=nil||r.Allocation.TransferID!=q.TransferID{return zero,ErrStageRefused}
+	op,err:=openDir(a.root,q.OperationID)
+	if err!=nil{return zero,err}
+	defer op.Close()
+	return readAbandoned(op,r)
+}
