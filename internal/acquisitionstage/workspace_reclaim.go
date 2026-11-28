@@ -67,7 +67,7 @@ func validWorkspaceFile(v workspaceFile,name string,size int64,hash string)bool{
 }
 func receiptRecordName(kind string)(string,int64){
 	switch kind{
-	case composedReceiptKind:return "composed-receipt.json",maxComposedReceipt
+	case composedReceiptKind,guardedImageReceiptKind:return "composed-receipt.json",maxComposedReceipt
 	case heldReceiptKind:return "held-receipt.json",maxHeldReceipt
 	case restoredReceiptKind:return "restored-receipt.json",maxRestoredReceipt
 	default:return "",0
