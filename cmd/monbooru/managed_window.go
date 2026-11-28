@@ -111,7 +111,14 @@ func(o *windowFixtureOwner) authorizeProjection(c context.Context,p workerproto.
 func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,raw json.RawMessage)(json.RawMessage,*workerproto.Fault){
 	o.mu.Lock();defer o.mu.Unlock()
 	fault:=func(err error)(json.RawMessage,*workerproto.Fault){fmt.Fprintln(os.Stderr,"disposable owner:",op,err);return nil,&workerproto.Fault{Code:"refused"}}
-	if !o.current(c)||o.registry==nil||!o.registry.Current(o.window){return fault(managedqa.ErrFixture)}
+	if !o.current(c)||o.registry==nil{return fault(managedqa.ErrFixture)}
+	if op==workerproto.WindowPrepare{
+		q,err:=workerproto.DecodeManagedMetadataStart(raw)
+		if err!=nil||q!=o.window.Request{return fault(managedqa.ErrFixture)}
+		if err:=acquisitionpolicy.RegisterRunningWindow(c,filepath.Join(o.dir,"queue"),o.registry,o.window,func(c context.Context,v windowregistry.Grant)bool{return o.current(c)&&v==o.window});err!=nil{return fault(err)}
+		body,_:=json.Marshal(workerproto.ManagedMetadataStart{Request:q});return body,nil
+	}
+	if !o.registry.Current(o.window){return fault(managedqa.ErrFixture)}
 	switch op{
 	case workerproto.StageAllocate:
 		if o.grant!=(workerproto.StageAllocation{}){return fault(managedqa.ErrFixture)}
@@ -280,7 +287,6 @@ func runManagedWindowProbe(countArg string)(result error){
 		o.result=workerproto.WindowOutcome{}
 		o.manifest,o.projection,o.hash=nil,nil,""
 		o.mu.Unlock()
-		if err:=registry.Register(ctx,o.window);err!=nil{return err}
 		if _,err:=call(workerproto.QueueResume,nil);err!=nil{return err}
 		for{
 			v,err=readJob();if err!=nil{return err}

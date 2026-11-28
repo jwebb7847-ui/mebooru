@@ -42,11 +42,13 @@ func runManagedWindowWorker(args []string)error{
 	mapper,err:=mapping.New(config.NewProvider(cfg),"");if err!=nil{return err}
 	var session atomic.Pointer[workerproto.Session]
 	_,mc,identity:=setup.Identity()
-	owner:=&pipeline.SessionJobOwner{
+	var owner *pipeline.SessionJobOwner
+	owner=&pipeline.SessionJobOwner{
 		Session:session.Load,
 		PrepareWindow:func(c context.Context,j *queue.Job)(*pipeline.ManagedWindowRuntime,error){
 			md:=setup.MetadataFor(j.ID)
 			if !workerproto.ValidMetadataPlan(md)||j.URL!=md.URL||j.Gallery!=md.Gallery||j.MaxItems!=setup.Count{return nil,managedqa.ErrFixture}
+			if err:=owner.RegisterWindow(c,md);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
 			if err:=client.OpenWindow(c,md);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
 			epoch:=gate.CurrentGeneration()
 			current:func(c context.Context)bool{return c.Err()==nil&&epoch!=(workerproto.DrainGeneration{})&&gate.CurrentGeneration()==epoch&&broker.Err()==nil}
