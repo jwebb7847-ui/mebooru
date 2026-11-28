@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,7 @@ import (
 	"github.com/monbooru/monbooru/internal/library"
 )
 
-// First guarded publication candidate: one genuinely new PNG, explicit
+// Guarded publication candidate: one genuinely new native image, explicit
 // source provenance, no relationship/collection claim, supported client
 // tags, existing destination directories and known pre-landing naming
 // facts. Neither this snapshot nor a successful link is a terminal receipt
@@ -31,6 +30,7 @@ type newPublicationPlan struct {
 	Preview gallery.ReceivedNamingPreview
 	Job contract.JobExtras
 	Client []clientResolution
+	Media *plannedImageFacts `json:",omitempty"`
 }
 
 
@@ -44,7 +44,9 @@ type plannedPublicationAttempt struct {
 }
 
 func encodePlannedAttempt(plan newPublicationPlan)([]byte,error){
-	body,err:=json.Marshal(plannedPublicationAttempt{Version:2,Plan:plan})
+	version:=2
+	if plan.Media!=nil{version=3}
+	body,err:=json.Marshal(plannedPublicationAttempt{Version:version,Plan:plan})
 	if err!=nil||len(body)>maxPlannedAttemptBytes{return nil,ErrStageLimit}
 	return body,nil
 }
@@ -56,14 +58,15 @@ func readPublicationAttempt(p *os.Root,grant workerproto.StageAllocation)(*newPu
 	if err!=nil{return nil,"",err}
 	if string(body)==grant.TransferID{return nil,"",nil}
 	var marker plannedPublicationAttempt
-	if json.Unmarshal(body,&marker)!=nil||marker.Version!=2{return nil,"",ErrStageRecovery}
+	if json.Unmarshal(body,&marker)!=nil||(marker.Version!=2&&marker.Version!=3){return nil,"",ErrStageRecovery}
 	v:=marker.Plan
 	canonical,err:=encodePlannedAttempt(v)
 	if err!=nil||!bytes.Equal(body,canonical){return nil,"",ErrStageRecovery}
 	// The pre-landing DB witness has no disposition or recovery fields.
 	db:=landingAttempt{Version:1,Allocation:grant,GalleryIdentity:v.DB.GalleryIdentity,DBPath:v.DB.DBPath,DBFileIdentity:v.DB.DBFileIdentity}
 	if v.DB!=db||db.GalleryIdentity==""||len(db.GalleryIdentity)>1024||!filepath.IsAbs(db.DBPath)||filepath.Clean(db.DBPath)!=db.DBPath||
-		db.DBFileIdentity==""||len(db.DBFileIdentity)>128||!validDigest(v.PolicySHA256)||!validResultFile(v.File)||filepath.Ext(v.File.RelativeName)!=".png"||
+		db.DBFileIdentity==""||len(db.DBFileIdentity)>128||!validDigest(v.PolicySHA256)||!validResultFile(v.File)||
+		(marker.Version==2&&(v.Media!=nil||filepath.Ext(v.File.RelativeName)!=".png"))||(marker.Version==3&&!validPlannedImageFacts(v.File,v.Media))||
 		v.FileIdentity==""||len(v.FileIdentity)>128||!validNamingRequest(v.Naming)||v.Naming.Gallery!=grant.Request.Transfer.Metadata.Gallery||
 		v.Naming.ReceivedName!=v.File.RelativeName||v.Naming.PostID!=v.File.ID||!validClientJob(v.Job)||!validClientResolutions(v.Client){return nil,"",ErrStageRecovery}
 	for i,path:=range []string{v.Preview.InitialPath,v.Preview.FinalPath}{
@@ -88,6 +91,8 @@ func verifyPlanDestinations(r record,dst *os.Root,plan *newPublicationPlan)error
 }
 
 func samePublicationPlan(a,b newPublicationPlan)bool{
+	// Historical v2 PNG plans did not record measured media facts.
+	if a.Media==nil&&filepath.Ext(a.File.RelativeName)==".png"{b.Media=nil}
 	left,err:=encodePlannedAttempt(a)
 	right,otherErr:=encodePlannedAttempt(b)
 	return err==nil&&otherErr==nil&&bytes.Equal(left,right)
@@ -121,11 +126,8 @@ func(a *Allocator)newPublicationPlanLocked(ctx context.Context,grant workerproto
 	row:=rows[0]
 	identity,err:=namingFile(ctx,src,f.RelativeName,f,links)
 	if err!=nil{return zero,err}
-	file,err:=src.Open(f.RelativeName)
-	if err!=nil{return zero,ErrStageRecovery}
-	cfg,decodeErr:=png.DecodeConfig(file)
-	closeErr:=file.Close()
-	if decodeErr!=nil||closeErr!=nil||cfg.Width<=0||cfg.Height<=0{return zero,ErrStageRefused}
+	media,err:=inspectPlannedImage(ctx,src,f,links)
+	if err!=nil{return zero,err}
 	req,err:=naming(ctx,grant)
 	if err!=nil||!validNamingRequest(req)||req.Gallery!=g.Name||req.ReceivedName!=f.RelativeName||req.Source!=row.SourceLabel||req.PostID!=row.PostID{return zero,ErrStageRefused}
 	preview,err:=gallery.PreviewUnlandedReceivedNaming(ctx,g.DB,g.Boundary(),req,f.SHA256,f.Size)
@@ -153,7 +155,7 @@ func(a *Allocator)newPublicationPlanLocked(ctx context.Context,grant workerproto
 	if err!=nil||!sameLandingDB(db,current)||scopeErr!=nil||!matches(r,s)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRefused}
 	currentID,err:=namingFile(ctx,src,f.RelativeName,f,links)
 	if err!=nil||identity!=currentID{return zero,ErrStageRecovery}
-	return newPublicationPlan{DB:db,PolicySHA256:hash,File:f,FileIdentity:identity,DestinationIdentity:destinations,Naming:req,Preview:preview,Job:job,Client:client},nil
+	return newPublicationPlan{DB:db,PolicySHA256:hash,File:f,FileIdentity:identity,DestinationIdentity:destinations,Naming:req,Preview:preview,Job:job,Client:client,Media:&media},nil
 }
 
 // Bind the caller's read-only preview to the exact current plan at both
