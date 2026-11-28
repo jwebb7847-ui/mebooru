@@ -221,9 +221,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends gcc pkg-config libgtk-3-dev libayatana-appindicator3-dev
           CGO_ENABLED=1 go build -mod=readonly -tags tray -o "$RUNNER_TEMP/monbooru-tray" ./cmd/monbooru
           (cd meloader && CGO_ENABLED=1 go build -mod=readonly -tags tray -o "$RUNNER_TEMP/monloader-tray" ./cmd/monloader)
-      - name: Build and sign macOS app
+      - name: Build and sign legacy macOS app for migration checks
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          MEBOORU_LEGACY_DESKTOP_BUNDLE: '1'
         run: sh packaging/build-macos-app.sh
       - name: Verify the bundled companion lifecycle
         if: runner.os == 'macOS'
@@ -254,6 +256,12 @@ jobs:
       - name: Verify first-party pairing and refusal paths
         if: runner.os == 'macOS'
         run: python .github/qa/bundled-pairing-smoke.py dist/Mebooru.app
+      - name: Verify first-run self-contained Apple Silicon bundle
+        if: runner.os == 'macOS' && runner.arch == 'ARM64'
+        shell: bash
+        run: |
+          sh packaging/build-macos-app.sh meloader "$RUNNER_TEMP/mebooru-managed"
+          python .github/qa/managed-desktop-smoke.py "$RUNNER_TEMP/mebooru-managed/Mebooru.app"
 
   go-validation:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)

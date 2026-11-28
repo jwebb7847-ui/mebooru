@@ -23,7 +23,8 @@ mkdir -p "$bundle/MacOS" "$bundle/Resources"
 
 export GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 GOWORK=off
 managed_default=false
-if [ "$arch" = arm64 ] || [ -n "${MEBOORU_GALLERY_DL:-}" ]; then
+if [ "${MEBOORU_LEGACY_DESKTOP_BUNDLE:-}" != 1 ] &&
+   { [ "$arch" = arm64 ] || [ -n "${MEBOORU_GALLERY_DL:-}" ]; }; then
   managed_default=true
 fi
 go build -trimpath -ldflags="$LDFLAGS -X 'main.defaultDesktop=true' -X 'main.useBundledMeloader=true' -X 'main.defaultManagedAcquisition=$managed_default' -X '$MOD.Package=macos-app'" \
@@ -37,7 +38,7 @@ go build -trimpath -ldflags="$LDFLAGS -X 'main.defaultDesktop=true' -X 'main.use
 )
 cp LICENSE "$bundle/Resources/LICENSE-Mebooru"
 
-if [ -n "${MEBOORU_GALLERY_DL:-}" ]; then
+if [ "$managed_default" = true ] && [ -n "${MEBOORU_GALLERY_DL:-}" ]; then
   . "$loader_src/packaging/pins.env"
   runtime_sha=${MEBOORU_GALLERY_DL_SHA256:?Set the trusted SHA-256 of the gallery-dl executable}
   runtime_license=${MEBOORU_GALLERY_DL_LICENSE:?Set the path to the pinned gallery-dl LICENSE}
@@ -50,7 +51,7 @@ if [ -n "${MEBOORU_GALLERY_DL:-}" ]; then
   printf 'gallery-dl %s source: https://codeberg.org/mikf/gallery-dl/releases/tag/v%s\n' +    "$GDL_VERSION" "$GDL_VERSION" > "$bundle/Resources/gallery-dl-source.txt"
   codesign --force --sign - "$bundle/MacOS/gallery-dl"
   gallery_dl="$bundle/MacOS/gallery-dl"
-elif [ "$arch" = arm64 ]; then
+elif [ "$managed_default" = true ] && [ "$arch" = arm64 ]; then
   sh packaging/build-macos-runtime.sh "$bundle" "$stage"
   gallery_dl="$bundle/Resources/runtime/gallery-dl"
 fi
@@ -59,7 +60,7 @@ if [ "$managed_default" = true ]; then
   test "$(MEBOORU_RUNTIME_WHEEL= "$gallery_dl" --config-ignore --version)" = "$GDL_VERSION" ||
     { echo "The bundled gallery-dl must run as version $GDL_VERSION." >&2; exit 1; }
 fi
-if [ "$arch" = arm64 ]; then
+if [ "$managed_default" = true ] && [ "$arch" = arm64 ]; then
   sh packaging/build-macos-media.sh "$bundle" "$stage"
 fi
 
