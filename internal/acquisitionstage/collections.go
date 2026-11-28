@@ -186,6 +186,13 @@ func(a *Allocator)collectionContext(ctx context.Context,grant workerproto.StageA
 	if err!=nil || !matches(r,s) || g.WatcherRunning() { return fail(ErrStageRefused) }
 	current,err:=observedDB(r,g)
 	if err!=nil || !sameLandingDB(current,l) { return fail(ErrStageRecovery) }
+	plan,_,err:=readPublicationAttempt(p,grant)
+	if err!=nil{return fail(err)}
+	if plan!=nil{
+		if !matchesCollectionClaim(plan.Collection,claim){return fail(ErrStageRefused)}
+		observed,err:=inspectPlannedCollection(ctx,g,claim)
+		if err!=nil||observed==nil||*observed!=*plan.Collection{return fail(ErrStageRefused)}
+	}
 	return collectionAttempt{Version:1,MetadataSHA256:rel.MetadataSHA256,RelationshipSHA256:digestBytes(raw),
 		ImageID:rel.ImageID,Name:claim.Collection,Order:claim.CollectionOrder,NewOnly:l.NewOnly},p,nil
 }
@@ -199,6 +206,9 @@ func(a *Allocator)applyCollections(ctx context.Context,grant workerproto.StageAl
 	}
 	m.Before,err=inspectCollection(ctx,g,m.ImageID,m.Name)
 	if err!=nil{return err}
+	plan,_,err:=readPublicationAttempt(p,grant)
+	if err!=nil{return err}
+	if plan!=nil&&!matchesPlannedCollectionAttempt(plan.Collection,m){return ErrStageRefused}
 	expected,err:=expectedCollection(m)
 	if err!=nil{return err}
 	raw,err:=json.Marshal(m)
@@ -294,6 +304,8 @@ func newCollectionProof(ctx context.Context,g *library.Gallery,p *os.Root,l land
 
 func collectionProof(ctx context.Context,g *library.Gallery,p *os.Root,l landingAttempt,metadata metadataResult,row acquisitionplan.ApprovedPolicyRow)(*collectionState,error){
 	if l.RestoreImageID!=0||len(metadata.Rows)!=1||row.Provenance==nil||!validCollectionClaim(row.Provenance){return nil,ErrStageRecovery}
+	plan,_,err:=readPublicationAttempt(p,l.Allocation)
+	if err!=nil||(plan!=nil&&!matchesCollectionClaim(plan.Collection,row.Provenance)){return nil,ErrStageRecovery}
 	if row.Provenance.Collection==""{
 		for _,name:=range []string{"collection-attempt.json","collection-result.json"}{
 			if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return nil,ErrStageRecovery}
@@ -304,6 +316,7 @@ func collectionProof(ctx context.Context,g *library.Gallery,p *os.Root,l landing
 	raw,err:=boundedRegularBytes(p,"collection-attempt.json",maxCollectionRecord)
 	var m collectionAttempt
 	if err!=nil||json.Unmarshal(raw,&m)!=nil||m.NewOnly!=l.NewOnly||m.Name!=row.Provenance.Collection||m.Order!=row.Provenance.CollectionOrder||m.ImageID!=metadata.Rows[0].ImageID{return nil,ErrStageRecovery}
+	if plan!=nil&&!matchesPlannedCollectionAttempt(plan.Collection,m){return nil,ErrStageRecovery}
 	expected,err:=expectedCollection(m)
 	if err!=nil{return nil,err}
 	actual,err:=inspectCollection(ctx,g,m.ImageID,m.Name)
