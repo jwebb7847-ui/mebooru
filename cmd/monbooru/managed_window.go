@@ -118,10 +118,21 @@ func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,ra
 	fault:=func(err error)(json.RawMessage,*workerproto.Fault){fmt.Fprintln(os.Stderr,"disposable owner:",op,err);return nil,&workerproto.Fault{Code:"refused"}}
 	if !o.current(c)||o.registry==nil{return fault(managedqa.ErrFixture)}
 	if op==workerproto.WindowPrepare{
-		q,err:=workerproto.DecodeManagedMetadataStart(raw)
-		if err!=nil||q!=o.window.Request{return fault(managedqa.ErrFixture)}
-		if err:=acquisitionpolicy.RegisterRunningWindow(c,filepath.Join(o.dir,"queue"),o.registry,o.window,func(c context.Context,v windowregistry.Grant)bool{return o.current(c)&&v==o.window});err!=nil{return fault(err)}
-		body,_:=json.Marshal(workerproto.ManagedMetadataStart{Request:q});return body,nil
+		p,err:=workerproto.DecodeWindowPrepare(raw)
+		if err!=nil||p.Request!=o.setup.MetadataFor(p.Request.JobID){return fault(managedqa.ErrFixture)}
+		if o.window!=(windowregistry.Grant{}){
+			if _,err:=o.registry.ObserveSettlement(o.window);err!=nil{return fault(err)}
+		}
+		sub,err:=o.registry.ObserveSubmission(p.IntentID)
+		if err!=nil||sub.GalleryIdentity!="disposable-window:"+o.dir{return fault(managedqa.ErrFixture)}
+		_,_,identity:=o.setup.Identity()
+		g:=windowregistry.Grant{Request:p.Request,OwnerGeneration:o.generation,PolicyGeneration:1,GalleryIdentity:sub.GalleryIdentity,Identity:identity,IntentID:p.IntentID}
+		if err:=acquisitionpolicy.RegisterRunningIntentWindow(c,filepath.Join(o.dir,"queue"),o.registry,g,func(c context.Context,v windowregistry.Grant)bool{return o.current(c)&&v==g});err!=nil{return fault(err)}
+		o.window=g
+		o.grant=workerproto.StageAllocation{}
+		o.result=workerproto.WindowOutcome{}
+		o.manifest,o.projection,o.hash=nil,nil,""
+		body,_:=workerproto.EncodeWindowPrepare(p);return body,nil
 	}
 	if !o.registry.Current(o.window){return fault(managedqa.ErrFixture)}
 	if op!=workerproto.FetchOutcome&&!o.registry.Admitting(o.window){return fault(managedqa.ErrFixture)}
@@ -272,7 +283,8 @@ func runManagedWindowProbe(countArg string)(result error){
 	for job:=int64(1);job<=int64(windows);job++{
 		md:=setup.MetadataFor(job)
 		if _,err:=call(workerproto.QueuePause,nil);err!=nil{return err}
-		body,err:=workerproto.EncodeQueueCommand(workerproto.QueueEnqueue,workerproto.QueueCommand{URL:md.URL,Gallery:md.Gallery,MaxItems:count});if err!=nil{return err}
+		intent,err:=registry.NewSubmission(ctx,workerproto.QueueCommand{URL:md.URL,Gallery:md.Gallery,MaxItems:count},"disposable-window:"+dir);if err!=nil{return err}
+		body,err:=workerproto.EncodeQueueCommand(workerproto.QueueEnqueue,intent.Command);if err!=nil{return err}
 		raw,err:=call(workerproto.QueueEnqueue,body);if err!=nil{return err}
 		var accepted struct{JobID int64 `json:"job_id"`}
 		if json.Unmarshal(raw,&accepted)!=nil||accepted.JobID!=job{return managedqa.ErrFixture}
@@ -296,11 +308,6 @@ func runManagedWindowProbe(countArg string)(result error){
 		}
 		o.mu.Lock()
 		o.lease=lease
-		_,_,identity:=setup.Identity()
-		o.window=windowregistry.Grant{Request:md,OwnerGeneration:o.generation,PolicyGeneration:1,GalleryIdentity:"disposable-window:"+dir,Identity:identity}
-		o.grant=workerproto.StageAllocation{}
-		o.result=workerproto.WindowOutcome{}
-		o.manifest,o.projection,o.hash=nil,nil,""
 		o.mu.Unlock()
 		if _,err:=call(workerproto.QueueResume,nil);err!=nil{return err}
 		for{
@@ -309,8 +316,9 @@ func runManagedWindowProbe(countArg string)(result error){
 			if v.Status!="queued"&&v.Status!="running"{return fmt.Errorf("managed job %s: %s",v.Status,v.Error)}
 			select{case <-ctx.Done():return ctx.Err();case <-time.After(200*time.Millisecond):}
 		}
-		settled,err:=registry.ObserveSettlement(o.window)
-		if err!=nil||len(v.Items)!=count{return managedqa.ErrFixture}
+		o.mu.Lock();completedGrant:=o.window;o.mu.Unlock()
+		settled,err:=registry.ObserveSettlement(completedGrant)
+		if err!=nil||completedGrant.IntentID!=intent.Command.IntentID||completedGrant.Request!=md||len(v.Items)!=count{return managedqa.ErrFixture}
 		if setup.AllBlocked(job){
 			if settled.Kind!="no_transfer"||v.ManagedWindow!=nil{return managedqa.ErrFixture}
 			for i,it:=range v.Items{if it.PostID!=strconv.Itoa(setup.Offset(job)+i+1)||it.Outcome!=string(contract.OutcomeSkippedBlacklist)||it.ImageID!=0||it.Receipt!=""{return managedqa.ErrFixture}}

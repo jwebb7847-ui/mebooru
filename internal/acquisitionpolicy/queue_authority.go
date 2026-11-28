@@ -19,6 +19,9 @@ import(
 // lease, stable gallery and current policy. First scope is an explicit
 // ordinary strict download window without legacy extra options.
 func VerifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.MetadataPlanRequest)error{
+	return verifyRunningQueueWindow(ctx,dir,q,"")
+}
+func verifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.MetadataPlanRequest,intent string)error{
 	if ctx.Err()!=nil||!workerproto.ValidMetadataPlan(q)||q.Kind!=workerproto.MetadataStrictResolve||!filepath.IsAbs(dir)||filepath.Clean(dir)!=dir{return windowregistry.ErrWindow}
 	canonical,err:=filepath.EvalSymlinks(dir);if err!=nil||canonical!=dir{return windowregistry.ErrWindow}
 	path:=filepath.Join(dir,"queue.sqlite")
@@ -26,9 +29,10 @@ func VerifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.Metad
 	dsn:="file:"+strings.NewReplacer("%","%25","?","%3f","#","%23").Replace(filepath.ToSlash(path))+"?mode=ro&_pragma=busy_timeout(3000)&_pragma=query_only(1)"
 	db,err:=sql.Open("sqlite",dsn);if err!=nil{return err};defer db.Close()
 	db.SetMaxOpenConns(1)
+	tx,err:=db.BeginTx(ctx,&sql.TxOptions{ReadOnly:true});if err!=nil{return err};defer tx.Rollback()
 	var status string
 	var raw []byte
-	err=db.QueryRowContext(ctx,"SELECT status,data FROM jobs WHERE id=? AND length(data)<=? ",q.JobID,1<<20).Scan(&status,&raw)
+	err=tx.QueryRowContext(ctx,"SELECT status,data FROM jobs WHERE id=? AND length(data)<=? ",q.JobID,1<<20).Scan(&status,&raw)
 	if err!=nil{return errors.Join(windowregistry.ErrWindow,err)}
 	actual,err:=os.Lstat(path);if err!=nil||!os.SameFile(info,actual){return windowregistry.ErrWindow}
 	var stored struct{
@@ -54,6 +58,7 @@ func VerifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.Metad
 			SHA256 string `json:"sha256"`
 			ManagedWindow json.RawMessage `json:"managed_window"`
 		} `json:"job"`
+		ManagedIntentID string `json:"managed_intent_id"`
 		Offset int `json:"offset"`
 		Auto bool `json:"auto"`
 		Priority bool `json:"priority"`
@@ -72,6 +77,13 @@ func VerifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.Metad
 		j.Source!=""||j.Via!=""||j.ImageID!=0||j.Backend!=""||j.MD5!=""||j.SHA256!=""||
 		len(j.ManagedWindow)!=0||stored.Auto||stored.Priority||stored.Background||stored.Budgeted||stored.Watch!=0||
 		stored.ForceTo!=0||len(stored.ContribIDs)!=0||stored.ContribBacklog{return windowregistry.ErrWindow}
+	if stored.ManagedIntentID!=intent{return windowregistry.ErrWindow}
+	if intent!=""{
+		if !workerproto.ValidQueueIntentID(intent){return windowregistry.ErrWindow}
+		var id int64
+		if err:=tx.QueryRowContext(ctx,"SELECT job_id FROM managed_submissions WHERE intent_id=?",intent).Scan(&id);err!=nil||id!=q.JobID{return windowregistry.ErrWindow}
+	}
+	if err:=tx.Commit();err!=nil{return err}
 	return ctx.Err()
 }
 
@@ -84,4 +96,16 @@ func RegisterRunningWindow(ctx context.Context,dir string,registry *windowregist
 	if err:=VerifyRunningQueueWindow(ctx,dir,g.Request);err!=nil{return err}
 	if !check(ctx,g){return windowregistry.ErrWindow}
 	return registry.Register(ctx,g)
+}
+
+
+// RegisterRunningIntentWindow joins the separately persisted owner
+// submission and worker queue assignment with the current owner grant.
+// The caller must still check actual current policy/runtime/gallery
+// and online lease. It never creates intent from worker-provided data.
+func RegisterRunningIntentWindow(ctx context.Context,dir string,registry *windowregistry.Registry,g windowregistry.Grant,check func(context.Context,windowregistry.Grant)bool)error{
+	if registry==nil||check==nil||!workerproto.ValidQueueIntentID(g.IntentID)||!check(ctx,g){return windowregistry.ErrWindow}
+	if err:=verifyRunningQueueWindow(ctx,dir,g.Request,g.IntentID);err!=nil{return err}
+	if !check(ctx,g){return windowregistry.ErrWindow}
+	return registry.BindSubmission(ctx,g)
 }

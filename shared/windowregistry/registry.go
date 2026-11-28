@@ -6,6 +6,7 @@ package windowregistry
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -30,6 +31,7 @@ type Grant struct{
 	OwnerGeneration string
 	PolicyGeneration uint64
 	GalleryIdentity string
+	IntentID string
 	Identity acquisitionplan.MetadataIdentity
 }
 type Outcome struct{
@@ -51,7 +53,7 @@ func(r *Registry)Close()error{return r.root.Close()}
 func validHex(s string,n int)bool{b,err:=hex.DecodeString(s);return err==nil&&len(b)==n&&hex.EncodeToString(b)==s}
 func valid(g Grant)bool{
 	if !workerproto.ValidMetadataPlan(g.Request)||g.Request.Kind!=workerproto.MetadataStrictResolve||
-		!validHex(g.OwnerGeneration,32)||g.OwnerGeneration==strings.Repeat("0",64)||g.PolicyGeneration==0||
+		!validHex(g.OwnerGeneration,32)||g.OwnerGeneration==strings.Repeat("0",64)||g.PolicyGeneration==0||g.IntentID!=""&&!workerproto.ValidQueueIntentID(g.IntentID)||
 		len(g.GalleryIdentity)<1||len(g.GalleryIdentity)>1024||!utf8.ValidString(g.GalleryIdentity)||strings.ContainsFunc(g.GalleryIdentity,unicode.IsControl){return false}
 	// Reconstruct the credential-free qualified config's actual digest
 	// and validate the exact runtime version/artifact/manifest identity.
@@ -87,14 +89,14 @@ func(r *Registry) write(ctx context.Context,path string,v any)error{
 // validating the persisted job and current policy. Existing IDs cannot
 // be replaced; retry of an uncertain job requires explicit reconciliation.
 func(r *Registry)Register(ctx context.Context,g Grant)error{
-	if !valid(g){return ErrWindow}
+	if !valid(g)||!r.submissionBound(g){return ErrWindow}
 	q:=g.Request
 	for _,s:=range []string{"grant","claimed","outcome","settled"}{if !r.absent(name(q,s)){return ErrWindow}}
 	return r.write(ctx,name(q,"grant"),g)
 }
 func(r *Registry)Observe(q workerproto.MetadataPlanRequest,generation string)(Grant,error){
 	var g Grant
-	if !workerproto.ValidMetadataPlan(q)||r.read(name(q,"grant"),&g)!=nil||!valid(g)||g.Request!=q||g.OwnerGeneration!=generation{return Grant{},ErrWindow}
+	if !workerproto.ValidMetadataPlan(q)||r.read(name(q,"grant"),&g)!=nil||!valid(g)||g.Request!=q||g.OwnerGeneration!=generation||!r.submissionBound(g){return Grant{},ErrWindow}
 	return g,nil
 }
 
@@ -160,4 +162,56 @@ func(r *Registry)ObserveSettlement(g Grant)(Outcome,error){
 // the custodian positively settles it.
 func(r *Registry)Admitting(g Grant)bool{
 	return r.Current(g)&&r.absent(name(g.Request,"outcome"))
+}
+
+
+// Submission is durable user intent, not a network grant. It can be
+// created offline, before the worker has assigned a numeric queue ID.
+// Owner-generated ID is private correlation, not a credential or
+// same-user OS security boundary.
+type Submission struct{
+	Command workerproto.QueueCommand
+	GalleryIdentity string
+}
+func validSubmission(v Submission)bool{
+	if !workerproto.ValidQueueIntentID(v.Command.IntentID)||len(v.GalleryIdentity)<1||len(v.GalleryIdentity)>1024||
+		!utf8.ValidString(v.GalleryIdentity)||strings.ContainsFunc(v.GalleryIdentity,unicode.IsControl){return false}
+	_,err:=workerproto.EncodeQueueCommand(workerproto.QueueEnqueue,v.Command)
+	return err==nil
+}
+func submissionPath(id,suffix string)string{return "submission."+id+"."+suffix}
+func(r *Registry) NewSubmission(ctx context.Context,cmd workerproto.QueueCommand,stableGallery string)(Submission,error){
+	if cmd.IntentID!=""{return Submission{},ErrWindow}
+	var id [16]byte
+	if _,err:=rand.Read(id[:]);err!=nil{return Submission{},err}
+	cmd.IntentID=hex.EncodeToString(id[:])
+	v:=Submission{Command:cmd,GalleryIdentity:stableGallery}
+	if !validSubmission(v)||!r.absent(submissionPath(cmd.IntentID,"bound")){return Submission{},ErrWindow}
+	if err:=r.write(ctx,submissionPath(cmd.IntentID,"intent"),v);err!=nil{return Submission{},err}
+	return v,nil
+}
+func(r *Registry) ObserveSubmission(id string)(Submission,error){
+	var v Submission
+	if !workerproto.ValidQueueIntentID(id)||r.read(submissionPath(id,"intent"),&v)!=nil||!validSubmission(v)||v.Command.IntentID!=id{return Submission{},ErrWindow}
+	return v,nil
+}
+func matchesSubmission(v Submission,g Grant)bool{
+	q:=g.Request;c:=v.Command
+	return valid(g)&&validSubmission(v)&&g.IntentID==c.IntentID&&g.GalleryIdentity==v.GalleryIdentity&&q.URL==c.URL&&q.Gallery==c.Gallery&&
+		q.Source==workerproto.StrictQueueSource(c.URL)&&q.First==1&&uint64(q.Last)==uint64(c.MaxItems)
+}
+func(r *Registry) submissionBound(g Grant)bool{
+	if g.IntentID==""{return true} // isolated pre-submission fixtures only
+	v,err:=r.ObserveSubmission(g.IntentID)
+	var bound Grant
+	return err==nil&&matchesSubmission(v,g)&&r.read(submissionPath(g.IntentID,"bound"),&bound)==nil&&bound==g
+}
+// BindSubmission consumes exactly one owner intent for exactly one
+// running job/generation. An incomplete bind or lost response is
+// intentionally ambiguous; never create a second grant automatically.
+func(r *Registry) BindSubmission(ctx context.Context,g Grant)error{
+	v,err:=r.ObserveSubmission(g.IntentID)
+	if err!=nil||!matchesSubmission(v,g){return ErrWindow}
+	if err:=r.write(ctx,submissionPath(g.IntentID,"bound"),g);err!=nil{return err}
+	return r.Register(ctx,g)
 }
