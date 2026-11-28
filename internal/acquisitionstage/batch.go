@@ -258,6 +258,7 @@ func(a *Allocator) ObserveBatch(ctx context.Context,parent workerproto.StageAllo
 	a.mu.Lock();defer a.mu.Unlock()
 	var zero BatchOutcome
 	if ctx.Err()!=nil||!a.live(){return zero,ErrStageRefused}
+	if _,ok:=a.history[parent.Request.OperationID];ok{return a.historicalBatchLocked(ctx,parent)}
 	r,err:=a.load(parent.Request.OperationID);if err!=nil||r.Allocation!=parent{return zero,ErrStageRefused}
 	op,err:=openDir(a.root,parent.Request.OperationID);if err!=nil{return zero,err};defer op.Close()
 	e,err:=readSeal(op,parent);if err!=nil{return zero,err}

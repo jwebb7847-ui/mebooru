@@ -27,6 +27,8 @@ type HistoryEntry struct{
 	Allocation workerproto.StageAllocation
 	Closure operationClosure
 	TreeSHA256 string
+	BatchSHA256 string `json:",omitempty"`
+	BatchCharge uint64 `json:",omitempty"`
 }
 type HistoryAuthority func(context.Context,workerproto.StageAllocation,OwnerReceipt)error
 
@@ -77,9 +79,16 @@ func readHistoryEntry(ctx context.Context,history *os.Root,id,stage string)(Hist
 	op,err:=openDir(d,"operation");if err!=nil{return zero,err};defer op.Close()
 	r,err:=readRecord(op);if err!=nil||r.Allocation!=out.Allocation||r.StageRoot!=stage{return zero,ErrStageRecovery}
 	e,err:=readSeal(op,r.Allocation);if err!=nil{return zero,err}
-	if _,err:=readPublication(op,r,e);err!=nil{return zero,err}
-	p,err:=openDir(op,"publication");if err!=nil{return zero,err};defer p.Close()
-	c,err:=readOperationClosure(p,r,e);if err!=nil||c!=out.Closure{return zero,ErrStageRecovery}
+	if out.BatchSHA256!=""{
+		if !validDigest(out.BatchSHA256)||out.Closure!=(operationClosure{}){return zero,ErrStageRecovery}
+		v,charge,err:=archivableBatch(ctx,op,r,e)
+		if err!=nil||charge!=out.BatchCharge||v!=out.BatchSHA256{return zero,ErrStageRecovery}
+	}else{
+		if out.BatchCharge!=0{return zero,ErrStageRecovery}
+		if _,err:=readPublication(op,r,e);err!=nil{return zero,err}
+		p,err:=openDir(op,"publication");if err!=nil{return zero,err};defer p.Close()
+		c,err:=readOperationClosure(p,r,e);if err!=nil||c!=out.Closure{return zero,ErrStageRecovery}
+	}
 	hash,err:=treeDigest(ctx,op);if err!=nil||hash!=out.TreeSHA256{return zero,ErrStageRecovery}
 	return out,nil
 }
@@ -97,8 +106,8 @@ func(a *Allocator) loadHistory()error{
 	entries,err:=list(h,maxHistoryEntries);if err!=nil{return err}
 	for _,e:=range entries{
 		v,err:=readHistoryEntry(context.Background(),h,e.Name(),a.path)
-		if err!=nil||a.historyTransfers[v.Allocation.TransferID]||v.Closure.RetainedPayloadBytes>maxReservedBytes-a.historyCharge{return ErrStageRecovery}
-		a.history[e.Name()]=v;a.historyTransfers[v.Allocation.TransferID]=true;a.historyCharge+=v.Closure.RetainedPayloadBytes
+		if err!=nil||a.historyTransfers[v.Allocation.TransferID]||v.charge()>maxReservedBytes-a.historyCharge{return ErrStageRecovery}
+		a.history[e.Name()]=v;a.historyTransfers[v.Allocation.TransferID]=true;a.historyCharge+=v.charge()
 	}
 	a.historyInfo=info
 	return nil
@@ -122,8 +131,19 @@ func(a *Allocator) ArchiveClosed(ctx context.Context,grant workerproto.StageAllo
 	hash,err:=treeDigest(ctx,op);op.Close()
 	if err!=nil||charge>maxReservedBytes-a.historyCharge{return zero,ErrStageRecovery}
 	v:=HistoryEntry{Version:1,Allocation:grant,Closure:c,TreeSHA256:hash}
-	raw,err:=json.Marshal(v);if err!=nil||len(raw)>maxRecordBytes{return zero,ErrStageLimit}
 	if authorize(ctx,grant,c.Witness)!=nil||ctx.Err()!=nil{return zero,ErrStageRefused}
+	return a.archiveEvidenceLocked(ctx,v)
+}
+func(v HistoryEntry)charge()uint64{
+	if v.BatchSHA256!=""{return v.BatchCharge}
+	return v.Closure.RetainedPayloadBytes
+}
+func(a *Allocator) archiveEvidenceLocked(ctx context.Context,v HistoryEntry)(HistoryEntry,error){
+	var zero HistoryEntry
+	grant:=v.Allocation
+	charge:=v.charge()
+	if charge>maxReservedBytes-a.historyCharge{return zero,ErrStageLimit}
+	raw,err:=json.Marshal(v);if err!=nil||len(raw)>maxRecordBytes{return zero,ErrStageLimit}
 	a.historyPoisoned=true // failure after this point blocks all new grants until reopen/reconciliation
 	if a.historyInfo==nil{
 		if err:=a.root.Mkdir(historyDirName,0700);err!=nil{return zero,ErrStageRecovery}
@@ -154,4 +174,57 @@ func(a *Allocator) HistoricalReceipt(ctx context.Context,id string)(HistoryEntry
 	got,err:=readHistoryEntry(ctx,h,id,a.path)
 	if err!=nil||got!=want{return zero,ErrStageRecovery}
 	return got,nil
+}
+
+
+func archivableBatch(ctx context.Context,op *os.Root,r record,e SealedEvidence)(string,uint64,error){
+	p,err:=readBatchPlan(op,r,e);if err!=nil{return "",0,err}
+	b,err:=openDir(op,"batch");if err!=nil{return "",0,err};defer b.Close()
+	out,err:=readBatchResult(b,p);if err!=nil{return "",0,err}
+	m,err:=readBatchReclaim(b,p,out,true);if err!=nil{return "",0,err}
+	if err:=verifyBatchPrivate(ctx,op,r,e,true,true);err!=nil{return "",0,err}
+	return m.ResultSHA256,m.RetainedSidecarBytes,nil
+}
+
+// ArchiveBatch preserves a completed/reclaimed parent and its complete
+// aggregate, preventing every normal window from consuming an active
+// inventory entry indefinitely. No deletion or re-download permission.
+func(a *Allocator) ArchiveBatch(ctx context.Context,parent workerproto.StageAllocation,authorize BatchReclaimAuthority)(HistoryEntry,error){
+	a.mu.Lock();defer a.mu.Unlock()
+	var zero HistoryEntry
+	if authorize==nil||ctx.Err()!=nil||!a.live()||!a.historyLive()||len(a.history)>=maxHistoryEntries{return zero,ErrStageRefused}
+	if _,ok:=a.history[parent.Request.OperationID];ok{return zero,ErrStageRefused}
+	r,err:=a.load(parent.Request.OperationID);if err!=nil||r.Allocation!=parent{return zero,ErrStageRefused}
+	op,err:=openDir(a.root,parent.Request.OperationID);if err!=nil{return zero,err}
+	v,err:=func()(HistoryEntry,error){
+		defer op.Close()
+		e,err:=readSeal(op,parent);if err!=nil{return zero,err}
+		hash,charge,err:=archivableBatch(ctx,op,r,e);if err!=nil{return zero,err}
+		p,err:=readBatchPlan(op,r,e);if err!=nil{return zero,err}
+		b,err:=openDir(op,"batch");if err!=nil{return zero,err};defer b.Close()
+		out,err:=readBatchResult(b,p);if err!=nil{return zero,err}
+		if err:=a.verifyBatchChildrenLocked(ctx,p,out);err!=nil{return zero,err}
+		if authorize(ctx,parent,out)!=nil{return zero,ErrStageRefused}
+		tree,err:=treeDigest(ctx,op);if err!=nil{return zero,err}
+		if authorize(ctx,parent,out)!=nil{return zero,ErrStageRefused}
+		return HistoryEntry{Version:1,Allocation:parent,TreeSHA256:tree,BatchSHA256:hash,BatchCharge:charge},nil
+	}()
+	if err!=nil{return zero,err}
+	return a.archiveEvidenceLocked(ctx,v)
+}
+func(a *Allocator) historicalBatchLocked(ctx context.Context,parent workerproto.StageAllocation)(BatchOutcome,error){
+	var zero BatchOutcome
+	v,ok:=a.history[parent.Request.OperationID]
+	if !ok||v.Allocation!=parent||v.BatchSHA256==""||!a.historyLive(){return zero,ErrStageRefused}
+	h,err:=openDir(a.root,historyDirName);if err!=nil{return zero,err};defer h.Close()
+	got,err:=readHistoryEntry(ctx,h,parent.Request.OperationID,a.path);if err!=nil||got!=v{return zero,ErrStageRecovery}
+	dir,err:=openDir(h,parent.Request.OperationID);if err!=nil{return zero,err};defer dir.Close()
+	op,err:=openDir(dir,"operation");if err!=nil{return zero,err};defer op.Close()
+	r,err:=readRecord(op);if err!=nil{return zero,err}
+	e,err:=readSeal(op,parent);if err!=nil{return zero,err}
+	p,err:=readBatchPlan(op,r,e);if err!=nil{return zero,err}
+	b,err:=openDir(op,"batch");if err!=nil{return zero,err};defer b.Close()
+	out,err:=readBatchResult(b,p);if err!=nil{return zero,err}
+	if err:=a.verifyBatchChildrenLocked(ctx,p,out);err!=nil{return zero,err}
+	return out,nil
 }

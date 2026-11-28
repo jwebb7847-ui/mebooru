@@ -123,6 +123,10 @@ func TestOwnerBatchMixedAndArchive(t *testing.T){
 			_,closed,reserved,err:=a.inventoryWithClosure(ctx)
 			var side uint64;for _,f:=range files{side+=uint64(f.SidecarSize)}
 			if err!=nil||!closed[parent.Request.OperationID]||reserved!=2*side{t.Fatal("retained accounting",reserved,err)}
+			if _,err:=a.ArchiveBatch(ctx,parent,func(context.Context,workerproto.StageAllocation,BatchOutcome)error{return nil});err!=nil{t.Fatal("archive parent",err)}
+			again,err=a.ObserveBatch(ctx,parent);if err!=nil||!reflect.DeepEqual(again,out){t.Fatal("archived batch",err)}
+			records,_,reserved,err:=a.inventoryWithClosure(ctx);if err!=nil||len(records)!=0||reserved!=2*side{t.Fatal("archive inventory",records,reserved,err)}
+			if _,err:=a.Allocate(ctx,parent.Request);err==nil{t.Fatal("archived parent replay")}
 		})
 	}
 }
