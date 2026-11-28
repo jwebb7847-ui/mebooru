@@ -525,6 +525,7 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.free("GET /internal/browse", s.localOnly(s.browseDirs))
 	rt.free("POST /internal/open-folder", s.localOnly(s.openFolder))
 	rt.free("POST /settings/desktop", s.localOnly(s.settingsDesktopPost))
+	rt.free("POST /settings/acquisition", s.saveAcquisitionSettings)
 	rt.free("POST /settings/quit", s.settingsQuit)
 	rt.free("POST /settings/restart", s.localOnly(s.settingsRestart))
 	rt.free("GET /internal/desktop-power", s.localOnly(s.desktopPowerFragment))
@@ -804,6 +805,7 @@ type baseData struct {
 	HideUnrated           bool
 	RequestStart          time.Time
 	MonloaderPaired       bool
+	ManagedLoader         bool
 	MonloaderUsable       bool
 	MonloaderConn         string
 	MonloaderLight        webui.PeerLight
@@ -872,7 +874,7 @@ func (s *Server) base(r *http.Request, nav, title string) baseData {
 	if s.ml.Paused() {
 		ml = monloader.Status{Conn: peer.ConnPaused}
 	}
-	paired := s.pairedWith(monloader.App)
+	paired := s.managedLoader == nil && s.pairedWith(monloader.App)
 	monloaderUsable := s.ml.Usable()
 	theme := s.activeTheme()
 	return baseData{
@@ -892,6 +894,7 @@ func (s *Server) base(r *http.Request, nav, title string) baseData {
 		BooruFavicon:          themeFaviconURL(theme),
 		Mascot:                themeMascots(theme),
 		MonloaderPaired:       paired,
+		ManagedLoader:         s.managedLoader != nil,
 		MonloaderUsable:       monloaderUsable,
 		MonloaderConn:         ml.Conn,
 		MonloaderLight:        s.monloaderLight(ml.Conn, ml.Version, ml.APIMismatch, ml.Panels()),
@@ -1116,6 +1119,9 @@ func themeFaviconVersion(e webui.Theme) string {
 func (s *Server) monloaderLink() monloader.LinkConfig {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
+	if s.cfg.Desktop.ManagedAcquisition {
+		return monloader.LinkConfig{Paused: true}
+	}
 	c := monloader.LinkConfig{APIURL: s.cfg.Monloader.APIURL, Token: s.cfg.Monloader.APIToken, Paused: s.cfg.Monloader.Paused}
 	if t := s.cfg.Auth.Tokens.Paired(monloader.App); t != nil {
 		c.PeerURL, c.Paired = t.PeerURL, true

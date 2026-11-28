@@ -102,6 +102,7 @@ button.footer-rating-link { color: var(--fg-dim); }
   padding: 6px 8px;
 }
 .loader-import > span { align-self: center; }
+.settings-page-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .loader-jobs { margin-top: 8px; }
 .loader-jobs td { overflow-wrap: anywhere; }
 .loader-jobs > tbody > tr > td:nth-child(2) { max-width: 48ch; }

@@ -143,7 +143,7 @@
       <span class="footer-sep">·</span><form hx-post="/internal/rating-ceiling?unrated={{if .HideUnrated}}show{{else}}hide{{end}}" hx-swap="none" hx-on::after-request="if(event.detail.successful){clearSelection();window.location.reload()}" style="display:inline"><button type="submit" class="footer-rating-link" title="{{if .HideUnrated}}Unrated files are hidden; click to show them{{else}}Unrated files are shown; click to hide them{{end}} (independent of rating ceiling, this browser only)">unrated: {{if .HideUnrated}}[hidden]{{else}}[shown]{{end}}</button></form>
     </div>
     <div id="footer-right">
-      {{template "webui/peer_light" .MonloaderLight}}<span class="footer-peer-sep"> · </span><span class="footer-wide">{{template "footer_version" dict "D" .}} · <a href="#" id="footer-shortcuts" onclick="openShortcutSheet();return false">shortcuts</a> · </span><a href="{{.DocURL}}" target="_blank" rel="noopener">help</a><span class="footer-wide"> · <a href="/api/v1/docs" target="_blank" rel="noopener">API</a></span>
+      {{if .ManagedLoader}}<a href="/settings#meloader">Acquisition</a>{{else}}{{template "webui/peer_light" .MonloaderLight}}{{end}}<span class="footer-peer-sep"> · </span><span class="footer-wide">{{template "footer_version" dict "D" .}} · <a href="#" id="footer-shortcuts" onclick="openShortcutSheet();return false">shortcuts</a> · </span><a href="{{.DocURL}}" target="_blank" rel="noopener">help</a><span class="footer-wide"> · <a href="/api/v1/docs" target="_blank" rel="noopener">API</a></span>
       {{if not .Degraded}}
       <span id="sync-flash"></span>
       <form id="sync-form" hx-post="/internal/sync" hx-swap="none"

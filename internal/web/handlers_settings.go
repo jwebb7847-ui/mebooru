@@ -16,6 +16,7 @@ import (
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/session"
 	"github.com/jwebb7847-ui/mebooru/shared/webui"
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/models"
@@ -55,6 +56,9 @@ type settingsData struct {
 	AcquisitionOffline bool
 	AcquisitionLocal   bool
 	Acquisition        AcquisitionSettings
+	AcquisitionError   bool
+	AcquisitionSaved   bool
+	AcquisitionMax     int
 	FFmpegAvailable    bool
 }
 
@@ -99,14 +103,15 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	taggerRows := append(supportedRows, unsupportedRows...)
 	var acquisition AcquisitionSettings
+	var acquisitionErr error
 	var offline bool
 	var legacy loaderPanel
 	managed := s.managedLoader != nil
 	local := desktop.LocalRequest(r)
 	if managed {
 		offline = s.managedLoader.Offline()
-		if provider, ok := s.managedLoader.(managedSettingsProvider); ok && local {
-			acquisition = provider.AcquisitionSettings()
+		if editor, ok := s.managedLoader.(managedSettingsEditor); ok && local {
+			acquisition, acquisitionErr = editor.ReadAcquisitionSettings()
 		}
 	} else {
 		legacy = s.loaderPanel(r, base, "/settings")
@@ -131,6 +136,9 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		AcquisitionOffline: offline,
 		AcquisitionLocal:   local,
 		Acquisition:        acquisition,
+		AcquisitionError:   acquisitionErr != nil,
+		AcquisitionSaved:   local && managed && r.URL.Query().Get("acquisition") == "saved",
+		AcquisitionMax:     workerproto.MaxMetadataWindow,
 		Themes:             s.themeCluster(),
 		ThemesDir:          s.themesDir(),
 		DesktopProfile:     s.desktopLocal(r),

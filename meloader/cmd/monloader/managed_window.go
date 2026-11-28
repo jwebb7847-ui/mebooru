@@ -149,6 +149,10 @@ func(windowTaxonomy)RoundTrip(req *http.Request)(*http.Response,error){
 }
 
 func dispatchManagedWindow(args []string)bool{
+	if len(args)==1&&args[0]=="internal-managed-check-blacklist-v1"{
+		if err:=checkManagedBlacklist();err!=nil{fmt.Fprintln(os.Stderr,err);os.Exit(2)}
+		return true
+	}
 	if len(args)!=0&&args[0]=="internal-managed-policy-v1"{
 		if err:=runManagedPolicy(args[1:]);err!=nil{fmt.Fprintln(os.Stderr,"managed source policy:",err);os.Exit(2)}
 		return true

@@ -45,7 +45,15 @@
 {{$pluginRows := .PluginRows}}
 
 <div id="settings-page">
-  <h2>Settings</h2>
+  <div class="settings-page-heading">
+    <h2>Settings</h2>
+    {{if and .ManagedAcquisition .AcquisitionLocal}}
+    <form method="post" action="/settings/quit">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <button type="submit">Quit Mebooru</button>
+    </form>
+    {{end}}
+  </div>
 
   {{if .DesktopProfile}}
   {{$dk := .Desktop}}
@@ -1334,13 +1342,6 @@
   <section id="meloader" class="settings-section">
     {{if .ManagedAcquisition}}
     {{template "webui/settings_section_header" dict "Title" "Acquisition"}}
-    {{if .Acquisition.PolicyFile}}
-    <dl>
-      <dt>Blacklist and source settings</dt><dd><code>{{.Acquisition.PolicyFile}}</code></dd>
-      <dt>Configured gallery-dl</dt><dd><code>{{.Acquisition.Runtime}}</code></dd>
-      <dt>Maximum posts per import</dt><dd>{{.Acquisition.MaxItems}}</dd>
-    </dl>
-    {{end}}
     <div class="settings-actions">
       <form method="post" action="/loader/offline">
         <input type="hidden" name="_csrf" value="{{$csrf}}">
@@ -1349,13 +1350,37 @@
         <span>Acquisition is {{if .AcquisitionOffline}}offline{{else}}online{{end}}.</span>
         <button type="submit">{{if .AcquisitionOffline}}Go online{{else}}Go offline{{end}}</button>
       </form>
-      {{if and .AcquisitionLocal (not .DesktopProfile)}}
-      <form method="post" action="/settings/quit">
-        <input type="hidden" name="_csrf" value="{{$csrf}}">
-        <button type="submit">Quit Mebooru</button>
-      </form>
-      {{end}}
     </div>
+    {{if .Acquisition.PolicyFile}}
+    <div id="flash-acquisition" role="status">
+      {{if .AcquisitionError}}<div class="flash flash-err">Could not read the acquisition settings file.</div>
+      {{else if .AcquisitionSaved}}<div class="flash flash-ok">Acquisition settings saved.</div>{{end}}
+    </div>
+    {{if not .AcquisitionError}}
+    <form method="post" action="/settings/acquisition" hx-post="/settings/acquisition" hx-target="#flash-acquisition">
+      <input type="hidden" name="_csrf" value="{{$csrf}}">
+      <div class="settings-cols">
+        <div class="field">
+          <label for="acquisition-blacklist">Strict blacklist</label>
+          <textarea id="acquisition-blacklist" name="blacklist" rows="8" spellcheck="false">{{.Acquisition.Blacklist}}</textarea>
+          <span class="field-hint">Enter one rule per line. New jobs use the saved rules. Existing images stay in their galleries.</span>
+        </div>
+        <div class="field">
+          <label for="acquisition-runtime">gallery-dl executable</label>
+          <input id="acquisition-runtime" type="text" name="runtime" value="{{.Acquisition.Runtime}}" required>
+          <label for="acquisition-delay">Request delay (seconds)</label>
+          <input id="acquisition-delay" type="number" name="sleep_request" min="0" step="any" value="{{.Acquisition.SleepRequest}}" required>
+          <label for="acquisition-limit">Maximum posts per import</label>
+          <input id="acquisition-limit" type="number" name="max_items" min="1" max="{{.AcquisitionMax}}" value="{{.Acquisition.MaxItems}}" required>
+          <span class="field-hint">Restart Mebooru to apply runtime, delay, and post limit changes.</span>
+          {{if .Acquisition.NeedsRestart}}<span role="status">Restart required to apply saved changes.</span>{{end}}
+        </div>
+      </div>
+      <div class="settings-actions"><button type="submit">Save acquisition settings</button></div>
+    </form>
+    {{end}}
+    <p class="field-hint">Settings file <code>{{.Acquisition.PolicyFile}}</code></p>
+    {{end}}
     {{else}}
     {{template "webui/settings_section_header" dict "Title" "Meloader"}}
     {{template "partials/meloader_settings_panel.html" (dict "Panel" .LoaderSettings)}}

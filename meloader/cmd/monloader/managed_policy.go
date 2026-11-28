@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -16,6 +17,19 @@ import (
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/pipeline"
 )
+
+func checkManagedBlacklist() error {
+	const limit = 64 << 10
+	raw, err := io.ReadAll(io.LimitReader(os.Stdin, limit+1))
+	if err != nil || len(raw) > limit {
+		return errors.New("The blacklist is too large to save.")
+	}
+	rules, err := mapping.CleanBlacklist(string(raw))
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(rules)
+}
 
 func runManagedPolicy(args []string) error {
 	if len(args) != 2 {

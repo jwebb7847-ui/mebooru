@@ -4,6 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 
 	"github.com/monbooru/monbooru/internal/monloader"
 )
@@ -25,14 +30,51 @@ type managedRetry interface {
 
 type AcquisitionSettings struct {
 	Runtime, PolicyFile string
+	Blacklist           string
+	SleepRequest        float64
 	MaxItems            int
+	NeedsRestart        bool
 }
 
 type managedSettingsProvider interface {
 	AcquisitionSettings() AcquisitionSettings
 }
 
+type managedSettingsEditor interface {
+	ReadAcquisitionSettings() (AcquisitionSettings, error)
+	SaveAcquisitionSettings(context.Context, AcquisitionSettings) error
+}
+
 var ErrManagedImportUnsupported = errors.New("unsupported managed import")
+
+func (s *Server) saveAcquisitionSettings(w http.ResponseWriter, r *http.Request) {
+	editor, ok := s.managedLoader.(managedSettingsEditor)
+	if !ok || !desktop.LocalRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
+	if !parseFormOK(w, r) {
+		return
+	}
+	settings := AcquisitionSettings{Runtime: strings.TrimSpace(r.FormValue("runtime")), Blacklist: r.FormValue("blacklist")}
+	var err error
+	settings.MaxItems, err = strconv.Atoi(r.FormValue("max_items"))
+	if err != nil || settings.MaxItems < 1 || settings.MaxItems > workerproto.MaxMetadataWindow {
+		externalErr(w, r, "Enter a maximum post count within the displayed range.", http.StatusBadRequest)
+		return
+	}
+	settings.SleepRequest, err = strconv.ParseFloat(r.FormValue("sleep_request"), 64)
+	if err != nil {
+		externalErr(w, r, "Enter a request delay in seconds.", http.StatusBadRequest)
+		return
+	}
+	if err := editor.SaveAcquisitionSettings(r.Context(), settings); err != nil {
+		externalErr(w, r, err.Error(), http.StatusBadRequest)
+		return
+	}
+	hxRedirect(w, r, "/settings?acquisition=saved#meloader")
+}
 
 func (s *Server) loaderOffline(w http.ResponseWriter, r *http.Request) {
 	if s.managedLoader == nil {

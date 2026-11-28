@@ -19,6 +19,34 @@ import (
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 )
 
+type liveSettings struct {
+	GalleryDL struct {
+		Binary string  `toml:"binary_path"`
+		Sleep  float64 `toml:"sleep_request"`
+		Raw    string  `toml:"raw_config"`
+	} `toml:"gallerydl"`
+	Downloader struct {
+		Limit  int    `toml:"max_items_per_job"`
+		Folder string `toml:"default_folder"`
+	} `toml:"downloader"`
+	Tags struct {
+		Blacklist []string `toml:"blacklist"`
+	} `toml:"tags"`
+	Sites []struct {
+		Username, Password, Cookies, Options string
+		Agent                                string `toml:"user_agent"`
+		APIKey                               string `toml:"api_key"`
+		UserID                               string `toml:"user_id"`
+	} `toml:"sites"`
+}
+
+func (conf *liveSettings) decode(body []byte) error {
+	conf.GalleryDL.Sleep = 1
+	conf.Downloader.Limit = 200
+	_, err := toml.Decode(string(body), conf)
+	return err
+}
+
 func readLiveConfig(path string) (windowregistry.LiveConfig, error) {
 	var out windowregistry.LiveConfig
 	if path == "" {
@@ -28,28 +56,19 @@ func readLiveConfig(path string) (windowregistry.LiveConfig, error) {
 	if err != nil {
 		return out, err
 	}
-	var conf struct {
-		GalleryDL struct {
-			Binary string  `toml:"binary_path"`
-			Sleep  float64 `toml:"sleep_request"`
-			Raw    string  `toml:"raw_config"`
-		} `toml:"gallerydl"`
-		Downloader struct {
-			Limit  int    `toml:"max_items_per_job"`
-			Folder string `toml:"default_folder"`
-		} `toml:"downloader"`
-		Sites []struct {
-			Username, Password, Cookies, Options string
-			Agent                                string `toml:"user_agent"`
-			APIKey                               string `toml:"api_key"`
-			UserID                               string `toml:"user_id"`
-		} `toml:"sites"`
-	}
-	conf.GalleryDL.Sleep = 1
-	conf.Downloader.Limit = 200
-	if _, err := toml.DecodeFile(path, &conf); err != nil {
+	body, err := os.ReadFile(path)
+	if err != nil {
 		return out, err
 	}
+	var conf liveSettings
+	if err := conf.decode(body); err != nil {
+		return out, err
+	}
+	return conf.bind(path)
+}
+
+func (conf *liveSettings) bind(path string) (windowregistry.LiveConfig, error) {
+	var out windowregistry.LiveConfig
 	if strings.TrimSpace(conf.GalleryDL.Raw) != "" || conf.Downloader.Folder != "" {
 		return out, errors.New("managed acquisition supports generated gallery-dl options and Mebooru gallery naming settings")
 	}

@@ -54,6 +54,10 @@ func (s *Server) pairRequest(w http.ResponseWriter, r *http.Request) {
 		pairRefuse(w, &pairing.Refusal{Status: http.StatusBadRequest, Code: pairing.CodeInvalidRequest, Msg: err.Error()})
 		return
 	}
+	if s.managedLoader != nil && body.App == monloader.App {
+		pairRefuse(w, &pairing.Refusal{Status: http.StatusConflict, Code: "acquisition_managed", Msg: "Mebooru manages its acquisition worker locally."})
+		return
+	}
 	if body.Contract > plugins.Contract {
 		msg := fmt.Sprintf("%s speaks plugin contract %d, this Mebooru speaks %d", body.App, body.Contract, plugins.Contract)
 		logx.Warnf("pairing: refused: %s", msg)
