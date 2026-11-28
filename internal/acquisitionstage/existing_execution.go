@@ -131,6 +131,15 @@ func(a *Allocator) existingLinkEvidenceLocked(ctx context.Context,grant workerpr
 	}
 	current,err=a.inspectExistingPublicationTargetModeLocked(ctx,grant,g,plan.Target.Kind,existingPlanAuthority(plan.Target.Kind,disposition,extras),phase)
 	if err!=nil||!sameExistingPublicationTarget(plan.Target,current){return zero,noPlan,ErrStageRefused}
+	if m.Naming!=nil{
+		v:=plan.Target.Media
+		preview,err:=gallery.PreviewMeasuredReceivedNaming(ctx,g.DB,g.Boundary(),*m.Naming,e.Files[0].SHA256,e.Files[0].Size,v.Format,v.Width,v.Height,v.MD5)
+		if err!=nil||preview!=*m.Preview{return zero,noPlan,ErrStageRefused}
+		check:=newPublicationPlan{File:e.Files[0],Preview:preview,DestinationIdentity:m.DestinationIdentity}
+		if err:=verifyPlanDestinations(r,dst,&check);err!=nil{return zero,noPlan,err}
+	}
+	again,err=readExistingTargetPlan(p,r,e.Files[0])
+	if err!=nil||!sameExistingPublicationTarget(plan.Target,again.Target)||!a.livePublicationRoots(grant,r,p,src,dst){return zero,noPlan,ErrStageRecovery}
 	return m,plan,nil
 }
 
@@ -189,6 +198,12 @@ func(a *Allocator) observeExistingLandingLocked(ctx context.Context,grant worker
 	observe:=func()(landingObservation,error){
 		job,err:=auth(ctx,grant)
 		if err!=nil||!job.Empty(){return zero,ErrStageRefused}
+		var req gallery.ReceivedNamingRequest
+		if plan.Target.Kind==existingRestore{
+			if m.Naming==nil||naming==nil{return zero,ErrStageRefused}
+			req,err=naming(ctx,grant)
+			if err!=nil||req!=*m.Naming{return zero,ErrStageRefused}
+		}
 		current,err:=observedDB(r,g)
 		if err!=nil||current!=plan.Target.DB{return zero,ErrStageRecovery}
 		snapshot,err:=a.boundPolicyLocked(ctx,grant)
@@ -213,8 +228,6 @@ func(a *Allocator) observeExistingLandingLocked(ctx context.Context,grant worker
 			if err:=verifyRestoredLanding(ctx,g,r,e,*plan.Target.Restore,dst,row);err!=nil{return zero,err}
 			rating,err:=readImageRating(ctx,g,row.ImageID)
 			if err!=nil||rating!=plan.Target.Restore.RestoreRating{return zero,ErrStageRecovery}
-			req,err:=naming(ctx,grant)
-			if err!=nil||req!=*m.Naming{return zero,ErrStageRefused}
 			preview,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),row.ImageID,req)
 			if err!=nil||preview!=*m.Preview{return zero,ErrStageRecovery}
 			check:=newPublicationPlan{File:f,Preview:preview,DestinationIdentity:m.DestinationIdentity}
@@ -223,6 +236,10 @@ func(a *Allocator) observeExistingLandingLocked(ctx context.Context,grant worker
 		}
 		s,err:=a.scope(ctx,grant.Request)
 		if err!=nil||!matches(r,s)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRefused}
+		again,err:=readExistingTargetPlan(p,r,f)
+		if err!=nil||!sameExistingPublicationTarget(plan.Target,again.Target){return zero,ErrStageRecovery}
+		link,err:=readExistingLinkAttempt(p,r,again)
+		if err!=nil||!reflect.DeepEqual(link,m)||readExistingLandingAttempt(p,link)!=nil{return zero,ErrStageRecovery}
 		return row,nil
 	}
 	first,err:=observe();if err!=nil{return zero,err}
@@ -252,6 +269,8 @@ func(a *Allocator) landExistingTarget(ctx context.Context,grant workerproto.Stag
 	syncDirectory(p)
 	guard,current,err:=a.existingLinkEvidenceLocked(ctx,grant,g,disposition,extras,naming,"placed")
 	if err!=nil||!reflect.DeepEqual(m,guard)||!sameExistingPublicationTarget(plan.Target,current.Target)||readExistingLandingAttempt(p,m)!=nil{return ErrStageRefused}
+	stored,err=readExistingLinkAttempt(p,r,plan)
+	if err!=nil||!reflect.DeepEqual(stored,m)||!a.livePublicationRoots(grant,r,p,src,dst){return ErrStageRecovery}
 	f:=e.Files[0]
 	if err:=readCheckedLinks(ctx,dst,finalName(grant,f),f.Size,f.SHA256,io.Discard,2);err!=nil{return err}
 	res,err:=g.LandInPlace(ctx,filepath.Join(r.GalleryRoot,finalName(grant,f)),library.LandSpec{Origin:newReceiptOrigin,MaxBytes:f.Size})
