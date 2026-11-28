@@ -3,7 +3,6 @@ package acquisitionstage
 import(
 	"context"
 
-	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/acquisitionpolicy"
 	"github.com/monbooru/monbooru/internal/library"

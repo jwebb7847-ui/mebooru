@@ -42,6 +42,9 @@ type BatchOutcome struct{
 }
 type BatchOwner struct{
 	Current func(context.Context,workerproto.StageAllocation)error
+	// Archive is optional; it moves already-closed child evidence intact
+	// out of active inventory as a normal batch progresses.
+	Archive HistoryAuthority
 	// Child must independently authorize the exact narrowed request and
 	// return current owner policy/custody callbacks for it.
 	Child func(context.Context,workerproto.StageAllocation,workerproto.StageAllocateRequest,acquisitionplan.ApprovedPolicyRow)(OwnerCommit,error)
@@ -233,6 +236,9 @@ func(a *Allocator) CommitBatchForOwner(ctx context.Context,parent workerproto.St
 		child,err:=a.copyBatchChild(ctx,parent,item,one,row,auth);if err!=nil{return a.batchFailure(ctx,parent,err)}
 		w,err:=a.CommitSealedForOwner(ctx,child,set,auth);if err!=nil{return a.batchFailure(ctx,parent,err)}
 		if err:=a.persistBatchItem(ctx,parent,p,item,w);err!=nil{return a.batchFailure(ctx,parent,err)}
+		if owner.Archive!=nil{
+			if _,err:=a.ArchiveClosed(ctx,child,owner.Archive);err!=nil{return a.batchFailure(ctx,parent,err)}
+		}
 	}
 	if owner.Current(ctx,parent)!=nil{return a.batchFailure(ctx,parent,ErrStageRefused)}
 	a.mu.Lock();defer a.mu.Unlock()

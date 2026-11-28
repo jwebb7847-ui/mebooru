@@ -110,20 +110,27 @@ func(a *Allocator) ReclaimBatch(ctx context.Context,parent workerproto.StageAllo
 		if resume{if _,err:=readBatchReclaim(b,p,out,false);err!=nil{return err}
 		}else if _,err:=b.Lstat("reclaim-attempt.json");!errors.Is(err,os.ErrNotExist){return ErrStageRefused}
 		dst,err:=os.OpenRoot(r.GalleryRoot);if err!=nil{return ErrStageRecovery};defer dst.Close()
-		check:=func()error{
+		current:=func()error{
 			if fence()!=nil||authorize(ctx,parent,out)!=nil||ctx.Err()!=nil||!a.live(){return ErrStageRefused}
 			s,err:=a.scope(ctx,parent.Request);if err!=nil||!matches(r,s){return ErrStageRefused}
-			if err:=a.verifyBatchChildrenLocked(ctx,p,out);err!=nil{return err}
-			for i,v:=range out.Items{
-				if v.State=="not_transferred"{continue}
-				if v.State!="committed"||v.Receipt==nil||v.Receipt.GalleryIdentity!=r.GalleryIdentity{return ErrStageRecovery}
-				w:=v.Receipt
-				if g.Boundary().Check(filepath.Join(r.GalleryRoot,w.Row.Name))!=nil{return ErrStageRefused}
-				id,err:=verifyHeldCanonical(ctx,dst,w.Row.Name,p.Items[i].File)
-				if err!=nil||id!=w.FileIdentity{return ErrStageRecovery}
-				var n int
-				if err:=g.DB.Read.QueryRowContext(ctx,`SELECT COUNT(*) FROM images WHERE id=? AND canonical_path=? AND sha256=? AND is_missing=0`,w.Row.ImageID,filepath.Join(r.GalleryRoot,w.Row.Name),w.Row.SHA256).Scan(&n);err!=nil||n!=1{return ErrStageRecovery}
-			}
+			return nil
+		}
+		checkItem:=func(i int)error{
+			v:=out.Items[i]
+			if v.State=="not_transferred"{return nil}
+			if v.State!="committed"||v.Receipt==nil||v.Receipt.GalleryIdentity!=r.GalleryIdentity{return ErrStageRecovery}
+			w:=v.Receipt
+			child,err:=a.batchChildWitnessLocked(ctx,p.Items[i]);if err!=nil||child!=*w{return ErrStageRecovery}
+			if g.Boundary().Check(filepath.Join(r.GalleryRoot,w.Row.Name))!=nil{return ErrStageRefused}
+			id,err:=verifyHeldCanonical(ctx,dst,w.Row.Name,p.Items[i].File)
+			if err!=nil||id!=w.FileIdentity{return ErrStageRecovery}
+			var n int
+			if err:=g.DB.Read.QueryRowContext(ctx,`SELECT COUNT(*) FROM images WHERE id=? AND canonical_path=? AND sha256=? AND is_missing=0`,w.Row.ImageID,filepath.Join(r.GalleryRoot,w.Row.Name),w.Row.SHA256).Scan(&n);err!=nil||n!=1{return ErrStageRecovery}
+			return nil
+		}
+		check:=func()error{
+			if err:=current();err!=nil{return err}
+			for i:=range out.Items{if err:=checkItem(i);err!=nil{return err}}
 			return nil
 		}
 		if err:=check();err!=nil{return err}
@@ -135,8 +142,11 @@ func(a *Allocator) ReclaimBatch(ctx context.Context,parent workerproto.StageAllo
 		wm,err:=openDir(w,"media");if err!=nil{return err};defer wm.Close()
 		sealed,err:=openDir(op,"sealed");if err!=nil{return err};defer sealed.Close()
 		sm,err:=openDir(sealed,"media");if err!=nil{return err};defer sm.Close()
-		for _,f:=range e.Files{
-			if err:=check();err!=nil{return err}
+		for i,item:=range p.Items{
+			if item.File.ID==""{continue}
+			f:=item.File
+			if err:=current();err!=nil{return err}
+			if err:=checkItem(i);err!=nil{return err}
 			for _,v:=range []struct{root *os.Root;name string;size int64;hash string}{{wm,f.RelativeName,f.Size,f.SHA256},{wm,f.RelativeName+".json",f.SidecarSize,f.SidecarSHA256},{sm,f.RelativeName,f.Size,f.SHA256}}{
 				if _,err:=v.root.Lstat(v.name);errors.Is(err,os.ErrNotExist){if !resume{return ErrStageRecovery};continue}else if err!=nil{return ErrStageRecovery}
 				if err:=readChecked(ctx,v.root,v.name,v.size,v.hash,io.Discard);err!=nil{return err}
