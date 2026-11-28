@@ -1,6 +1,6 @@
 # Mebooru — project north star
 
-**Updated:** 2026-11-28. **Active milestone:** self-contained Apple Silicon candidate, with Chapter II implementation substantially complete and final owner and platform acceptance pending.
+**Updated:** 2026-11-28. **Active milestone:** Apple Silicon personal-use release candidate ready for owner acceptance, with native follow-up tracked below.
 **Authority:** this file is the single maintained source of truth for product direction, architectural decisions, chapter roadmap, current milestone and outstanding work. Update it at each accepted milestone. Other documents are historical evidence, technical references or runbooks, not independent roadmaps. Start here on every new project chat; verify live GitHub refs before editing.
 
 ## Rolling handoff / resume checkpoint (2026-11-28)
@@ -11,7 +11,7 @@ Read the [engineering checkpoint](docs/project/cold-start.md) and [Mac validatio
 
 - Repository `jwebb7847-ui/mebooru`. Integration remains `mebooru-foundation` at `c03761ea0aa2feb4da9c67ae509d65e7193671e2`. [Draft PR #38](https://github.com/jwebb7847-ui/mebooru/pull/38) remains on `360113279069d0804a6d44076eef1e609ded0380`. Keep it draft and preserve integration and main.
 - Preserve the successful Apple Silicon Chapter II live acceptance candidate `c2f53f216a4c91b771bc5ae0051c4a718700b33b` and subsequent checkpoint `99d4fe6275c55173a5dd6a043af2654eb00fc2e7` on [codex/ii6-live-acceptance](https://github.com/jwebb7847-ui/mebooru/tree/codex/ii6-live-acceptance). Live Derpibooru single, bounded search, duplicates, editing the strict blacklist, cancel/retry, offline and restart passed. The two preserved owner profiles and final platform acceptance are pending.
-- [codex/self-contained-runtime](https://github.com/jwebb7847-ui/mebooru/tree/codex/self-contained-runtime) provides the next Apple Silicon candidate with first-run managed Loader, bundled gallery-dl 1.32.19, explicit verified 1.32.21 update and local rollback, watch destinations and durable check results. The earlier II.6.4a [owner-accepted custody result](docs/validation/worker-ownership-runtime-2026-11-26.md) remains valid.
+- [codex/final-qualification](https://github.com/jwebb7847-ui/mebooru/tree/codex/final-qualification) packages exact commit `e38bbcafb754dac58e2a2a06ceb1c2402058ee62`. Packaged public acquisition, legacy migration and config rollback, bounded authenticated search, runtime update and rollback, watches, PTR and previews passed their respective tests. Retain the prior self-contained package at `3c7f5cb59cbd44c5c83cae37c18a6eb607b71300`. [Validation and closeout](docs/validation/self-contained-macos.md)
 
 ## Product vision and approved boundaries
 
@@ -38,12 +38,12 @@ Complete denotes accepted work. Implemented denotes available functionality with
 | II.4 — Unify build and verification | Complete | One checkout builds both existing executables. Retain both Go modules and dependency versions, root CI covers both modules and paired smoke, race/vet, strict transfer and security scanning. Test fresh and copied existing profiles. |
 | II.5 — Reconcile shared infrastructure | Complete | Compare shared files individually; preserve stronger safeguards and tests. Decide common module/package layout only after II.4 parity. Avoid hidden dependency upgrades. |
 | II.6 — Formalize worker interface | Substantially implemented, final acceptance pending | Independent worker and custodian, ordinary Loader and bounded live Derpibooru workflow. Preserve the exact live-tested candidate. |
-| III — Unify the experience | Implemented for fresh managed profiles | Unified Loader, acquisition Settings, PTR lookup and explicit sync, worker lifecycle, offline control and Quit. Legacy companion profiles still need a migration path and acceptance. |
-| IV — Self-contained acquisition | Implemented on Apple Silicon, qualification in progress | Fresh app includes pinned Python, gallery-dl and media tools. Settings shows the version, checks and installs a vetted update online, and selects the retained baseline offline. Other platforms need their native packages and runtime behavior checked. |
-| V — Advanced acquisition | Ordinary watches implemented | Per-watch destination and cap, manual checks, opt-in interval, queue duplicate suppression, durable check status, pause and cancellation. Exhaustive seen-post discovery, cross-source character mapping and older advanced modes remain. |
-| VI — Product refinement | Active | Signed-for-local-use Mac packaging, regression review and native qualification. Owner packaging acceptance and public distribution decisions remain. |
+| III — Unify the experience | Implemented, owner acceptance pending | Unified Loader and Settings, offline migration for supported legacy profiles, PTR lookup and explicit sync, worker lifecycle, and graceful Quit. |
+| IV — Self-contained acquisition | Verified on Apple Silicon | The package includes its pinned runtime and media tools. Verified update, offline rollback and an installed-runtime override remain available. |
+| V — Advanced acquisition | Ordinary watches verified | Per-watch destination and cap, manual checks, opt-in interval, durable results, pause, cancel and retry. Broader history skipping, old advanced job types and cross-source character mapping remain. |
+| VI — Product refinement | Personal-use candidate delivered | Packaged Apple Silicon qualification, practical security review and native checks. Owner acceptance and integration approval remain. Windows and Linux installer acceptance is separate. |
 
-**Next action.** Finish native Windows and Linux verification, review ordinary legacy-profile migration, and complete the packaged Mac owner's acceptance. Treat unsupported authenticated extractors and legacy source or media behavior as explicit release gaps. Preserve the moratorium and avoid repeating the Chapter II architecture work.
+**Next action.** Review the exact rerun results and complete the owner's packaged Mac acceptance. Then review the proposed PR #38 fast-forward and approve integration separately. [Personal-use release checklist](docs/validation/self-contained-macos.md#personal-use-release-checklist-and-pr-38)
 
 ## Chapter II — migration baseline and evidence
 
@@ -277,13 +277,13 @@ The [managed worker technical map](docs/project/managed-worker.md) documents the
 
 | Earlier capability | Current status |
 | --- | --- |
-| Gallery browsing, edits, tags, aliases and ratings | Existing gallery services remain in use. The live Chapter II run verified ratings, tags and the editable strict blacklist. The upgrade test retained the existing gallery, settings, watches and queue. |
+| Gallery browsing, edits, tags, aliases and ratings | The migration fixture retained original media, provenance, rating, tag, collection, note, settings, queue and watch. Gallery databases stay in place. |
 | Video and animated media | Managed MP4, WebM and animated GIF acquisition, original-byte serving and previews passed in the Apple Silicon bundle. Managed AVIF/JXL acquisition and wider codec and container parity remain open. |
-| Source compatibility | Public Derpibooru is live-qualified on the Chapter II baseline. Managed Danbooru and e621 have local extractor evidence. The older authenticated, custom and wider source paths are still migration gaps. |
+| Source compatibility | Public Derpibooru passed on the exact package. Managed Settings supports credentials and cookies for the three qualified sources and two Derpibooru custom options. An authenticated Derpibooru search and credential change passed in the real extractor against a loopback fixture. Live Danbooru/e621 accounts, wider URLs, and arbitrary legacy extractor options remain outside acceptance. |
 | Duplicates and repeat acquisition | Managed Loader keeps existing records on exact duplicates. Watches allow one active check and retain duplicate outcomes. A repeated check may still fetch the same file. Seen-post history, catch-up depth and broader archive parity remain. |
 | Watches and PTR | Ordinary watch destinations, schedules, pause, results and cancel are in place. PTR can sync explicitly while online and look up the cached index offline. Advanced watch mapping and PTR contributions remain open. |
 
-Legacy profile migration, release signing, native platform acceptance and the remaining ordinary compatibility gaps must be resolved before claiming release parity. Keep narrower format combinations and recovery edge cases in the existing backlog.
+Personal-use acceptance covers the Apple Silicon candidate and its supported migration paths. Raw extractor configuration and legacy download-folder rules need supported equivalents before those profiles can migrate. Windows and Linux installations, Developer ID and notarization can follow separately.
 
 - **Remaining branding:** operator screenshot November 25 shows `Paste a URL above, or send one from the Monsender extension.` in the Advanced queue empty state. Defer to the Chapter VI branding/UI pass (or Chapter III queue UI consolidation); Monsender is a separate extension name, so decide whether to remove the reference or retain a factual external integration label. No immediate change.
 
