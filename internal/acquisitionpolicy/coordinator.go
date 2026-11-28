@@ -30,7 +30,7 @@ var ErrPeerUnusable = errors.New("acquisition worker must be released before aut
 
 const cleanupTimeout = 10 * time.Second
 
-type onlineLease struct { done <-chan struct{} }
+type onlineLease struct { done <-chan struct{}; revoked chan struct{} }
 
 // Coordinator serializes policy changes and worker attachment. It is owned by
 // the library supervisor, with one instance per exclusively locked profile.
@@ -77,7 +77,7 @@ func (c *Coordinator) unusable() bool {
 func (c *Coordinator) acknowledge(ctx context.Context) error {
 	if err:=ctx.Err();err!=nil{return err}
 	if c.unusable(){return ErrPeerUnusable}
-	if !c.offline{c.online.Store(&onlineLease{done:c.peerDone})}
+	if !c.offline{c.online.Store(&onlineLease{done:c.peerDone,revoked:make(chan struct{})})}
 	return nil
 }
 
@@ -97,7 +97,7 @@ func (c *Coordinator) Attach(ctx context.Context, peer Peer) error {
 	defer c.mu.Unlock()
 	if c.peer!=nil {return ErrPeerAttached}
 	if peer==nil {return errors.New("missing managed acquisition worker")}
-	c.online.Store(nil)
+	c.revokeOnline()
 	c.peer=peer
 	c.peerDone=peer.Done()
 	if c.peerDone==nil{return c.stopOnFailure(ctx,ErrPeerUnusable)}
@@ -116,7 +116,7 @@ func (c *Coordinator) Attach(ctx context.Context, peer Peer) error {
 func (c *Coordinator) SetOffline(ctx context.Context, offline bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.online.Store(nil)
+	c.revokeOnline()
 	if offline {c.offline=true}
 	if !offline && c.peer!=nil && c.unusable(){return ErrPeerUnusable}
 	if err:=c.store.Save(offline);err!=nil{
@@ -139,7 +139,7 @@ func (c *Coordinator) SetOffline(ctx context.Context, offline bool) error {
 func (c *Coordinator) Release(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.online.Store(nil)
+	c.revokeOnline()
 	if c.peer==nil{return nil}
 	c.poisoned=true
 	if err:=c.peer.Stop(ctx);err!=nil{return err}
@@ -150,7 +150,7 @@ func (c *Coordinator) Release(ctx context.Context) error {
 // Caller holds mu. Cleanup has an independent bounded context so a canceled
 // UI request does not automatically suppress worker shutdown.
 func (c *Coordinator) stopOnFailure(ctx context.Context, cause error) error {
-	c.online.Store(nil)
+	c.revokeOnline()
 	if c.peer==nil{return cause}
 	c.poisoned=true
 	cleanup,cancel:=context.WithTimeout(context.WithoutCancel(ctx),cleanupTimeout)
@@ -164,4 +164,9 @@ func (c *Coordinator) clearPeer(){
 	c.peer=nil
 	c.peerDone=nil
 	c.poisoned=false
+}
+
+// Called under the coordinator lock; old generations never revive.
+func(c *Coordinator)revokeOnline(){
+	if old:=c.online.Swap(nil);old!=nil{close(old.revoked)}
 }

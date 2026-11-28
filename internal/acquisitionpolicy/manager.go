@@ -257,3 +257,38 @@ func(m *Manager)Shutdown(ctx context.Context)error{
 	m.closed=true
 	return nil
 }
+
+
+// OnlineLease keeps the exact managed worker and online generation
+// alive. Offline/online cycling cannot revive a previous operation.
+type OnlineLease struct{
+	Peer ManagedPeer
+	Context context.Context
+	current func()bool
+	release func()
+	once sync.Once
+}
+func(l *OnlineLease)Current()bool{return l!=nil&&l.Context.Err()==nil&&l.current()}
+func(l *OnlineLease)Release(){if l!=nil{l.once.Do(l.release)}}
+
+// AcquireOnline never wakes a worker for network-only demand while the
+// persisted policy is offline. A local-only caller may still use Acquire.
+func(m *Manager)AcquireOnline(ctx context.Context)(*OnlineLease,error){
+	m.mu.Lock();defer m.mu.Unlock()
+	if err:=m.available(ctx);err!=nil{return nil,err}
+	if m.policy.ConfiguredOffline(){return nil,errors.New("managed acquisition offline")}
+	if err:=m.ensure(ctx);err!=nil{return nil,err}
+	epoch:=m.policy.online.Load()
+	if epoch==nil||!m.policy.EffectiveOnline(){return nil,ErrPeerUnusable}
+	leaseCtx,cancel:=context.WithCancel(ctx)
+	m.active++
+	go func(){
+		select{case <-leaseCtx.Done():case <-epoch.done:case <-epoch.revoked:case <-m.lifetime.Done():}
+		cancel()
+	}()
+	return &OnlineLease{Peer:m.peer,Context:leaseCtx,current:func()bool{return m.policy.online.Load()==epoch&&m.policy.EffectiveOnline()},release:func(){
+		cancel()
+		m.mu.Lock();defer m.mu.Unlock()
+		m.active--;m.lastUse=m.now()
+	}},nil
+}
