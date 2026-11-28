@@ -67,7 +67,7 @@ func(o *windowFixtureOwner) current(c context.Context)bool{return c.Err()==nil&&
 func(o *windowFixtureOwner) scope(c context.Context,q workerproto.StageAllocateRequest)(acquisitionstage.Scope,error){
 	if !o.current(c)||q.Transfer.Metadata!=o.window.Request||o.allowed[q.OperationID]!=q{return acquisitionstage.Scope{},managedqa.ErrFixture}
 	root:=filepath.Join(o.dir,"gallery")
-	s:=acquisitionstage.Scope{GalleryIdentity:"disposable-window:"+o.dir,GalleryRoot:root,GalleryRoots:[]string{root},MaxFiles:1,MaxBytes:128<<10}
+	s:=acquisitionstage.Scope{GalleryIdentity:o.window.GalleryIdentity,GalleryRoot:root,GalleryRoots:[]string{root},MaxFiles:1,MaxBytes:128<<10}
 	if q.OperationID==managedqa.ParentID(q.Transfer.Metadata.JobID){s.MaxFiles=uint32(o.setup.Count);s.MaxBytes=8<<20}
 	return s,nil
 }
@@ -124,6 +124,7 @@ func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,ra
 		body,_:=json.Marshal(workerproto.ManagedMetadataStart{Request:q});return body,nil
 	}
 	if !o.registry.Current(o.window){return fault(managedqa.ErrFixture)}
+	if op!=workerproto.FetchOutcome&&!o.registry.Admitting(o.window){return fault(managedqa.ErrFixture)}
 	switch op{
 	case workerproto.WindowNoTransfer:
 		p,err:=workerproto.DecodeWindowNoTransfer(raw)
@@ -295,7 +296,8 @@ func runManagedWindowProbe(countArg string)(result error){
 		}
 		o.mu.Lock()
 		o.lease=lease
-		o.window=windowregistry.Grant{Request:md,OwnerGeneration:o.generation,PolicyGeneration:1}
+		_,_,identity:=setup.Identity()
+		o.window=windowregistry.Grant{Request:md,OwnerGeneration:o.generation,PolicyGeneration:1,GalleryIdentity:"disposable-window:"+dir,Identity:identity}
 		o.grant=workerproto.StageAllocation{}
 		o.result=workerproto.WindowOutcome{}
 		o.manifest,o.projection,o.hash=nil,nil,""

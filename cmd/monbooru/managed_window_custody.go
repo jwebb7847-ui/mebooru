@@ -143,10 +143,12 @@ func(r *fixtureWindowResolver)Claim(c context.Context,q workerproto.MetadataPlan
 	if q!=r.setup.MetadataFor(q.JobID)||!workerproto.ValidMetadataPlan(q){return processguard.ManagedRuntimeGrant{},managedqa.ErrFixture}
 	grant:=r.makeGrant(q)
 	if !grant.Current(c){return processguard.ManagedRuntimeGrant{},managedqa.ErrFixture}
-	g,err:=r.registry.Claim(c,q,r.generation);if err!=nil{return processguard.ManagedRuntimeGrant{},err}
+	observed,err:=r.registry.Observe(q,r.generation);if err!=nil{return processguard.ManagedRuntimeGrant{},err}
+	ci,err:=grant.Config.Identity();if err!=nil||observed.Identity!=(acquisitionplan.MetadataIdentity{Runtime:grant.Runtime,Config:ci})||observed.PolicyGeneration!=1{return processguard.ManagedRuntimeGrant{},managedqa.ErrFixture}
+	g,err:=r.registry.Claim(c,q,r.generation);if err!=nil||g!=observed{return processguard.ManagedRuntimeGrant{},managedqa.ErrFixture}
 	r.active=g
 	v:=grant
-	v.Current=func(c context.Context)bool{return grant.Current(c)&&r.registry.Current(g)}
+	v.Current=func(c context.Context)bool{return grant.Current(c)&&r.registry.Admitting(g)}
 	return v,nil
 }
 func(r *fixtureWindowResolver)Settle(c context.Context,q workerproto.MetadataPlanRequest,phase int,failed bool)error{

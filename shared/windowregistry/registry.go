@@ -13,6 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 )
@@ -24,6 +29,8 @@ type Grant struct{
 	Request workerproto.MetadataPlanRequest
 	OwnerGeneration string
 	PolicyGeneration uint64
+	GalleryIdentity string
+	Identity acquisitionplan.MetadataIdentity
 }
 type Outcome struct{
 	Grant Grant
@@ -42,7 +49,17 @@ func Open(path string)(*Registry,error){
 }
 func(r *Registry)Close()error{return r.root.Close()}
 func validHex(s string,n int)bool{b,err:=hex.DecodeString(s);return err==nil&&len(b)==n&&hex.EncodeToString(b)==s}
-func valid(g Grant)bool{return workerproto.ValidMetadataPlan(g.Request)&&g.Request.Kind==workerproto.MetadataStrictResolve&&validHex(g.OwnerGeneration,32)&&g.PolicyGeneration>0}
+func valid(g Grant)bool{
+	if !workerproto.ValidMetadataPlan(g.Request)||g.Request.Kind!=workerproto.MetadataStrictResolve||
+		!validHex(g.OwnerGeneration,32)||g.OwnerGeneration==strings.Repeat("0",64)||g.PolicyGeneration==0||
+		len(g.GalleryIdentity)<1||len(g.GalleryIdentity)>1024||!utf8.ValidString(g.GalleryIdentity)||strings.ContainsFunc(g.GalleryIdentity,unicode.IsControl){return false}
+	// Reconstruct the credential-free qualified config's actual digest
+	// and validate the exact runtime version/artifact/manifest identity.
+	cfg:=acquisitionplan.MetadataConfig{Generation:g.Identity.Config.Generation,Source:g.Request.Source}
+	id,err:=cfg.Identity();if err!=nil||id!=g.Identity.Config{return false}
+	_,err=acquisitionplan.NewMetadataSequence(g.Request,g.Identity.Runtime,cfg)
+	return err==nil
+}
 func name(q workerproto.MetadataPlanRequest,suffix string)string{return strconv.FormatInt(q.JobID,10)+"."+suffix}
 func(r *Registry) read(path string,v any)error{
 	i,err:=r.root.Lstat(path);if err!=nil{return err}
@@ -135,4 +152,12 @@ func(r *Registry)ObserveSettlement(g Grant)(Outcome,error){
 		r.read(name(g.Request,"outcome"),&outcome)!=nil||!validOutcome(outcome)||outcome.Grant!=g||
 		r.read(name(g.Request,"settled"),&settled)!=nil||settled!=outcome{return zero,ErrWindow}
 	return settled,nil
+}
+
+
+// Admitting is stronger than Current: an owner outcome ends new
+// acquisition admission but the original claim remains readable until
+// the custodian positively settles it.
+func(r *Registry)Admitting(g Grant)bool{
+	return r.Current(g)&&r.absent(name(g.Request,"outcome"))
 }

@@ -10,6 +10,7 @@ import(
 
 	"github.com/jwebb7847-ui/mebooru/shared/windowregistry"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 )
 
 func TestRegisterRunningWindowRequiresIntentAndDurableExactJob(t *testing.T){
@@ -21,7 +22,9 @@ func TestRegisterRunningWindowRequiresIntentAndDurableExactJob(t *testing.T){
 	record:=map[string]any{"job":map[string]any{"id":q.JobID,"url":q.URL,"gallery":q.Gallery,"site":q.Source,"max_items":1,"root":q.JobID,"status":"running"}}
 	save:=func(status string){t.Helper();body,err:=json.Marshal(record);if err!=nil{t.Fatal(err)};if _,err:=db.Exec("INSERT OR REPLACE INTO jobs VALUES(?,?,?)",q.JobID,status,string(body));err!=nil{t.Fatal(err)}}
 	reg,err:=windowregistry.Open(dir);if err!=nil{t.Fatal(err)};defer reg.Close()
-	g:=windowregistry.Grant{Request:q,OwnerGeneration:strings.Repeat("a",64),PolicyGeneration:1}
+	g:=windowregistry.Grant{Request:q,OwnerGeneration:strings.Repeat("a",64),PolicyGeneration:1,GalleryIdentity:"fixture-gallery"}
+	cfg:=acquisitionplan.MetadataConfig{Generation:1,Source:g.Request.Source};ci,err:=cfg.Identity();if err!=nil{t.Fatal(err)}
+	g.Identity=acquisitionplan.MetadataIdentity{Config:ci,Runtime:acquisitionplan.RuntimeIdentity{Generation:1,Version:acquisitionplan.StrictQualifiedVersion,ArtifactSHA256:strings.Repeat("1",64),ManifestSHA256:strings.Repeat("2",64)}}
 	check:=func(_ context.Context,v windowregistry.Grant)bool{return v==g}
 	save("queued")
 	if err:=RegisterRunningWindow(ctx,dir,reg,g,check);err==nil{t.Fatal("queued authorized")}
