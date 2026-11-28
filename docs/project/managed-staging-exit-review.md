@@ -1,5 +1,7 @@
 # II.6.4c — isolated qualification closeout and full exit-gap review
 
+**Current resume (2026-11-28):** [Cold-start engineering resume](cold-start.md) supersedes historical next-action language below. Exact a0e054f executable baseline passed all seven development jobs, including actual Linux 200-post acquisition (199 committed, one blocked) and Windows 3-post acquisition. Prepared multi-window code f2d88d0 remains unqualified; normal app production binding and full acceptance pending.
+
 2026-11-27. Review of actual code at `584f074580138f8482b299a546c0f2091452305a` (documentation-only descendant of qualified application/workflow `303dc3b5f12ac50409f08f221156dc82cd2551d4`), the approved [north star](../../MEBOORU.md), and [ordered staging design](managed-staging.md). PR #38 remains draft and unmerged, integration/main untouched. This is a closeout of the isolated proof, NOT a redefinition of II.6.4c or a production acceptance. No new application behavior in this review.
 
 ## Accepted evidence

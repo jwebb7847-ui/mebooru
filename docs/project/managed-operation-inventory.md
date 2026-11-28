@@ -1,5 +1,7 @@
 # II.6.4b — managed operation migration inventory
 
+**Current resume (2026-11-28):** [Cold-start engineering resume](cold-start.md) supersedes historical next-action language below. Exact a0e054f executable baseline passed all seven development jobs, including actual Linux 200-post acquisition (199 committed, one blocked) and Windows 3-post acquisition. Prepared multi-window code f2d88d0 remains unqualified; normal app production binding and full acceptance pending.
+
 Initial source review, 2026-11-27. Reviewed tree `281cbfb83e9169dde1acb5fb0e6a98bfe7f19449` (accepted application code `2d0b122326fd504eb54cedf575d55cb03348c479`). This is a working coverage ledger under [MEBOORU.md](../../MEBOORU.md), not a competing roadmap or an activation approval. Complete recursive Git tree enumeration plus selected source/route/entry-point inspection; **not an exhaustive transitive call-graph, security or dependency audit**. All ordinary managed operations remain unimplemented or disconnected. No production path changes in this increment.
 
 ## Authority model
