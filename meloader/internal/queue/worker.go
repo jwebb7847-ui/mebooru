@@ -26,6 +26,15 @@ func (q *Queue) Stop() {
 		return
 	}
 	q.closed = true
+	if q.managed!=nil{
+		// Preserve durable queued jobs across managed shutdown. Only
+		// active jobs become interrupted after their cleanup.
+		q.managedOffline=true
+		q.cond.Broadcast()
+		q.mu.Unlock()
+		close(q.stopped)
+		return
+	}
 	checks := q.dropWatchChecksLocked()
 	dropped, evicted := q.dropPendingLocked()
 	q.cond.Broadcast()
@@ -61,11 +70,11 @@ func (q *Queue) closing() bool {
 func (q *Queue) worker() {
 	defer q.wg.Done()
 	for {
-		j, ctx, ok := q.nextJob()
+		j, ctx, finish, ok := q.nextJob()
 		if !ok {
 			return
 		}
-		q.runJob(j, ctx)
+		q.runJob(j, ctx, finish)
 		// A large pool's item rows and a run's captured output sit in the
 		// heap; without this, memory stays at its peak between jobs.
 		debug.FreeOSMemory()
@@ -73,30 +82,47 @@ func (q *Queue) worker() {
 }
 
 // The caller must finish the job it returns.
-func (q *Queue) nextJob() (*Job, context.Context, bool) {
+func (q *Queue) nextJob() (*Job, context.Context, func(error), bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for (len(q.pending) == 0 || q.paused || q.held) && !q.closed {
-		q.cond.Wait()
+	for{
+		for (len(q.pending) == 0 || q.paused || q.held || q.managedOffline || q.managedRetiring || q.managedStoreFault) && !q.closed {
+			q.cond.Wait()
+		}
+		if q.closed { return nil,nil,nil,false }
+		ctx,cancel:=context.WithCancel(context.Background())
+		var finish func(error)
+		if q.managed!=nil{
+			// Admission and removal from pending share the same lock
+			// as the offline transition. A denied job stays queued.
+			admitted,done,err:=q.managed.gate.Admit(ctx)
+			if err!=nil{
+				cancel()
+				q.managedOffline=true
+				continue
+			}
+			ctx,finish=admitted,done
+		}
+		j:=q.pending[0]
+		q.pending[0]=nil
+		q.pending=q.pending[1:]
+		q.running[j.ID]=j
+		q.cancels[j.ID]=cancel
+		return j,ctx,finish,true
 	}
-	if q.closed {
-		return nil, nil, false
-	}
-	j := q.pending[0]
-	// Nil the slot: head slots are never reused, so the backing array
-	// would pin the jobs already run.
-	q.pending[0] = nil
-	q.pending = q.pending[1:]
-	ctx, cancel := context.WithCancel(context.Background())
-	q.running[j.ID] = j
-	q.cancels[j.ID] = cancel
-	return j, ctx, true
 }
 
-func (q *Queue) runJob(j *Job, ctx context.Context) {
-	defer q.finish(j)
+func (q *Queue) runJob(j *Job, ctx context.Context, finish func(error)) {
+	var cleanupErr error
+	// Keep the managed lease until settlement and actual cleanup finish.
+	defer func(){ if finish!=nil { finish(cleanupErr) } }()
+	defer func(){
+		if q.managed!=nil&&cleanupErr!=nil{q.mu.Lock();q.managedOffline=true;q.mu.Unlock()}
+		q.finish(j)
+	}()
 	defer func() {
 		if r := recover(); r != nil {
+			if q.managed!=nil { cleanupErr=errManagedCleanup }
 			logx.Errorf("queue: job %d panicked: %v", j.ID, r)
 			j.Fail(outcome.ErrCodeDownloadFailed, fmt.Sprintf("internal error: %v", r), q.now())
 		}
@@ -107,12 +133,24 @@ func (q *Queue) runJob(j *Job, ctx context.Context) {
 		j.cancel(q.now())
 		return
 	}
-	q.persist(j)
+	if q.managed!=nil {
+		if q.store==nil { j.interrupt(q.now());return }
+		if err:=q.store.SaveJob(j.Snapshot());err!=nil{q.mu.Lock();q.managedStoreFault=true;q.mu.Unlock();j.interrupt(q.now());return}
+		j.mu.Lock()
+		j.persistManaged=func(snap *Job)error{
+			err:=q.store.SaveJob(snap)
+			if err!=nil{q.mu.Lock();q.managedStoreFault=true;q.mu.Unlock()}
+			return err
+		}
+		j.mu.Unlock()
+		defer func(){j.mu.Lock();j.persistManaged=nil;j.mu.Unlock()}()
+	} else { q.persist(j) }
 	q.stampWatch(j)
 
-	err := q.proc.Process(ctx, j)
+	var err error
+	if q.managed!=nil { err,cleanupErr=q.managed.proc.ProcessManaged(ctx,j);if cleanupErr!=nil{err=errManagedCleanup} } else { err=q.proc.Process(ctx,j) }
 	switch {
-	case ctx.Err() != nil && q.closing():
+	case ctx.Err() != nil && (q.closing() || q.managed!=nil):
 		// A shutdown is not an operator cancel: settle it like a crash,
 		// so a restart keeps the requeue.
 		j.interrupt(q.now())

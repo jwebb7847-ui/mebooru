@@ -113,6 +113,13 @@ type Queue struct {
 	// The app's own hold, apart from the operator's pause, so neither can undo
 	// the other.
 	held bool
+	// Managed queues have their own default-deny policy hold. Neither
+	// operator resume nor the legacy app hold may undo it.
+	managed *managedQueueState
+	managedOffline bool
+	managedRetiring bool
+	managedStoreFault bool
+	managedWatchesEnabled bool
 
 	// Mirrored to the store: a crash loop must not refill a spent budget.
 	budgetLimit int
@@ -164,6 +171,7 @@ func (q *Queue) Workers() int { return q.workers }
 // surprise the operator.
 func (q *Queue) UseStore(st *Store) {
 	jobs, err := st.LoadJobs()
+	loadFailed:=err!=nil
 	if err != nil {
 		logx.Warnf("queue: store reload failed, history lost: %v", err)
 	}
@@ -190,21 +198,25 @@ func (q *Queue) UseStore(st *Store) {
 	budgetDay, budgetSpent, err := st.LoadCounter(lookupBudgetCounter)
 	if err != nil {
 		logx.Warnf("queue: budget counter reload failed: %v", err)
+		loadFailed=true
 		budgetDay, budgetSpent = "", 0
 	}
 	watches, err := st.LoadWatches()
 	if err != nil {
 		logx.Warnf("queue: watch reload failed: %v", err)
+		loadFailed=true
 	}
 	// Past every id ever issued, not just the surviving rows: monbooru still
 	// holds old ids, and a reissued one would answer for another job.
 	high, err := st.HighestJobID()
 	if err != nil {
 		logx.Warnf("queue: job id high-water reload failed: %v", err)
+		loadFailed=true
 	}
 	var evicted []int64
 	q.mu.Lock()
 	q.store = st
+	if q.managed!=nil&&loadFailed{q.managedStoreFault=true}
 	q.budgetDay, q.budgetSpent = budgetDay, budgetSpent
 	for i := range watches {
 		q.watches = append(q.watches, &watches[i])
@@ -234,6 +246,7 @@ func (q *Queue) persist(j *Job) {
 	}
 	if err := q.store.SaveJob(j.Snapshot()); err != nil {
 		logx.Warnf("queue: store write for job %d failed: %v", j.ID, err)
+		if q.managed!=nil{q.mu.Lock();q.managedStoreFault=true;q.mu.Unlock()}
 	}
 }
 
@@ -259,6 +272,7 @@ func (q *Queue) persistDelete(ids []int64) {
 	defer q.rowWrite.Unlock()
 	if err := q.store.DeleteJobs(ids); err != nil {
 		logx.Warnf("queue: store delete failed: %v", err)
+		if q.managed!=nil{q.mu.Lock();q.managedStoreFault=true;q.mu.Unlock()}
 	}
 }
 
@@ -303,7 +317,7 @@ func (q *Queue) Release() {
 func (q *Queue) Held() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.held
+	return q.held || q.managedOffline || q.managedRetiring || q.managedStoreFault
 }
 
 func (q *Queue) Paused() bool {
@@ -314,6 +328,7 @@ func (q *Queue) Paused() bool {
 
 func (q *Queue) Enqueue(url string, opts Options) int64 {
 	q.mu.Lock()
+	if q.managedRetiring || q.managed!=nil&&q.closed { q.mu.Unlock(); return 0 }
 	j := q.enqueueLocked(url, opts)
 	q.mu.Unlock()
 	q.persistKept(j)
@@ -492,6 +507,7 @@ func (q *Queue) List(opts ListOptions) ([]*Job, int) {
 
 func (q *Queue) Retry(id int64, force bool) error {
 	q.mu.Lock()
+	if q.managedRetiring || q.managed!=nil&&q.closed { q.mu.Unlock(); return errStopping }
 	j := q.index[id]
 	if j == nil {
 		q.mu.Unlock()
@@ -553,6 +569,7 @@ func (q *Queue) continueFrom(id int64, auto bool, target int) (int64, error) {
 	// One hold from the high-water read to the enqueue, or two continues
 	// fetch the same window.
 	q.mu.Lock()
+	if q.managedRetiring || q.managed!=nil&&q.closed { q.mu.Unlock(); return 0,errStopping }
 	j := q.index[id]
 	if j == nil {
 		q.mu.Unlock()

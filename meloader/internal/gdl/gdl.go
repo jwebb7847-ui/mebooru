@@ -9,14 +9,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/kwdict"
@@ -113,10 +110,13 @@ type Tool struct {
 	mu          sync.RWMutex
 	managedRoot string
 	lists       SiteLists
+	// Set at construction, never changed while operations are active.
+	executor processExecutor
+	requireCleanupProof bool
 }
 
 func New(cfg *config.Provider, lists SiteLists) *Tool {
-	return &Tool{cfg: cfg, lists: lists}
+	return &Tool{cfg: cfg, lists: lists, executor: legacyProcessExecutor{}}
 }
 
 func (t *Tool) SetSiteLists(lists SiteLists) {
@@ -161,46 +161,12 @@ func (t *Tool) siteLists() SiteLists {
 
 var _ Runner = (*Tool)(nil)
 
-type runResult struct {
-	stdout   []byte
-	stderr   string
-	exitCode int
+func (t *Tool) run(ctx context.Context, args ...string) (runResult,error) {
+	return t.runWithBinary(ctx,t.binary(),args...)
 }
 
-// After a cancel kills gallery-dl, a child it left holding the output pipes
-// open would otherwise keep Wait, and the job, from returning.
-const waitDelay = 5 * time.Second
-
-// A non-zero exit is in exitCode, not err, which is only for a failed launch.
-func (t *Tool) run(ctx context.Context, args ...string) (runResult, error) {
-	return runBinary(ctx, t.binary(), args...)
-}
-
-func runBinary(ctx context.Context, bin string, args ...string) (runResult, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.WaitDelay = waitDelay
-	killGroupOnCancel(cmd)
-	desktop.HideConsole(cmd)
-	var out, errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-	exit, err := exitStatus(cmd.Run())
-	res := runResult{stdout: out.Bytes(), stderr: strings.TrimSpace(errBuf.String()), exitCode: exit}
-	if err != nil {
-		return res, fmt.Errorf("running %s: %w", bin, err)
-	}
-	return res, nil
-}
-
-func exitStatus(err error) (int, error) {
-	if err == nil {
-		return 0, nil
-	}
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		return ee.ExitCode(), nil
-	}
-	return 0, err
+func (t *Tool) runWithBinary(ctx context.Context,bin string,args ...string)(runResult,error){
+	return t.capture(ctx,bin,args)
 }
 
 // A personal ~/.config/gallery-dl/config.json would merge under the managed
@@ -351,7 +317,7 @@ func (t *Tool) resolveWithOptions(ctx context.Context, url, rng string, deep, st
 	out, err := t.runOut(ctx, args...)
 	if err != nil {
 		var ce *outcome.CodedError
-		if !strict && errors.As(err, &ce) && ce.Code == outcome.ErrCodeUnsupportedURL {
+		if !t.requireCleanupProof && !strict && errors.As(err, &ce) && ce.Code == outcome.ErrCodeUnsupportedURL {
 			if items, ok := directlinkResolve(ctx, url); ok {
 				return ResolveResult{Items: items}, nil
 			}
@@ -432,19 +398,6 @@ func (t *Tool) download(ctx context.Context, url, rng, workDir string, archive A
 	}
 	runCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	cmd := exec.CommandContext(runCtx, bin, args...)
-	cmd.WaitDelay = waitDelay
-	killGroupOnCancel(cmd)
-	desktop.HideConsole(cmd)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, &outcome.CodedError{Code: outcome.ErrCodeDownloadFailed, Msg: err.Error()}
-	}
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-	if err := cmd.Start(); err != nil {
-		return nil, &outcome.CodedError{Code: outcome.ErrCodeDownloadFailed, Msg: fmt.Errorf("running %s: %w", bin, err).Error()}
-	}
 	caughtUp := false
 	onSkips := func(inARow int) {
 		if archive == ArchiveCatchUp && inARow >= catchUpSkips {
@@ -452,9 +405,22 @@ func (t *Tool) download(ctx context.Context, url, rng, workDir string, archive A
 			stop()
 		}
 	}
-	// Drained to EOF before Wait, as StdoutPipe requires.
-	results, readErr := reportDownloads(stdout, workDir, onFile, onSkips)
-	exit, runErr := exitStatus(cmd.Wait())
+	var results []Downloaded
+	completion := t.stream(runCtx,bin,args,func(stdout io.Reader)error{
+		var readErr error
+		results,readErr=reportDownloads(stdout,workDir,onFile,onSkips)
+		return readErr
+	})
+	if err:=completion.proofError(t.requireCleanupProof);err!=nil{
+		// Never convert unconfirmed descendant cleanup into a successful
+		// catch-up, an ordinary cancel, or a direct HTTP fallback.
+		return results,&outcome.CodedError{Code:outcome.ErrCodeDownloadFailed,Msg:err.Error()}
+	}
+	if !completion.started {
+		return nil,&outcome.CodedError{Code:outcome.ErrCodeDownloadFailed,Msg:completion.runErr.Error()}
+	}
+	exit,runErr,readErr:=completion.exitCode,completion.runErr,completion.readErr
+	stderr:=completion.stderr
 	// A canceled job kills the subprocess, which must not read as a
 	// download failure.
 	if ctx.Err() != nil {
@@ -464,7 +430,7 @@ func (t *Tool) download(ctx context.Context, url, rng, workDir string, archive A
 		return results, readErr
 	}
 	if caughtUp {
-		if stderr := strings.TrimSpace(errBuf.String()); strings.Contains(stderr, "[error]") {
+		if strings.Contains(stderr, "[error]") {
 			return results, t.runError(exit, stderr)
 		}
 		return results, nil
@@ -475,8 +441,8 @@ func (t *Tool) download(ctx context.Context, url, rng, workDir string, archive A
 		return results, &outcome.CodedError{Code: outcome.ErrCodeDownloadFailed, Msg: runErr.Error()}
 	}
 	if exit != 0 {
-		cerr := t.runError(exit, strings.TrimSpace(errBuf.String()))
-		if gate == "" && cerr.Code == outcome.ErrCodeUnsupportedURL {
+		cerr := t.runError(exit, stderr)
+		if !t.requireCleanupProof && gate == "" && cerr.Code == outcome.ErrCodeUnsupportedURL {
 			if dls, ok, derr := directlinkDownload(ctx, url, workDir, onFile); ok {
 				return dls, derr
 			}

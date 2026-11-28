@@ -172,6 +172,7 @@ func (q *Queue) RemoveWatch(id int64) error {
 // own work, as the schedule does.
 func (q *Queue) CheckWatch(id int64, background bool) (int64, error) {
 	q.mu.Lock()
+	if q.managedRetiring || q.managed!=nil&&(q.closed || background&&(q.managedOffline||!q.managedWatchesEnabled)||q.managedStoreFault) { q.mu.Unlock();return 0,errStopping }
 	w := q.findWatchLocked(id)
 	if w == nil {
 		q.mu.Unlock()
@@ -211,6 +212,7 @@ func (q *Queue) RunWatches(ctx context.Context, held func() bool) {
 func (q *Queue) queueDueWatches() {
 	now := q.now()
 	q.mu.Lock()
+	if q.managedOffline||q.managedRetiring||q.managedStoreFault||q.managed!=nil&&!q.managedWatchesEnabled { q.mu.Unlock();return }
 	var ids []int64
 	for _, w := range q.watches {
 		if w.IntervalHours > 0 && !now.Before(w.Next()) && !q.watchLiveLocked(w.ID) {
@@ -463,4 +465,21 @@ func (j *Job) quietWatchCheck() bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.Watch != 0 && j.Root == j.ID && j.Status == JobSucceeded && !j.Capped && j.Summary.Created == 0
+}
+
+// RunManagedWatches is the managed service's clock/wake loop. The
+// existing due-check path enforces explicit watch enablement, offline
+// and retirement under the queue lock. Wake coalesces policy transitions.
+func(q *Queue) RunManagedWatches(ctx context.Context,wake <-chan struct{}){
+	if q.managed==nil{return}
+	t:=time.NewTicker(watchTick);defer t.Stop()
+	for{
+		q.queueDueWatches()
+		select{
+		case <-ctx.Done():return
+		case <-q.stopped:return
+		case <-t.C:
+		case _,ok:=<-wake:if !ok{wake=nil}
+		}
+	}
 }

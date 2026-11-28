@@ -18,6 +18,8 @@ var ErrProfileOwned = errors.New("managed acquisition profile already owned")
 type ProfileLock struct {
 	mu sync.Mutex
 	file *os.File
+	root *os.Root
+	activeFence *WorkerFence
 }
 
 // LockProfile rejects path aliases by locking the actual opened inode/file,
@@ -27,7 +29,8 @@ func LockProfile(profileDir string)(*ProfileLock,error){
 	if !filepath.IsAbs(profileDir){return nil,errors.New("profile lock requires absolute path")}
 	root,err:=os.OpenRoot(profileDir)
 	if err!=nil{return nil,err}
-	defer root.Close()
+	keepRoot:=false
+	defer func(){if !keepRoot{_ = root.Close()}}()
 	info,err:=root.Lstat(lockFile)
 	var f *os.File
 	if errors.Is(err,os.ErrNotExist){
@@ -60,7 +63,8 @@ func LockProfile(profileDir string)(*ProfileLock,error){
 	if err!=nil{return nil,err}
 	if !current.Mode().IsRegular()||!os.SameFile(current,opened){return nil,ErrInvalidPolicy}
 	ok=true
-	return &ProfileLock{file:f},nil
+	keepRoot=true
+	return &ProfileLock{file:f,root:root},nil
 }
 
 // Closing the original descriptor releases its OS lock. Retain the
@@ -69,7 +73,9 @@ func(l *ProfileLock)Close()error{
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file==nil{return nil}
+	if l.activeFence!=nil{return ErrWorkerRecoveryRequired}
 	err:=l.file.Close()
 	l.file=nil
+	if l.root!=nil{err=errors.Join(err,l.root.Close());l.root=nil}
 	return err
 }

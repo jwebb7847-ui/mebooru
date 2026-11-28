@@ -46,7 +46,8 @@ func TestLifecycleDemandIdleAndFreshSession(t *testing.T){
 	ctx:=context.Background()
 	var log []string
 	var peers []*lifecyclePeer
-	m,now,_:=newTestManager(t,func(_, _ context.Context)(ManagedPeer,error){
+	m,now,_:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
 		p:=&lifecyclePeer{fakePeer:fakePeer{log:&log}}
 		peers=append(peers,p)
 		return p,nil
@@ -78,7 +79,8 @@ func TestLifecycleCrashBackoffAndFailedCleanup(t *testing.T){
 	ctx:=context.Background()
 	var log []string
 	var peers []*lifecyclePeer
-	m,now,dir:=newTestManager(t,func(_, _ context.Context)(ManagedPeer,error){
+	m,now,dir:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
 		p:=&lifecyclePeer{fakePeer:fakePeer{log:&log}}
 		peers=append(peers,p)
 		return p,nil
@@ -108,7 +110,8 @@ func TestLifecycleCrashRestartsOnlyOnDemandAfterCooldown(t *testing.T){
 	ctx:=context.Background()
 	var log []string
 	var peers []*lifecyclePeer
-	m,now,_:=newTestManager(t,func(_, _ context.Context)(ManagedPeer,error){
+	m,now,_:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
 		p:=&lifecyclePeer{fakePeer:fakePeer{log:&log}}
 		peers=append(peers,p)
 		return p,nil
@@ -130,7 +133,8 @@ func TestLifecycleStartupFailureRetainsUnconfirmedPeer(t *testing.T){
 	stopErr:=errors.New("cleanup failed")
 	p:=&lifecyclePeer{fakePeer:fakePeer{log:&log,stopErr:stopErr}}
 	starts:=0
-	m,_,_:=newTestManager(t,func(_, _ context.Context)(ManagedPeer,error){
+	m,_,_:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
 		starts++
 		return p,startErr
 	})
@@ -139,4 +143,26 @@ func TestLifecycleStartupFailureRetainsUnconfirmedPeer(t *testing.T){
 	if starts!=1{t.Fatal("unconfirmed startup spawned second peer")}
 	if err:=m.SetOffline(ctx,false);!errors.Is(err,ErrPeerUnusable){t.Fatalf("unconfirmed startup reauthorized: %v",err)}
 	p.stopErr=nil
+}
+
+
+func TestOnlineLeaseRevocationDoesNotWakeOffline(t *testing.T){
+	ctx:=context.Background()
+	var log []string
+	starts:=0
+	m,_,_:=newTestManager(t,func(_, _ context.Context,f *WorkerFence)(ManagedPeer,error){
+		if err:=f.Arm();err!=nil{return nil,err}
+		starts++
+		return &lifecyclePeer{fakePeer:fakePeer{log:&log}},nil
+	})
+	if l,err:=m.AcquireOnline(ctx);err==nil||l!=nil||starts!=0{t.Fatal("offline worker woke")}
+	if err:=m.SetOffline(ctx,false);err!=nil{t.Fatal(err)}
+	l,err:=m.AcquireOnline(ctx);if err!=nil||!l.Current(){t.Fatal("lease",err)}
+	defer l.Release()
+	if err:=m.SetOffline(ctx,true);err!=nil{t.Fatal(err)}
+	select{case <-l.Context.Done():case <-time.After(time.Second):t.Fatal("online lease not revoked")}
+	if err:=m.SetOffline(ctx,false);err!=nil{t.Fatal(err)}
+	if l.Current(){t.Fatal("stale generation revived")}
+	next,err:=m.AcquireOnline(ctx);if err!=nil||!next.Current(){t.Fatal("fresh generation",err)}
+	next.Release()
 }

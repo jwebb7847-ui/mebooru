@@ -164,6 +164,9 @@ func TestDerpibooruBatchRetryExhaustionLeavesOtherChunksUsable(t *testing.T) {
 			w.Header().Set("Retry-After", "0")
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 		case query == "id:51":
+			// The HTTPTime assertion requires at least one measurable request.
+			// Fast loopback requests can all round to zero on Windows.
+			time.Sleep(25 * time.Millisecond)
 			fmt.Fprint(w, `{"tags":[{"id":51,"name":"fixture 51","category":null,"aliased_tag":null,"aliases":[]}]}`)
 		default:
 			t.Errorf("unexpected fallback query %q", query)

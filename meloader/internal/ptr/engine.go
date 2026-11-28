@@ -13,6 +13,7 @@ import (
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monloader/internal/config"
 )
 
@@ -59,6 +60,7 @@ type Status struct {
 type Engine struct {
 	cfg    config.PTRConfig
 	client *client
+	managedGate *workerproto.DrainGate
 
 	// Fields so tests can shrink them.
 	retryBackoff time.Duration
@@ -146,6 +148,9 @@ func (e *Engine) enableLocked() error {
 		return nil
 	}
 
+	// Offline managed mode may open an existing local index, never
+	// create or fetch a new one without explicit online consent.
+	if e.managedGate!=nil&&!IndexExists(e.cfg.DataPath)&&e.managedGate.CurrentGeneration()==(workerproto.DrainGeneration{}){return workerproto.ErrOffline}
 	if err := CheckDataPath(e.cfg.DataPath); err != nil {
 		return err
 	}
@@ -484,16 +489,30 @@ func (e *Engine) loop(ctx context.Context, store *Store, done chan struct{}) {
 			}
 			continue
 		}
-		// After the pause check: the seed is a repository request.
-		if !seeded {
-			seeded = true
-			if err := e.seedBlobBaseline(ctx, store); err != nil && ctx.Err() == nil {
-				// Only the bar's blob fraction needs the baseline; it falls back
-				// to the update fraction.
-				logx.Warnf("ptr: seeding the blob census failed: %v", err)
+		passCtx:=ctx
+		var finish func(error)
+		if e.managedGate!=nil{
+			var err error
+			passCtx,finish,err=e.managedGate.Admit(ctx)
+			if err!=nil{
+				if !e.waitWake(ctx,e.readyPoll){return}
+				continue
 			}
 		}
-		err := e.syncPass(ctx, store)
+		// After the pause and managed admission check: seed is remote.
+		if !seeded {
+			if err := e.seedBlobBaseline(passCtx, store); err != nil && passCtx.Err() == nil {
+				logx.Warnf("ptr: seeding the blob census failed: %v", err)
+			}
+			seeded=passCtx.Err()==nil
+		}
+		err := e.syncPass(passCtx, store)
+		revoked:=passCtx.Err()!=nil
+		if finish!=nil{finish(nil)}
+		if revoked&&ctx.Err()==nil{
+			if !e.waitWake(ctx,e.readyPoll){return}
+			continue
+		}
 		switch {
 		case ctx.Err() != nil:
 			return

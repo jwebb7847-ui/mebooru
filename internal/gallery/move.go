@@ -36,20 +36,32 @@ type placement struct {
 
 // plan touches nothing on disk, so a dry run can share it with the run.
 func plan(database *db.DB, b *Boundary, id int64, folder, name *string) (placement, error) {
-	var p placement
-	if name != nil {
-		base := strings.TrimSpace(*name)
-		if base != filepath.Base(base) || base == "." || !filepath.IsLocal(base) {
-			return p, fmt.Errorf("invalid file name %q", base)
-		}
-		p.base = TruncateFilename(base, maxNameBytes)
+	base, err := placementBase(name)
+	if err != nil {
+		return placement{}, err
 	}
-
 	oldCanonical, oldFolder, err := loadMoveSource(database, b, id)
 	if err != nil {
-		return p, err
+		return placement{}, err
 	}
-	p.oldCanonical = oldCanonical
+	return planPlacement(b, oldCanonical, oldFolder, folder, name, base)
+}
+
+func placementBase(name *string) (string, error) {
+	if name == nil {
+		return "", nil
+	}
+	base := strings.TrimSpace(*name)
+	if base != filepath.Base(base) || base == "." || !filepath.IsLocal(base) {
+		return "", fmt.Errorf("invalid file name %q", base)
+	}
+	return TruncateFilename(base, maxNameBytes), nil
+}
+
+// planPlacement shares the exact boundary, extension and suffix-selection
+// inputs with an ordinary move. It does not reserve or mutate a path.
+func planPlacement(b *Boundary, oldCanonical, oldFolder string, folder, name *string, base string) (placement, error) {
+	p := placement{oldCanonical: oldCanonical, base: base}
 
 	// The destination is already root-bounded by ResolveSubdir.
 	p.destDir, p.newFolder = filepath.Dir(oldCanonical), oldFolder

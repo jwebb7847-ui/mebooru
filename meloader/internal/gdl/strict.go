@@ -11,25 +11,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/kwdict"
 	"github.com/monbooru/monloader/internal/outcome"
 )
 
-const strictMediaURLKey = "meloader_verified_media_url"
+const strictMediaURLKey = acquisitionplan.StrictMediaURLKey
+
+// Qualification policy, independent of how the runtime is launched.
+// Expanding this list requires explicit source/predicate/transfer evidence.
+const strictQualifiedVersion = acquisitionplan.StrictQualifiedVersion
+
+func strictVersionQualified(version string)bool{return version==strictQualifiedVersion}
 
 // StrictSource limits the transfer guarantee to extractor paths covered by
 // the pinned gallery-dl predicate behavior. Other routes stop before resolve.
 func StrictSource(site, subcategory string) bool {
-	switch site {
-	case "derpibooru":
-		return subcategory == "post" || subcategory == "search"
-	case "danbooru", "e621":
-		return subcategory == "post" || subcategory == "tag"
-	default:
-		return false
-	}
+	return acquisitionplan.StrictSource(site, subcategory)
 }
 
 func (t *Tool) ResolveStrict(ctx context.Context, url, rng string) (ResolveResult, error) {
@@ -46,7 +46,7 @@ func (t *Tool) ResolveStrict(ctx context.Context, url, rng string) (ResolveResul
 }
 
 func strictEvidenceField(key string) bool {
-	return key == "tags" || key == "tag_ids" || key == "rating" || strings.HasPrefix(key, "tags_")
+	return acquisitionplan.StrictEvidenceField(key)
 }
 
 func (item Item) HasStrictIdentity() bool {
@@ -93,20 +93,11 @@ func strictGate(workDir string, approved []Item) (string, error) {
 // Only a local path is interpolated. Source values stay in JSON, and the
 // transfer process caches the manifest after reading it for the first file.
 func strictGateExpression(path string) string {
-	return "(lambda d, j, p: (lambda r: r is not None and " +
-		"all(k in d and (list(d[k]) if isinstance(d[k], tuple) else d[k]) == v for k,v in r.items()) and " +
-		"all(k in r for k in d if k in ('tags','tag_ids','rating') or k.startswith('tags_')))(" +
-		"(j.__dict__.get(p) or j.__dict__.setdefault(p, j.loads(std.pathlib.Path(p).read_text(encoding='utf-8')))).get(str(d.get('id'))))" +
-		")(locals(), std.json, " + strconv.QuoteToASCII(path) + ")"
+	return acquisitionplan.StrictGateExpression(path)
 }
 
 func strictSourceArgs() []string {
-	// gallery-dl applies custom keywords and generated metadata after
-	// extraction. Keep those options from replacing the source evidence.
-	return []string{"--child-filter", "False", "-o", "follow=false",
-		"-o", "keywords={}", "-o", "keywords-global={}",
-		"-o", "metadata-url=" + strictMediaURLKey, "-o", "metadata-path=false",
-		"-o", "metadata-http=false", "-o", "metadata-version=false", "-o", "metadata-extractor=false"}
+	return acquisitionplan.StrictSourceArgs()
 }
 
 func strictDownloadArgs(workDir, rng, url string, archive Archive, gate string) []string {
@@ -148,16 +139,16 @@ func (t *Tool) DownloadStrict(ctx context.Context, url, rng, workDir string, arc
 	// that would produce a file message without the gate.
 	bin := t.binary()
 	stage := time.Now()
-	version, err := runBinary(ctx, bin, "--version")
+	version, err := t.runWithBinary(ctx, bin, "--version")
 	timing.version = elapsed(stage)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	if err != nil || version.exitCode != 0 || strings.TrimSpace(string(version.stdout)) != "1.32.19" {
-		return nil, strictTransferError("strict blacklist requires gallery-dl 1.32.19")
+	if err != nil || version.exitCode != 0 || !strictVersionQualified(strings.TrimSpace(string(version.stdout))) {
+		return nil, strictTransferError("strict blacklist requires gallery-dl "+strictQualifiedVersion)
 	}
 	stage = time.Now()
-	err = verifyStrictGate(ctx, bin, workDir, gate)
+	err = verifyStrictGateWithRunner(ctx, bin, workDir, gate,t.runWithBinary)
 	timing.probe = elapsed(stage)
 	if err != nil {
 		return nil, err
@@ -205,6 +196,10 @@ func (t *Tool) DownloadStrict(ctx context.Context, url, rng, workDir string, arc
 }
 
 func verifyStrictGate(ctx context.Context, bin, workDir, gate string) error {
+	return verifyStrictGateWithRunner(ctx,bin,workDir,gate,runBinary)
+}
+
+func verifyStrictGateWithRunner(ctx context.Context,bin,workDir,gate string,run func(context.Context,string,...string)(runResult,error))error{
 	const probeURL = "https://example.invalid/meloader-filter-probe.jpg"
 	// A negative probe catches a missing predicate. A positive probe also
 	// catches a predicate whose evaluation errors are treated as false.
@@ -219,7 +214,7 @@ func verifyStrictGate(ctx context.Context, bin, workDir, gate string) error {
 		filter string
 		files  int
 	}{{gate, 0}, {strictGateExpression(path), 1}} {
-		res, err := runBinary(ctx, bin, "--config-ignore", "-j", "-o", values, "--filter", probe.filter, "--", probeURL)
+		res, err := run(ctx, bin, "--config-ignore", "-j", "-o", values, "--filter", probe.filter, "--", probeURL)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

@@ -76,6 +76,9 @@ func(j *Job)TerminateAndWait(ctx context.Context)error{
 	defer j.mu.Unlock()
 	if j.handle==0{return errors.New("managed job already closed")}
 	j.sealed=true
+	active,err:=j.activeLocked()
+	if err!=nil{return err}
+	if active==0{return nil}
 	if err:=windows.TerminateJobObject(j.handle,1);err!=nil{return err}
 	ticker:=time.NewTicker(20*time.Millisecond)
 	defer ticker.Stop()

@@ -38,6 +38,53 @@ func killOwnGroup(group int) error {
 	return syscall.Kill(-group,syscall.SIGKILL)
 }
 
+// ActivationByte is sent over the exclusive guard liveness pipe only
+// after the supervisor has recorded the verified group identity. It is
+// an internal readiness boundary, not authentication.
+const ActivationByte byte = 1
+
+var ErrActivationRefused = errors.New("managed guard activation refused")
+
+// RunDormantGuard establishes a no-worker-before-activation boundary.
+// The supervisor must persist the established local group identity and
+// retain exclusive ownership before writing ActivationByte. If the
+// supervisor exits before that point, EOF exits without spawning a worker.
+// The same pipe subsequently serves as the parent liveness pipe; every
+// further byte or EOF revokes liveness. The worker still must install
+// WatchGuard and start with default-deny network admission.
+func RunDormantGuard(parentLife *os.File, worker *exec.Cmd) error {
+	return runDormantGuard(parentLife,worker,nil)
+}
+
+// RunDormantGuardWithBroker transfers only the adopted broker ends to
+// the worker, preserving fd 3 for guard liveness. No other inherited
+// endpoints may be forwarded.
+func RunDormantGuardWithBroker(parentLife *os.File,worker *exec.Cmd,r,w *os.File)error{
+	if err:=validateProbePipes(r,w);err!=nil{return err}
+	return runDormantGuard(parentLife,worker,[]*os.File{r,w})
+}
+func runDormantGuard(parentLife *os.File, worker *exec.Cmd,extra []*os.File) error {
+	if parentLife == nil || worker == nil {
+		return ErrActivationRefused
+	}
+	defer parentLife.Close()
+	group, err := syscall.Getpgid(0)
+	if err != nil || group <= 1 || group != os.Getpid() {
+		return ErrGroupIdentity
+	}
+	info, err := parentLife.Stat()
+	if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+		return ErrActivationRefused
+	}
+	syscall.CloseOnExec(int(parentLife.Fd()))
+	var one [1]byte
+	n, err := io.ReadFull(parentLife, one[:])
+	if err != nil || n != 1 || one[0] != ActivationByte {
+		return ErrActivationRefused
+	}
+	return runGuard(parentLife, worker,extra)
+}
+
 // RunGuard must execute in a dedicated process group leader. The worker
 // command is constructed by trusted application code (never remote input).
 // It inherits the group and an exclusive read end on fd 3. The worker MUST
@@ -47,6 +94,9 @@ func killOwnGroup(group int) error {
 // An unexpected guard exit is handled by the live worker's WatchGuard.
 // Simultaneous loss of both sentinels is not guaranteed to be contained.
 func RunGuard(parentLife *os.File, worker *exec.Cmd) error {
+	return runGuard(parentLife,worker,nil)
+}
+func runGuard(parentLife *os.File, worker *exec.Cmd,extra []*os.File) error {
 	group,err:=syscall.Getpgid(0)
 	if err!=nil || group!=os.Getpid() || group<=1 ||
 		worker.SysProcAttr!=nil || len(worker.ExtraFiles)!=0 ||
@@ -59,9 +109,10 @@ func RunGuard(parentLife *os.File, worker *exec.Cmd) error {
 	if err!=nil{return err}
 	defer write.Close()
 	defer read.Close()
-	worker.ExtraFiles=[]*os.File{read}
+	worker.ExtraFiles=append([]*os.File{read},extra...)
 	if err:=worker.Start();err!=nil{return err}
 	_ = read.Close()
+	for _,f:=range extra{_ = f.Close()}
 	// An EOF, unexpected byte, or read failure all revoke parent liveness.
 	lost:=make(chan struct{},1)
 	go func(){

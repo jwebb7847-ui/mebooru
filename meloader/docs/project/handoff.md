@@ -2,7 +2,9 @@
 
 **Snapshot 2026-11-24; superseded by [MEBOORU.md](../../../MEBOORU.md).** The current [development workflow](../../../MEBOORU.md#development-workflow) uses one repository and milestone PRs. The old two-repository instructions, fixture counts and next actions below are historical evidence.
 
-## Start with these documents
+**Current resume pointer (2026-11-28):** [Cold-start engineering resume](../../../docs/project/cold-start.md), then [MEBOORU.md](../../../MEBOORU.md). Actual 200-post disposable executable passed Linux; 3-post Windows passed. Multi-window preparation remains unqualified. Old links and instructions below are historical; no standalone repo development.
+
+## Historical reference documents
 
 | Document | Why it matters |
 | --- | --- |

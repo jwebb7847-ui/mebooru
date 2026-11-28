@@ -145,7 +145,9 @@ func (s *Store) SaveJob(j *Job) error {
 	}
 	// The workers and the API goroutines snapshot in one order but can Exec
 	// in another; the seq guard keeps a stale snapshot from regressing the row.
-	_, err = s.db.Exec(
+	tx,err:=s.db.Begin();if err!=nil{return err}
+	defer tx.Rollback()
+	_, err = tx.Exec(
 		`INSERT INTO jobs (id, status, data, seq) VALUES (?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET status = excluded.status, data = excluded.data, seq = excluded.seq
 		 WHERE excluded.seq >= jobs.seq`,
@@ -154,8 +156,8 @@ func (s *Store) SaveJob(j *Job) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(bumpHighWater, jobIDHighWater, j.ID)
-	return err
+	if _,err=tx.Exec(bumpHighWater,jobIDHighWater,j.ID);err!=nil{return err}
+	return tx.Commit()
 }
 
 // SQLite refuses a statement with more than 32766 variables.

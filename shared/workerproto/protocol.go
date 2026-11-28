@@ -14,6 +14,8 @@ type Role string
 const (
 	Library Role = "library"
 	Worker Role = "worker"
+	OperationRequester Role = "operation-requester"
+	OperationCustodian Role = "operation-custodian"
 )
 
 type Kind string
@@ -76,6 +78,23 @@ type Rule struct {
 }
 
 const (
+	// Separate private channel; no library/worker role can invoke these.
+	OperationProbeStart Operation = "custody.probe_start"
+	OperationProbeStop Operation = "custody.probe_stop"
+	OperationTransferProbeStart Operation = "custody.transfer_probe_start"
+	TransferProbeStart Operation = "worker.transfer_probe_start"
+	OperationVersionProbe Operation = "custody.version_probe"
+	OperationStreamStart Operation = "custody.stream_probe_start"
+	OperationStreamRead Operation = "custody.stream_probe_read"
+	OperationStreamFinish Operation = "custody.stream_probe_finish"
+	OperationStreamStop Operation = "custody.stream_probe_stop"
+	// Reserved typed metadata start; no broker handler is enabled yet.
+	OperationMetadataStart Operation = "custody.metadata_start"
+	// Reserved until a trusted transfer dispatcher exists.
+	OperationStrictTransferStart Operation = "custody.strict_transfer_start"
+	OperationWindowOpen Operation = "custody.window_open"
+	OperationWindowClose Operation = "custody.window_close"
+
 	Health Operation = "worker.health"
 	SetOffline Operation = "worker.set_offline"
 	Shutdown Operation = "worker.shutdown"
@@ -138,6 +157,8 @@ const (
 	ResolveTags Operation = "library.resolve_tags"
 	ImageDigest Operation = "library.image_digest"
 	ImageThumbnail Operation = "library.image_thumbnail"
+	WindowPrepare Operation = "library.window_prepare"
+	WindowNoTransfer Operation = "library.window_no_transfer"
 	StageAllocate Operation = "library.stage_allocate"
 	StageAbandon Operation = "library.stage_abandon"
 	ImportMedia Operation = "library.import_media"
@@ -151,6 +172,19 @@ const (
 // Enqueue and resume may persist held work offline; scheduling/transfer must
 // never start WAN as a side effect until separately authorized.
 var rules = map[Operation]Rule{
+	OperationProbeStart: {OperationRequester, Local},
+	OperationProbeStop: {OperationRequester, Local},
+	OperationTransferProbeStart: {OperationRequester, Online},
+	TransferProbeStart: {Library, Online},
+	OperationVersionProbe: {OperationRequester, Local},
+	OperationStreamStart: {OperationRequester, Local},
+	OperationStreamRead: {OperationRequester, Local},
+	OperationStreamFinish: {OperationRequester, Local},
+	OperationStreamStop: {OperationRequester, Local},
+	OperationMetadataStart: {OperationRequester, Online},
+	OperationStrictTransferStart: {OperationRequester, Online},
+	OperationWindowOpen: {OperationRequester, Online},
+	OperationWindowClose: {OperationRequester, Local},
 	Health: {Library, Local},
 	SetOffline: {Library, Local},
 	Shutdown: {Library, Local},
@@ -208,6 +242,8 @@ var rules = map[Operation]Rule{
 	ResolveTags: {Worker, Local},
 	ImageDigest: {Worker, Local},
 	ImageThumbnail: {Worker, Local},
+	WindowPrepare: {Worker, Local},
+	WindowNoTransfer: {Worker, Local},
 	StageAllocate: {Worker, Local},
 	StageAbandon: {Worker, Local},
 	ImportMedia: {Worker, Local},
@@ -226,4 +262,16 @@ func RuleFor(op Operation) (Rule, bool) {
 func AllowedDirection(caller Role, op Operation) bool {
 	rule, ok := RuleFor(op)
 	return ok && rule.Caller == caller
+}
+
+// counterpart constrains both handshake and request dispatch to the
+// same role pair. A worker/library session cannot become a broker.
+func counterpart(role Role) Role {
+	switch role {
+	case Library:return Worker
+	case Worker:return Library
+	case OperationRequester:return OperationCustodian
+	case OperationCustodian:return OperationRequester
+	default:return ""
+	}
 }
