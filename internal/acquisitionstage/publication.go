@@ -49,7 +49,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	for _,entry:=range entries{
 		name:=entry.Name()
 		switch name{
-		case "media","intent.json",existingTargetPlanName,existingTargetAnchorName,existingLinkAttemptName,existingLandingAttemptName,"attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json","operation-closed.json":
+		case "media","intent.json",existingTargetPlanName,existingTargetAnchorName,existingLinkAttemptName,existingLandingAttemptName,existingMetadataAttemptName,existingMetadataResultName,"attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json","operation-closed.json":
 			names[name]=true
 		default:return zero,ErrStageRecovery
 		}
@@ -107,7 +107,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	// Existing-target planning is mutually exclusive with all later markers.
 	// Its reservation uses the same bounded allowance as the publication attempt,
 	// plus a small independent anchor. Partial records fail closed.
-	if names[existingTargetPlanName]||names[existingTargetAnchorName]||names[existingLinkAttemptName]||names[existingLandingAttemptName]{
+	if names[existingTargetPlanName]||names[existingTargetAnchorName]||names[existingLinkAttemptName]||names[existingLandingAttemptName]||names[existingMetadataAttemptName]||names[existingMetadataResultName]{
 		if !names[existingTargetPlanName]||!names[existingTargetAnchorName]||len(e.Files)!=1{return zero,ErrStageRecovery}
 		plan,err:=readExistingTargetPlan(p,r,e.Files[0]);if err!=nil{return zero,ErrStageRecovery}
 		expected:=4
@@ -117,6 +117,14 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 			if names[existingLandingAttemptName]{
 				expected++
 				if err:=readExistingLandingAttempt(p,link);err!=nil{return zero,ErrStageRecovery}
+				if names[existingMetadataAttemptName]{
+					expected++
+					m,err:=readExistingMetadataAttempt(p,plan,link);if err!=nil{return zero,ErrStageRecovery}
+					if names[existingMetadataResultName]{
+						expected++
+						if _,err:=readExistingMetadataResult(p,m);err!=nil{return zero,ErrStageRecovery}
+					}
+				}
 			}
 		}else if names[existingLandingAttemptName]{return zero,ErrStageRecovery}
 		// No legacy landing, metadata, naming, receipts or reclamation

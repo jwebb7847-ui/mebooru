@@ -183,6 +183,12 @@ func(a *Allocator) publishExistingTarget(ctx context.Context,grant workerproto.S
 // except for the newly managed alias row; restored state preserves the
 // original ID, rating, operator-owned fields and prior path semantics.
 func(a *Allocator) observeExistingLandingLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,disposition existingDispositionAuthority,extras extrasAuthority,naming namingAuthority)(landingObservation,error){
+	return a.observeExistingLandingModeLocked(ctx,grant,g,disposition,extras,naming,true)
+}
+
+// Post-metadata callers separately verify exact preserved and post-merge
+// state; do not mistake intentional source writes for landing drift.
+func(a *Allocator) observeExistingLandingModeLocked(ctx context.Context,grant workerproto.StageAllocation,g *library.Gallery,disposition existingDispositionAuthority,extras extrasAuthority,naming namingAuthority,pristine bool)(landingObservation,error){
 	var zero landingObservation
 	if g==nil||g.WatcherRunning(){return zero,ErrStageRefused}
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
@@ -222,12 +228,12 @@ func(a *Allocator) observeExistingLandingLocked(ctx context.Context,grant worker
 		case existingHeld:
 			if row.Canonical||plan.Target.Held==nil{return zero,ErrStageRecovery}
 			state,retained,err:=retainedHeldState(ctx,g,r,dst,f,*plan.Target.Held)
-			if err!=nil||state!=plan.Target.StateSHA256||!reflect.DeepEqual(retained,plan.Target.Retained){return zero,ErrStageRecovery}
+			if err!=nil||(pristine&&state!=plan.Target.StateSHA256)||!reflect.DeepEqual(retained,plan.Target.Retained){return zero,ErrStageRecovery}
 		case existingRestore:
 			if !row.Canonical||plan.Target.Restore==nil||m.Naming==nil||naming==nil{return zero,ErrStageRecovery}
 			if err:=verifyRestoredLanding(ctx,g,r,e,*plan.Target.Restore,dst,row);err!=nil{return zero,err}
 			rating,err:=readImageRating(ctx,g,row.ImageID)
-			if err!=nil||rating!=plan.Target.Restore.RestoreRating{return zero,ErrStageRecovery}
+			if err!=nil||(pristine||plan.Target.Restore.RestoreRating!="")&&rating!=plan.Target.Restore.RestoreRating{return zero,ErrStageRecovery}
 			preview,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),row.ImageID,req)
 			if err!=nil||preview!=*m.Preview{return zero,ErrStageRecovery}
 			check:=newPublicationPlan{File:f,Preview:preview,DestinationIdentity:m.DestinationIdentity}
