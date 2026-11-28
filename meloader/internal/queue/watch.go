@@ -172,6 +172,7 @@ func (q *Queue) RemoveWatch(id int64) error {
 // own work, as the schedule does.
 func (q *Queue) CheckWatch(id int64, background bool) (int64, error) {
 	q.mu.Lock()
+	if q.managedRetiring || q.managed!=nil&&(q.closed || background&&q.managedOffline) { q.mu.Unlock();return 0,errStopping }
 	w := q.findWatchLocked(id)
 	if w == nil {
 		q.mu.Unlock()
@@ -211,6 +212,7 @@ func (q *Queue) RunWatches(ctx context.Context, held func() bool) {
 func (q *Queue) queueDueWatches() {
 	now := q.now()
 	q.mu.Lock()
+	if q.managedOffline||q.managedRetiring { q.mu.Unlock();return }
 	var ids []int64
 	for _, w := range q.watches {
 		if w.IntervalHours > 0 && !now.Before(w.Next()) && !q.watchLiveLocked(w.ID) {

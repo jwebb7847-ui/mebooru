@@ -113,6 +113,11 @@ type Queue struct {
 	// The app's own hold, apart from the operator's pause, so neither can undo
 	// the other.
 	held bool
+	// Managed queues have their own default-deny policy hold. Neither
+	// operator resume nor the legacy app hold may undo it.
+	managed *managedQueueState
+	managedOffline bool
+	managedRetiring bool
 
 	// Mirrored to the store: a crash loop must not refill a spent budget.
 	budgetLimit int
@@ -303,7 +308,7 @@ func (q *Queue) Release() {
 func (q *Queue) Held() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.held
+	return q.held || q.managedOffline || q.managedRetiring
 }
 
 func (q *Queue) Paused() bool {
@@ -314,6 +319,7 @@ func (q *Queue) Paused() bool {
 
 func (q *Queue) Enqueue(url string, opts Options) int64 {
 	q.mu.Lock()
+	if q.managedRetiring || q.managed!=nil&&q.closed { q.mu.Unlock(); return 0 }
 	j := q.enqueueLocked(url, opts)
 	q.mu.Unlock()
 	q.persistKept(j)
@@ -492,6 +498,7 @@ func (q *Queue) List(opts ListOptions) ([]*Job, int) {
 
 func (q *Queue) Retry(id int64, force bool) error {
 	q.mu.Lock()
+	if q.managedRetiring || q.managed!=nil&&q.closed { q.mu.Unlock(); return errStopping }
 	j := q.index[id]
 	if j == nil {
 		q.mu.Unlock()
@@ -553,6 +560,7 @@ func (q *Queue) continueFrom(id int64, auto bool, target int) (int64, error) {
 	// One hold from the high-water read to the enqueue, or two continues
 	// fetch the same window.
 	q.mu.Lock()
+	if q.managedRetiring || q.managed!=nil&&q.closed { q.mu.Unlock(); return 0,errStopping }
 	j := q.index[id]
 	if j == nil {
 		q.mu.Unlock()

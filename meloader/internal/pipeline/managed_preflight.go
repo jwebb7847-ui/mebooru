@@ -171,3 +171,12 @@ func NewManagedPreflightFromCompletion(ctx context.Context,completion *processgu
 	if err!=nil{return nil,err}
 	return newManagedPreflight(window,identity,config,policyGeneration,observe)
 }
+
+// RunAllocatedTransfer consumes the original one-use approval and uses
+// the owner-issued workspace budget. It is deliberately not a generic
+// command runner or an alternate legacy download path.
+func(a *ManagedTransferApproval) RunAllocatedTransfer(caller context.Context,grant workerproto.StageAllocation,set *processguard.OperationSet,root string,start processguard.StrictTransferStarter)([]acquisitionplan.VerifiedTransferFile,error){
+	if a==nil||a.preflight==nil||a.plan==nil||grant.Request.Transfer!=a.Request(){return nil,ErrManagedPreflight}
+	p:=a.preflight
+	return processguard.RunAllocatedStrictTransfer(caller,set,grant,p.config,root,a.admit,p.current,start)
+}

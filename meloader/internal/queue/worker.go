@@ -76,7 +76,7 @@ func (q *Queue) worker() {
 func (q *Queue) nextJob() (*Job, context.Context, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for (len(q.pending) == 0 || q.paused || q.held) && !q.closed {
+	for (len(q.pending) == 0 || q.paused || q.held || q.managedOffline || q.managedRetiring) && !q.closed {
 		q.cond.Wait()
 	}
 	if q.closed {
@@ -94,25 +94,39 @@ func (q *Queue) nextJob() (*Job, context.Context, bool) {
 }
 
 func (q *Queue) runJob(j *Job, ctx context.Context) {
+	var finish func(error)
+	var cleanupErr error
+	// Keep the managed lease until settlement and actual cleanup finish.
+	defer func(){ if finish!=nil { finish(cleanupErr) } }()
 	defer q.finish(j)
 	defer func() {
 		if r := recover(); r != nil {
+			if q.managed!=nil { cleanupErr=errManagedCleanup }
 			logx.Errorf("queue: job %d panicked: %v", j.ID, r)
 			j.Fail(outcome.ErrCodeDownloadFailed, fmt.Sprintf("internal error: %v", r), q.now())
 		}
 	}()
 
+	if q.managed!=nil {
+		var err error
+		ctx,finish,err=q.managed.gate.Admit(ctx)
+		if err!=nil { j.interrupt(q.now());return }
+	}
 	if err := j.start(q.now()); err != nil {
 		logx.Warnf("queue: job %d not startable: %v", j.ID, err)
 		j.cancel(q.now())
 		return
 	}
-	q.persist(j)
+	if q.managed!=nil {
+		if q.store==nil { j.interrupt(q.now());return }
+		if err:=q.store.SaveJob(j.Snapshot());err!=nil{j.interrupt(q.now());return}
+	} else { q.persist(j) }
 	q.stampWatch(j)
 
-	err := q.proc.Process(ctx, j)
+	var err error
+	if q.managed!=nil { err,cleanupErr=q.managed.proc.ProcessManaged(ctx,j);if cleanupErr!=nil{err=errManagedCleanup} } else { err=q.proc.Process(ctx,j) }
 	switch {
-	case ctx.Err() != nil && q.closing():
+	case ctx.Err() != nil && (q.closing() || q.managed!=nil):
 		// A shutdown is not an operator cancel: settle it like a crash,
 		// so a restart keeps the requeue.
 		j.interrupt(q.now())
