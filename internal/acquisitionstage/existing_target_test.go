@@ -26,6 +26,10 @@ func TestDurableExistingTargetPlan(t *testing.T){
 	testExistingPublicationTargetModes(t, []string{"plan held", "restore plan", "plan reopen", "plan forged", "plan stale", "plan wrong decision", "plan no decision", "plan revoke after marker", "plan changed after marker", "plan corrupt", "plan noncanonical", "plan changed record", "plan lost marker", "plan lost anchor", "plan partial anchor"})
 }
 
+func TestGuardedExistingExecution(t *testing.T){
+	testExistingPublicationTargetModes(t, []string{"exec held","exec alias","restore exec","restore exec unmarked","exec reopen","exec stale","exec revoked after link intent","exec changed after link","exec revoked after landing intent","exec changed after landing intent","restore exec naming changed","restore exec bad naming","restore exec old path returned","exec lost link","exec lost landing","exec changed after landing"})
+}
+
 func testExistingPublicationTargetModes(t *testing.T, modes []string){
 	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
@@ -60,14 +64,14 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 			}
 			kind := existingHeld
 			if strings.HasPrefix(mode,"restore") { kind = existingRestore }
-			if mode == "held alias" || mode == "restore alias" {
+			if mode == "held alias" || mode == "restore alias" || mode == "exec alias" {
 				alias := filepath.Join(s.GalleryRoot,"operator.png")
 				if err := os.WriteFile(alias,data,0600); err != nil { t.Fatal(err) }
 				if res,err := g.LandInPlace(ctx,alias,library.LandSpec{Origin:"fixture"}); err != nil || !res.Duplicate { t.Fatal("alias",err) }
 			}
 			if kind == existingRestore || mode == "wrong disposition" {
 				if err := os.Remove(old); err != nil { t.Fatal(err) }
-				if mode != "restore unmarked" {
+				if mode != "restore unmarked" && mode != "restore exec unmarked" {
 					if _,err := gallery.SetMissing(g.DB,id,true); err != nil { t.Fatal(err) }
 				}
 			}
@@ -109,7 +113,8 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 			got,err := a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras)
 			want := mode == "held" || mode == "held nested" || mode == "held alias" || mode == "restore marked" || mode == "restore unmarked" || mode == "changed note" || mode == "changed canonical identity" || mode == "restore row changed"
 			planMode := strings.HasPrefix(mode,"plan ")||mode=="restore plan"
-			want = want||planMode
+			execMode:=strings.HasPrefix(mode,"exec ")||strings.HasPrefix(mode,"restore exec")
+			want = want||planMode||execMode
 			if (err == nil) != want { t.Fatal("unexpected eligibility",got,err) }
 			if count() != before { t.Fatal("observer changed rows") }
 			if mode != "attempt exists" {
@@ -123,10 +128,14 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 				if got.Held == nil || got.Restore != nil || got.Held.ImageID != id || got.Held.CanonicalIdentity == "" { t.Fatal("held evidence",got) }
 				if mode == "held alias" && len(got.Retained) != 2 { t.Fatal("alias evidence missing",got) }
 			} else {
-				if got.Restore == nil || got.Held != nil || got.Restore.RestoreImageID != id || got.Restore.RestorePathID <= 0 || got.Restore.RestoreMarkedMissing != (mode != "restore unmarked") || got.Restore.RestoreRating != "explicit" { t.Fatal("restore evidence",got) }
+				if got.Restore == nil || got.Held != nil || got.Restore.RestoreImageID != id || got.Restore.RestorePathID <= 0 || got.Restore.RestoreMarkedMissing != (mode != "restore unmarked" && mode != "restore exec unmarked") || got.Restore.RestoreRating != "explicit" { t.Fatal("restore evidence",got) }
 			}
 			again,err := a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras)
 			if err != nil || !sameExistingPublicationTarget(got,again) { t.Fatal("stable repeat",again,err) }
+			if execMode {
+				checkGuardedExistingExecution(t,ctx,&a,stage,grant,g,got,extras,authority,mode,count,before,old,data)
+				return
+			}
 			if planMode {
 				checkDurableExistingTargetPlan(t,ctx,&a,stage,grant,g,got,extras,authority,mode,count,before)
 				return
@@ -238,4 +247,97 @@ func checkDurableExistingTargetPlan(t *testing.T,ctx context.Context,ap **Alloca
 	if (err==nil)!=want||want&&!sameExistingPublicationTarget(m.Target,got){t.Fatal("observation",m,err)}
 	if _,err:=a.publishPrepared(ctx,grant);err==nil{t.Fatal("damaged or valid plan allowed publication")}
 	if count()!=before{t.Fatal("observer changed gallery rows")}
+}
+
+func checkGuardedExistingExecution(t *testing.T,ctx context.Context,ap **Allocator,stage string,grant workerproto.StageAllocation,g *library.Gallery,got existingPublicationTarget,extras extrasAuthority,authority Authority,mode string,count func()[2]int,before [2]int,old string,data []byte){
+	t.Helper()
+	a:=*ap
+	dir:=filepath.Join(stage,grant.Request.OperationID,"publication")
+	link:=filepath.Join(dir,existingLinkAttemptName)
+	landing:=filepath.Join(dir,existingLandingAttemptName)
+	managed:=filepath.Join(g.GalleryPath,finalName(grant,got.File))
+	decision:=existingDispositionAuthority(func(context.Context,workerproto.StageAllocation)(string,error){
+		if mode=="exec revoked after link intent"{if _,err:=os.Stat(link);err==nil{return "",ErrStageRefused}}
+		if mode=="exec revoked after landing intent"{if _,err:=os.Stat(landing);err==nil{return "",ErrStageRefused}}
+		return got.Kind,nil
+	})
+	req:=gallery.ReceivedNamingRequest{Gallery:g.Name,ReceivedName:got.File.RelativeName,Source:"derpibooru",PostID:got.File.ID,DefaultName:"{source}-{post_id}"}
+	if mode=="restore exec bad naming"{req.DefaultName="{date}"}
+	naming:=namingAuthority(func(context.Context,workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){return req,nil})
+	injected:=false
+	originalExtras:=extras
+	extras=func(ctx context.Context,grant workerproto.StageAllocation)(contract.JobExtras,error){
+		if mode=="exec changed after landing intent"&&!injected{
+			if _,err:=os.Stat(landing);err==nil{
+				injected=true
+				if _,err:=g.DB.Write.Exec("UPDATE images SET note='late change' WHERE id=?",got.ImageID);err!=nil{t.Fatal(err)}
+			}
+		}
+		return originalExtras(ctx,grant)
+	}
+	if err:=a.recordExistingTargetPlan(ctx,grant,g,got,decision,extras);err!=nil{t.Fatal("record",err)}
+	if mode=="exec stale"{if _,err:=g.DB.Write.Exec("UPDATE images SET note='stale' WHERE id=?",got.ImageID);err!=nil{t.Fatal(err)}}
+	err:=a.publishExistingTarget(ctx,grant,g,decision,extras,naming)
+	noLink:=mode=="exec stale"||mode=="restore exec bad naming"||mode=="exec revoked after link intent"
+	if (err!=nil)!=noLink{t.Fatal("publication",err)}
+	if count()!=before{t.Fatal("publication changed DB")}
+	if noLink{
+		if _,err:=os.Stat(managed);!os.IsNotExist(err){t.Fatal("unexpected placement",err)}
+		if mode=="exec revoked after link intent"{
+			if _,err:=os.Stat(link);err!=nil{t.Fatal("missing link intent",err)}
+			if err:=a.publishExistingTarget(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("replayed failed link")}
+		}else if _,err:=os.Stat(link);!os.IsNotExist(err){t.Fatal("premature link intent",err)}
+		return
+	}
+	if b,err:=os.ReadFile(managed);err!=nil||!bytes.Equal(b,data){t.Fatal("placement bytes",err)}
+	if err:=a.publishExistingTarget(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("link replay")}
+	if err:=a.beginLanding(ctx,grant,g);err==nil{t.Fatal("legacy landing bypass")}
+	if err:=a.landRestoredPrepared(ctx,grant,g);err==nil{t.Fatal("legacy restoration bypass")}
+	if _,err:=a.applyMappedMetadata(ctx,grant,g);err==nil{t.Fatal("premature metadata")}
+	if _,err:=a.observeExistingLanding(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("premature landing witness")}
+	switch mode{
+	case "exec changed after link":
+		if _,err:=g.DB.Write.Exec("UPDATE images SET note='late' WHERE id=?",got.ImageID);err!=nil{t.Fatal(err)}
+	case "restore exec naming changed":
+		req.DefaultName="changed"
+	case "restore exec old path returned":
+		if err:=os.WriteFile(old,[]byte("operator"),0600);err!=nil{t.Fatal(err)}
+	case "exec lost link":
+		if err:=os.Remove(link);err!=nil{t.Fatal(err)}
+	}
+	err=a.landExistingTarget(ctx,grant,g,decision,extras,naming)
+	pre:=mode=="exec changed after link"||mode=="restore exec naming changed"||mode=="restore exec old path returned"||mode=="exec lost link"
+	late:=mode=="exec revoked after landing intent"||mode=="exec changed after landing intent"
+	if (err!=nil)!=(pre||late){t.Fatal("landing",err)}
+	if pre||late{
+		if count()!=before{t.Fatal("refused landing changed rows")}
+		if pre{if _,err:=os.Stat(landing);!os.IsNotExist(err){t.Fatal("premature landing intent",err)}}else{
+			if _,err:=os.Stat(landing);err!=nil{t.Fatal("missing landing intent",err)}
+			if err:=a.landExistingTarget(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("replayed landing")}
+		}
+		return
+	}
+	if count()[0]!=before[0]{t.Fatal("existing image ID replaced")}
+	if err:=a.landExistingTarget(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("landing replay")}
+	if _,err:=a.applyMappedMetadata(ctx,grant,g);err==nil{t.Fatal("legacy metadata bypass")}
+	if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("premature receipt")}
+	if got.Kind==existingHeld{
+		if b,err:=os.ReadFile(old);err!=nil||!bytes.Equal(b,data){t.Fatal("canonical bytes",err)}
+		if mode=="exec alias"{if b,err:=os.ReadFile(filepath.Join(g.GalleryPath,"operator.png"));err!=nil||!bytes.Equal(b,data){t.Fatal("operator alias",err)}}
+	}else if _,err:=os.Stat(old);!os.IsNotExist(err){t.Fatal("old path reappeared",err)}
+	switch mode{
+	case "exec reopen":
+		if err:=a.Close();err!=nil{t.Fatal(err)}
+		next,err:=Open(stage,2,4096,authority);if err!=nil{t.Fatal(err)}
+		*ap=next;a=next
+	case "exec lost landing":
+		if err:=os.Remove(landing);err!=nil{t.Fatal(err)}
+	case "exec changed after landing":
+		if _,err:=g.DB.Write.Exec("UPDATE images SET note='changed' WHERE id=?",got.ImageID);err!=nil{t.Fatal(err)}
+	}
+	row,err:=a.observeExistingLanding(ctx,grant,g,decision,extras,naming)
+	want:=mode!="exec lost landing"&&mode!="exec changed after landing"
+	if (err==nil)!=want||want&&(row.ImageID!=got.ImageID||row.Canonical!=(got.Kind==existingRestore)){t.Fatal("witness",row,err)}
+	if _,err:=os.Stat(filepath.Join(dir,"attempt"));!os.IsNotExist(err){t.Fatal("legacy attempt",err)}
+	if _,err:=os.Stat(filepath.Join(dir,"landing-attempt.json"));!os.IsNotExist(err){t.Fatal("legacy landing marker",err)}
 }
