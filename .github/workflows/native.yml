@@ -60,7 +60,9 @@ jobs:
     name: Fast development verification
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Bound the entire cold-cache job separately from individual Go test deadlines.
+    # A previous 15-minute job expired after passing staging, during the runtime probe.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
