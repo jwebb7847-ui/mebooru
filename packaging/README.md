@@ -19,9 +19,9 @@
 
 ## Current Mebooru Finder candidate
 
-From a consolidated Mebooru checkout, run `sh packaging/build-macos-app.sh` to build `dist/Mebooru.app` with the nested acquisition worker. The bundled launcher supports trusted fresh-profile automatic pairing and manages companion lifetime. Use the exact accepted candidate revision and disposable profiles described in [MEBOORU.md](../MEBOORU.md#development-workflow). The bundle is ad-hoc signed, not a notarized public release. Inherited Windows/Linux packaging still needs installation acceptance; native and container compile checks are not a substitute. Retain persisted legacy identifiers until an approved migration.
+From an Apple Silicon checkout, run `sh packaging/build-macos-app.sh` to build `dist/Mebooru.app` with the internal acquisition worker, portable Python, gallery-dl 1.32.19, FFmpeg and ffprobe. The build requires the pinned Go toolchain and Apple Command Line Tools. The app ships its runtime and media dependencies. On first run it seeds the managed profile offline and opens the setup wizard. The local build is ad-hoc signed. [Mac acceptance and current evidence](../docs/validation/self-contained-macos.md)
 
-To qualify a Mac build with a bundled runtime, provide a trusted, self-contained gallery-dl executable built for the Mac's architecture, its SHA-256, and the pinned version's license file. The build checks the inputs and runtime version before signing the app.
+The default build checks the standalone Python archive, Python wheel hashes and FFmpeg/WebP source hashes. Build caches can supply the same archives through `MEBOORU_MACOS_PYTHON_ARCHIVE` and `MEBOORU_MACOS_MEDIA_ARCHIVES`. To compare an alternative single-file gallery-dl, provide a trusted executable for the target architecture, its SHA-256, and the pinned version's license file.
 
 ```sh
 MEBOORU_GALLERY_DL="$runtime" \
@@ -30,7 +30,7 @@ MEBOORU_GALLERY_DL_LICENSE="$runtime_license" \
 sh packaging/build-macos-app.sh meloader "$output_dir"
 ```
 
-In the disposable managed profile, leave `[gallerydl].binary_path` empty to use the bundled executable. An absolute installed path remains available in **Settings → Acquisition**. The managed worker still verifies the runtime inside containment before acquisition. Public distribution, runtime update and rollback remain separate work.
+In a managed profile, leave `[gallerydl].binary_path` empty to use the bundle. **Settings → Acquisition** can install a qualified update and select the bundled version again. Restart to apply either choice. An absolute configured runtime path remains available. The native workflow also builds a legacy compatibility fixture using `MEBOORU_LEGACY_DESKTOP_BUNDLE=1` for the previous pairing tests. Intel defaults to that legacy bundle until a native managed runtime is qualified.
 
 ## Consolidated build-path status
 
