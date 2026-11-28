@@ -90,7 +90,7 @@ func (s *Server) pluginRows() []pluginRowView {
 	// Rendered even unpaired: its api url is an override an operator may
 	// set before pairing.
 	rows := make([]pluginRowView, 0, len(managed)+len(paired)+1)
-	if s.managedLoader == nil {
+	if !s.usesManagedLoader() {
 		rows = append(rows, s.monloaderRow())
 	}
 	rows = append(rows, managed...)
@@ -155,7 +155,7 @@ func (s *Server) pairedPeerCount() int {
 	defer s.cfgMu.RUnlock()
 	n := 0
 	for _, t := range s.cfg.Auth.Tokens {
-		if t.Paired != "" && !(s.managedLoader != nil && t.Paired == monloader.App) {
+		if t.Paired != "" && !(s.usesManagedLoader() && t.Paired == monloader.App) {
 			n++
 		}
 	}
@@ -178,7 +178,7 @@ func (s *Server) pairViewData() map[string]any {
 func (s *Server) pairNotice() webui.PairNotice {
 	n := webui.PairNotice{Href: "/settings#plugins"}
 	for _, req := range s.pairs.ListPending() {
-		if s.managedLoader != nil && req.App == monloader.App {
+		if s.usesManagedLoader() && req.App == monloader.App {
 			continue
 		}
 		n.Items = append(n.Items, webui.PairItem{App: peerDisplayName(req.App), Source: req.Source, Version: req.Version, Repair: req.Repair, ExpiresAt: req.ExpiresAt()})
@@ -215,7 +215,7 @@ func (s *Server) pendingOffers() []pendingOffer {
 	}
 	out := make([]pendingOffer, 0, len(pending))
 	for _, req := range pending {
-		if s.managedLoader != nil && req.App == monloader.App {
+		if s.usesManagedLoader() && req.App == monloader.App {
 			continue
 		}
 		ip := net.ParseIP(req.Source)

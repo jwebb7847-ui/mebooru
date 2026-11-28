@@ -219,7 +219,7 @@ func (s *Server) desktopPowerFragment(w http.ResponseWriter, r *http.Request) {
 const quitDelay = 300 * time.Millisecond
 
 func (s *Server) settingsQuit(w http.ResponseWriter, r *http.Request) {
-	if !(s.desktop || s.managedLoader != nil) || !desktop.LocalRequest(r) {
+	if !(s.desktop || s.usesManagedLoader()) || !desktop.LocalRequest(r) {
 		http.NotFound(w, r)
 		return
 	}

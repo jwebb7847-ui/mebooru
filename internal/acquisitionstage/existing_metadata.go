@@ -6,6 +6,7 @@ import(
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -116,6 +117,16 @@ func existingMetadataSourceEligible(ctx context.Context,g *library.Gallery,id in
 // empty and the complete source attribution ledger to match the result.
 func verifyExistingMappedRow(ctx context.Context,g *library.Gallery,m existingMetadataAttempt,row acquisitionplan.ApprovedPolicyRow,rejected []string)(metadataObservation,error){
 	var zero metadataObservation
+	if m.Repeat {
+		// A repeat has already verified the incoming bytes and evaluated
+		// current source policy. It keeps the existing source and tags.
+		// Fresh mutable claims do not describe a write by this operation.
+		exact,err:=existingMetadataSourceEligible(ctx,g,m.Target.ImageID,row,true)
+		if err!=nil||!exact{return zero,fmt.Errorf("%w: existing source changed",ErrStageRecovery)}
+		rating,err:=readImageRating(ctx,g,m.Target.ImageID)
+		if err!=nil||rating!=m.Target.PriorRating{return zero,fmt.Errorf("%w: retained rating changed",ErrStageRecovery)}
+		return metadataObservation{ImageID:m.Target.ImageID,PostID:m.Target.PostID,Rating:rating,TagIDs:[]int64{},Rejected:[]string{}},nil
+	}
 	v,err:=verifyMappedRow(ctx,g,m.Target,row,rejected)
 	if err!=nil{return zero,err}
 	tx,err:=g.DB.Read.BeginTx(ctx,&sql.TxOptions{ReadOnly:true})
@@ -123,10 +134,6 @@ func verifyExistingMappedRow(ctx context.Context,g *library.Gallery,m existingMe
 	defer tx.Rollback()
 	in,md5,err:=normalizedMappedSource(row)
 	if err!=nil||verifySourceClaimsMode(ctx,tx,v.ImageID,in,md5,true)!=nil{return zero,ErrStageRecovery}
-	if m.Repeat{
-		if tx.Commit()!=nil||ctx.Err()!=nil{return zero,ErrStageRecovery}
-		return v,nil
-	}
 	for _,q:=range []struct{sql string;args []any;want int}{
 		{`SELECT COUNT(*) FROM image_sources WHERE image_id=? AND site=?`,[]any{v.ImageID,row.SourceLabel},1},
 		{`SELECT COUNT(*) FROM image_sources WHERE (site=? AND post_id=?) OR url=?`,[]any{row.SourceLabel,row.PostID,row.PostURL},1},

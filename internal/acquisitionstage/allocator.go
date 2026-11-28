@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -89,6 +90,15 @@ func(a *Allocator)Close()error{
 	if a.root==nil{return nil}
 	err:=a.root.Close()
 	a.root=nil
+	return err
+}
+
+// CheckInventory verifies existing active staging records before normal
+// startup can grant a worker network access.
+func(a *Allocator) CheckInventory(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	_,_,_,err:=a.inventoryWithClosure(ctx)
 	return err
 }
 
@@ -260,7 +270,7 @@ func(a *Allocator)inventory(ctx context.Context)(map[string]record,uint64,error)
 	return records,reserved,err
 }
 func(a *Allocator)inventoryWithClosure(ctx context.Context)(map[string]record,map[string]bool,uint64,error){
-	if !a.historyLive(){return nil,nil,0,ErrStageRecovery}
+	if !a.historyLive(){return nil,nil,0,fmt.Errorf("%w: staging history no longer matches the open archive",ErrStageRecovery)}
 	entries,err:=list(a.root,maxAllocations+1)
 	if err!=nil{return nil,nil,0,err}
 	records:=make(map[string]record,len(entries))
@@ -271,12 +281,13 @@ func(a *Allocator)inventoryWithClosure(ctx context.Context)(map[string]record,ma
 		if entry.Name()==historyDirName{continue}
 		if _,exists:=a.history[entry.Name()];exists{return nil,nil,0,ErrStageRecovery}
 		if ctx.Err()!=nil{return nil,nil,0,ErrStageRefused}
-		if !entry.IsDir(){return nil,nil,0,ErrStageRecovery}
+		if !entry.IsDir(){return nil,nil,0,fmt.Errorf("%w: unexpected staging entry %q",ErrStageRecovery,entry.Name())}
 		r,err:=a.load(entry.Name())
-		if err!=nil||transfers[r.Allocation.TransferID]||a.historyTransfers[r.Allocation.TransferID]{return nil,nil,0,ErrStageRecovery}
+		if err!=nil{return nil,nil,0,fmt.Errorf("active operation %s: %w",entry.Name(),err)}
+		if transfers[r.Allocation.TransferID]||a.historyTransfers[r.Allocation.TransferID]{return nil,nil,0,fmt.Errorf("%w: duplicate transfer for operation %s",ErrStageRecovery,entry.Name())}
 		transfers[r.Allocation.TransferID]=true
 		done,charge,err:=a.closedCharge(ctx,r)
-		if err!=nil{return nil,nil,0,err}
+		if err!=nil{return nil,nil,0,fmt.Errorf("operation %s closure: %w",entry.Name(),err)}
 		if done{closed[entry.Name()]=true}
 		if charge>maxReservedBytes-reserved{return nil,nil,0,ErrStageLimit}
 		reserved+=charge

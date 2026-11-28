@@ -2,6 +2,7 @@ package acquisitionstage
 
 import(
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
@@ -58,11 +59,11 @@ func(a *Allocator) CompleteTransferredForOwner(c context.Context,lease *acquisit
 	if _,err:=a.Seal(c,grant,func(c context.Context,g workerproto.StageAllocation)([]byte,[]acquisitionplan.VerifiedTransferFile,error){
 		if err:=current(c,g);err!=nil{return nil,nil,err}
 		return run.ConfirmStopped(c,g)
-	});err!=nil{return zero,err}
+	});err!=nil{return zero,fmt.Errorf("seal transferred files: %w",err)}
 	if err:=a.BindPolicy(c,grant,func(c context.Context,g workerproto.StageAllocation)([]byte,string,error){
 		if err:=current(c,g);err!=nil{return nil,"",err}
 		return run.Policy(c,g)
-	});err!=nil{return zero,err}
+	});err!=nil{return zero,fmt.Errorf("bind approved policy: %w",err)}
 	owner:=run.Batch
 	owner.Current=func(c context.Context,g workerproto.StageAllocation)error{
 		if err:=current(c,g);err!=nil{return err}
@@ -70,7 +71,7 @@ func(a *Allocator) CompleteTransferredForOwner(c context.Context,lease *acquisit
 	}
 	start:=time.Now()
 	out,err:=a.CommitBatchForOwner(c,grant,set,owner)
-	if err!=nil{return out,err}
+	if err!=nil{return out,fmt.Errorf("publish batch: %w",err)}
 	job:=grant.Request.Transfer.Metadata.JobID
 	logx.Infof("managed acquisition job=%d stage=publication duration=%s",job,time.Since(start).Round(time.Millisecond))
 	start=time.Now()
@@ -78,6 +79,7 @@ func(a *Allocator) CompleteTransferredForOwner(c context.Context,lease *acquisit
 		if err:=current(c,g);err!=nil{return err}
 		return run.Reclaim(c,g,v)
 	},false)
-	if err==nil{logx.Infof("managed acquisition job=%d stage=reclamation duration=%s",job,time.Since(start).Round(time.Millisecond))}
-	return out,err
+	if err!=nil{return out,fmt.Errorf("reclaim batch: %w",err)}
+	logx.Infof("managed acquisition job=%d stage=reclamation duration=%s",job,time.Since(start).Round(time.Millisecond))
+	return out,nil
 }

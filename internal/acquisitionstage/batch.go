@@ -5,6 +5,7 @@ import(
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"reflect"
@@ -234,11 +235,11 @@ func(a *Allocator) CommitBatchForOwner(ctx context.Context,parent workerproto.St
 		}
 		one,err:=json.Marshal(map[string]json.RawMessage{item.PostID:native[item.PostID]})
 		if err!=nil||digestBytes(one)!=item.Request.Transfer.ManifestSHA256{return a.batchFailure(ctx,parent,ErrStageRecovery)}
-		child,err:=a.copyBatchChild(ctx,parent,item,one,row,auth);if err!=nil{return a.batchFailure(ctx,parent,err)}
-		w,err:=a.CommitSealedForOwner(ctx,child,set,auth);if err!=nil{return a.batchFailure(ctx,parent,err)}
-		if err:=a.persistBatchItem(ctx,parent,p,item,w);err!=nil{return a.batchFailure(ctx,parent,err)}
+		child,err:=a.copyBatchChild(ctx,parent,item,one,row,auth);if err!=nil{return a.batchFailure(ctx,parent,fmt.Errorf("stage post %s: %w",item.PostID,err))}
+		w,err:=a.CommitSealedForOwner(ctx,child,set,auth);if err!=nil{return a.batchFailure(ctx,parent,fmt.Errorf("publish post %s: %w",item.PostID,err))}
+		if err:=a.persistBatchItem(ctx,parent,p,item,w);err!=nil{return a.batchFailure(ctx,parent,fmt.Errorf("record receipt for post %s: %w",item.PostID,err))}
 		if owner.Archive!=nil{
-			if _,err:=a.ArchiveClosed(ctx,child,owner.Archive);err!=nil{return a.batchFailure(ctx,parent,err)}
+			if _,err:=a.ArchiveClosed(ctx,child,owner.Archive);err!=nil{return a.batchFailure(ctx,parent,fmt.Errorf("archive post %s: %w",item.PostID,err))}
 		}
 	}
 	if owner.Current(ctx,parent)!=nil{return a.batchFailure(ctx,parent,ErrStageRefused)}

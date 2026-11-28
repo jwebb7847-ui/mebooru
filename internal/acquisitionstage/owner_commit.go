@@ -2,6 +2,7 @@ package acquisitionstage
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
@@ -88,11 +89,11 @@ func(a *Allocator) commitSealedGuarded(ctx context.Context,grant workerproto.Sta
 		if err:=step(func()error{_,err:=a.finishComposedReceipt(ctx,grant,g,naming,extras);return err});err!=nil{return zero,err}
 	}else{
 		guarded=[]existingDispositionAuthority{disposition}
-		target,err:=a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras);if err!=nil{return zero,err}
-		if err:=step(func()error{return a.recordExistingTargetPlan(ctx,grant,g,target,disposition,extras)});err!=nil{return zero,err}
-		if err:=step(func()error{return a.publishExistingTarget(ctx,grant,g,disposition,extras,naming)});err!=nil{return zero,err}
-		if err:=step(func()error{return a.landExistingTarget(ctx,grant,g,disposition,extras,naming)});err!=nil{return zero,err}
-		if err:=step(func()error{_,err:=a.applyExistingMetadata(ctx,grant,g,disposition,extras,naming);return err});err!=nil{return zero,err}
+		target,err:=a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras);if err!=nil{return zero,fmt.Errorf("verify existing image target: %w",err)}
+		if err:=step(func()error{return a.recordExistingTargetPlan(ctx,grant,g,target,disposition,extras)});err!=nil{return zero,fmt.Errorf("record existing image target: %w",err)}
+		if err:=step(func()error{return a.publishExistingTarget(ctx,grant,g,disposition,extras,naming)});err!=nil{return zero,fmt.Errorf("link existing image payload: %w",err)}
+		if err:=step(func()error{return a.landExistingTarget(ctx,grant,g,disposition,extras,naming)});err!=nil{return zero,fmt.Errorf("land existing image: %w",err)}
+		if err:=step(func()error{_,err:=a.applyExistingMetadata(ctx,grant,g,disposition,extras,naming);return err});err!=nil{return zero,fmt.Errorf("verify existing image metadata: %w",err)}
 		if kind==existingHeld{
 			if err:=step(func()error{return a.disposeExistingHeld(ctx,grant,g,disposition,extras)});err!=nil{return zero,err}
 			if err:=step(func()error{_,err:=a.finishExistingHeldReceipt(ctx,grant,g,disposition,extras);return err});err!=nil{return zero,err}

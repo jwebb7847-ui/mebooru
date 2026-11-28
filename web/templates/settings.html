@@ -1342,6 +1342,9 @@
   <section id="meloader" class="settings-section">
     {{if .ManagedAcquisition}}
     {{template "webui/settings_section_header" dict "Title" "Acquisition"}}
+    {{if .AcqUnavailable}}
+    <p role="status">{{.AcqUnavailable}}</p>
+    {{else}}
     <div class="settings-actions">
       <form method="post" action="/loader/offline">
         <input type="hidden" name="_csrf" value="{{$csrf}}">
@@ -1380,6 +1383,7 @@
     </form>
     {{end}}
     <p class="field-hint">Settings file <code>{{.Acquisition.PolicyFile}}</code></p>
+    {{end}}
     {{end}}
     {{else}}
     {{template "webui/settings_section_header" dict "Title" "Meloader"}}

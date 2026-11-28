@@ -87,12 +87,6 @@ func openManagedApplication(dir string, setup managedqa.Setup, live *windowregis
 	if err != nil {
 		return nil, err
 	}
-	if live != nil {
-		if err := saveLiveConfig(dir, *live); err != nil {
-			lock.Close()
-			return nil, err
-		}
-	}
 	store, err := acquisitionpolicy.Open(dir)
 	if err != nil {
 		lock.Close()
@@ -120,6 +114,14 @@ func openManagedApplication(dir string, setup managedqa.Setup, live *windowregis
 		closePolicy()
 		return nil, err
 	}
+	if live != nil {
+		if err := o.a.CheckInventory(context.Background()); err != nil {
+			o.a.Close()
+			registry.Close()
+			closePolicy()
+			return nil, err
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m, err := acquisitionpolicy.NewManager(ctx, lock, policy, func(start, lifetime context.Context, f *acquisitionpolicy.WorkerFence) (acquisitionpolicy.ManagedPeer, error) {
 		o.mu.Lock()
@@ -138,6 +140,16 @@ func openManagedApplication(dir string, setup managedqa.Setup, live *windowregis
 		registry.Close()
 		closePolicy()
 		return nil, err
+	}
+	if live != nil {
+		if err := saveLiveConfig(dir, *live); err != nil {
+			cancel()
+			o.a.Close()
+			registry.Close()
+			m.Shutdown(context.Background())
+			store.Close()
+			return nil, err
+		}
 	}
 	o.bindOnline = func() (*acquisitionpolicy.OnlineLease, error) { return m.ObserveOnline(ctx) }
 	app := &managedApplication{manager: m, owner: o, store: store, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1)}

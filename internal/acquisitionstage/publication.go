@@ -7,6 +7,7 @@ import(
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -39,6 +40,9 @@ func finalName(g workerproto.StageAllocation,f acquisitionplan.VerifiedTransferF
 	return "mebooru-"+g.TransferID+"-"+f.RelativeName
 }
 func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIntent,error){
+	return readPublicationMode(operation,r,e,false)
+}
+func readPublicationMode(operation *os.Root,r record,e SealedEvidence,archivedChild bool)(publicationIntent,error){
 	var zero publicationIntent
 	p,err:=openDir(operation,"publication")
 	if err!=nil{return zero,err}
@@ -53,6 +57,12 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 			names[name]=true
 		default:return zero,ErrStageRecovery
 		}
+	}
+	if archivedChild&&!names["operation-closed.json"]{return zero,ErrStageRecovery}
+	checkWorkspace:=func()error{
+		if !archivedChild{return validateWorkspaceReclaimRecords(operation,p,r,e,names["workspace-reclaim-result.json"])}
+		w,raw,err:=readWorkspaceReclaimAttempt(p,r,e);if err!=nil{return err}
+		_,err=readWorkspaceReclaimResult(p,w,raw);return err
 	}
 	if !names["media"]||!names["intent.json"]||
 		(names["landing-attempt.json"]&&!names["attempt"])||
@@ -96,6 +106,11 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	media,err:=openDir(p,"media")
 	if err!=nil{return zero,err}
 	defer media.Close()
+	checkPrepared:=func()error{
+		if !archivedChild{return validatePreparedReleaseRecords(p,media,r,e,names["prepared-release-result.json"])}
+		m,raw,err:=readPreparedReleaseAttempt(p,r,e);if err!=nil{return err}
+		_,err=readPreparedReleaseResult(p,m,raw);return err
+	}
 	items,err:=list(media,len(intent.Files))
 	if err!=nil||(!names["prepared-release-attempt.json"]&&len(items)!=len(intent.Files)){return zero,ErrStageRecovery}
 	want:=map[string]bool{}
@@ -155,12 +170,12 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 			w,_,err:=readWorkspaceReclaimAttempt(p,r,e)
 			if err!=nil||w.Witness!=guardedWitness{return zero,ErrStageRecovery}
 			if names["workspace-reclaim-result.json"]{expected++}
-			if err:=validateWorkspaceReclaimRecords(operation,p,r,e,names["workspace-reclaim-result.json"]);err!=nil{return zero,err}
+			if err:=checkWorkspace();err!=nil{return zero,fmt.Errorf("workspace reclamation records: %w",err)}
 		}
 		if names["prepared-release-attempt.json"]{
 			expected++
 			if names["prepared-release-result.json"]{expected++}
-			if err:=validatePreparedReleaseRecords(p,media,r,e,names["prepared-release-result.json"]);err!=nil{return zero,err}
+			if err:=checkPrepared();err!=nil{return zero,fmt.Errorf("prepared release records: %w",err)}
 		}
 		if names["sealed-retirement-attempt.json"]{
 			expected++
@@ -245,10 +260,10 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 					if _,err:=readHeldReceipt(p,r,e,landing,m,result);err!=nil{return zero,err}
 				}
 				if names["workspace-reclaim-attempt.json"]{
-					if err:=validateWorkspaceReclaimRecords(operation,p,r,e,names["workspace-reclaim-result.json"]);err!=nil{return zero,err}
+					if err:=checkWorkspace();err!=nil{return zero,fmt.Errorf("workspace reclamation records: %w",err)}
 				}
 				if names["prepared-release-attempt.json"]{
-					if err:=validatePreparedReleaseRecords(p,media,r,e,names["prepared-release-result.json"]);err!=nil{return zero,err}
+					if err:=checkPrepared();err!=nil{return zero,fmt.Errorf("prepared release records: %w",err)}
 				}
 				if names["operation-closed.json"]{
 					if _,err:=readOperationClosure(p,r,e);err!=nil{return zero,err}

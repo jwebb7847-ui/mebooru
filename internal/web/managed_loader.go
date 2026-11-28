@@ -47,7 +47,37 @@ type managedSettingsEditor interface {
 
 var ErrManagedImportUnsupported = errors.New("unsupported managed import")
 
+const acquisitionUnavailable = "Acquisition is unavailable. See the application log for repair details. Your local library is available offline."
+
+// DisableManagedLoader is used before serving HTTP when acquisition
+// cannot establish safe staging or ownership. It keeps legacy pairing off.
+func (s *Server) DisableManagedLoader() {
+	s.loaderUnavailable = true
+}
+
+func (s *Server) usesManagedLoader() bool {
+	return s.managedLoader != nil || s.loaderUnavailable
+}
+
+func (s *Server) acquisitionUnavailableMessage() string {
+	if s.loaderUnavailable {
+		return acquisitionUnavailable
+	}
+	return ""
+}
+
+func (s *Server) refuseUnavailableAcquisition(w http.ResponseWriter, r *http.Request) bool {
+	if !s.loaderUnavailable {
+		return false
+	}
+	externalErr(w, r, acquisitionUnavailable, http.StatusServiceUnavailable)
+	return true
+}
+
 func (s *Server) saveAcquisitionSettings(w http.ResponseWriter, r *http.Request) {
+	if s.refuseUnavailableAcquisition(w, r) {
+		return
+	}
 	editor, ok := s.managedLoader.(managedSettingsEditor)
 	if !ok || !desktop.LocalRequest(r) {
 		http.NotFound(w, r)
@@ -77,6 +107,9 @@ func (s *Server) saveAcquisitionSettings(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) loaderOffline(w http.ResponseWriter, r *http.Request) {
+	if s.refuseUnavailableAcquisition(w, r) {
+		return
+	}
 	if s.managedLoader == nil {
 		http.NotFound(w, r)
 		return

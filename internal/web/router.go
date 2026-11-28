@@ -105,8 +105,9 @@ type Server struct {
 
 	sched *schedule.Scheduler
 
-	ml            *monloader.Link
-	managedLoader ManagedLoader
+	ml                *monloader.Link
+	managedLoader     ManagedLoader
+	loaderUnavailable bool
 
 	themeWarn *themeWarnings
 
@@ -874,7 +875,7 @@ func (s *Server) base(r *http.Request, nav, title string) baseData {
 	if s.ml.Paused() {
 		ml = monloader.Status{Conn: peer.ConnPaused}
 	}
-	paired := s.managedLoader == nil && s.pairedWith(monloader.App)
+	paired := !s.usesManagedLoader() && s.pairedWith(monloader.App)
 	monloaderUsable := s.ml.Usable()
 	theme := s.activeTheme()
 	return baseData{
@@ -894,7 +895,7 @@ func (s *Server) base(r *http.Request, nav, title string) baseData {
 		BooruFavicon:          themeFaviconURL(theme),
 		Mascot:                themeMascots(theme),
 		MonloaderPaired:       paired,
-		ManagedLoader:         s.managedLoader != nil,
+		ManagedLoader:         s.usesManagedLoader(),
 		MonloaderUsable:       monloaderUsable,
 		MonloaderConn:         ml.Conn,
 		MonloaderLight:        s.monloaderLight(ml.Conn, ml.Version, ml.APIMismatch, ml.Panels()),

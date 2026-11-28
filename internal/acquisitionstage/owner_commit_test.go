@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"image"
 	"image/color"
 	"image/gif"
@@ -35,7 +36,7 @@ func(h ownerFixtureHost) Renamed(string,string,string,string)error{return ErrSta
 // Exercise the same single local owner entry point, with the real Set
 // fence and job reservation, rather than manually sequencing phases.
 func TestGuardedOwnerCommit(t *testing.T){
-	for _,mode:=range []string{"new png","held jpeg","restore webp","held gif","restore jpeg","same site repeat","same site refused","busy owner","revoked owner"}{
+	for _,mode:=range []string{"new png","archive after identity change","held jpeg","restore webp","held gif","restore jpeg","same site repeat","same site metadata drift","same site refused","busy owner","revoked owner"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var b bytes.Buffer
@@ -73,6 +74,7 @@ func TestGuardedOwnerCommit(t *testing.T){
 				tags:=[]string{"rating:explicit","prior"}
 				if mode=="same site refused"{site=row.SourceLabel}
 				if mode=="same site repeat"{site,id,source,tags=row.SourceLabel,row.PostID,row.PostURL,row.Tags}
+				if mode=="same site metadata drift"{site,id,source,tags=row.SourceLabel,row.PostID,row.PostURL,[]string{"old_fixture","rating:general"}}
 				if _,_,err:=gallery.MergeSource(g.DB,g.TagSvc,res.Image.ID,site,id,source,"","",gallery.PostFile{},tags,gallery.Withheld{});err!=nil{t.Fatal(err)}
 				if strings.HasPrefix(mode,"restore"){
 					kind=OwnerDispositionRestore
@@ -105,6 +107,40 @@ func TestGuardedOwnerCommit(t *testing.T){
 			_,closed,_,err:=a.inventoryWithClosure(ctx)
 			if err!=nil||!closed[grant.Request.OperationID]{t.Fatal("closure",err)}
 			if _,err:=a.CommitSealedForOwner(ctx,grant,set,auth);err==nil{t.Fatal("replayed closed operation")}
+			if mode=="same site metadata drift" {
+				var n int
+				err:=g.DB.Read.QueryRow(`SELECT COUNT(*) FROM image_tags it JOIN tags t ON t.id=it.tag_id WHERE it.image_id=? AND t.name='old_fixture'`,w.Row.ImageID).Scan(&n)
+				if err!=nil||n!=1{t.Fatal("repeat changed retained tags",n,err)}
+			}
+			if mode=="archive after identity change" {
+				verifyArchivedOwnerCommit(t,a,stage,grant,auth)
+			}
 		})
+	}
+}
+
+func verifyArchivedOwnerCommit(t *testing.T,a *Allocator,stage string,grant workerproto.StageAllocation,auth OwnerCommit) {
+	t.Helper()
+	ctx:=context.Background()
+	entry,err:=a.ArchiveClosed(ctx,grant,auth.Cleanup)
+	if err!=nil{t.Fatal(err)}
+	path:=filepath.Join(stage,"history",grant.Request.OperationID,"operation")
+	tmp:=t.TempDir()
+	copyPath:=filepath.Join(tmp,"operation")
+	if err:=os.CopyFS(copyPath,os.DirFS(path));err!=nil{t.Fatal(err)}
+	if err:=os.Rename(path,filepath.Join(tmp,"original"));err!=nil{t.Fatal(err)}
+	if err:=os.Rename(copyPath,path);err!=nil{t.Fatal(err)}
+	reopened,err:=Open(stage,a.maxCount,a.maxBytes,a.authority)
+	if err!=nil{t.Fatal("reopen unchanged archive after filesystem identity change",err)}
+	defer reopened.Close()
+	if got,err:=reopened.HistoricalReceipt(ctx,grant.Request.OperationID);err!=nil||got!=entry{t.Fatal("archived receipt",got,err)}
+	// With identical metadata but one altered archive byte, reopening still fails.
+	manifest:=filepath.Join(path,"sealed","manifest.json")
+	body,err:=os.ReadFile(manifest);if err!=nil{t.Fatal(err)}
+	body[0]^=1
+	if err:=os.WriteFile(manifest,body,0600);err!=nil{t.Fatal(err)}
+	if bad,err:=Open(stage,a.maxCount,a.maxBytes,a.authority);!errors.Is(err,ErrStageRecovery)||!strings.Contains(err.Error(),"archive tree digest"){
+		if bad!=nil{bad.Close()}
+		t.Fatalf("modified archive: %v",err)
 	}
 }

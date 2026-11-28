@@ -12,7 +12,9 @@
     <a class="loader-settings-link" href="/settings#meloader">Meloader settings</a>
     {{end}}
   </nav>
-  {{if eq .View "queue"}}
+  {{if .Unavailable}}
+    <p class="loader-message" role="status">{{.Unavailable}}</p>
+  {{else if eq .View "queue"}}
     {{template "loader_queue" .}}
   {{else}}
     {{template "partials/loader_panel.html" (dict "Panel" .Panel "Title" "Meloader" "Lazy" false)}}

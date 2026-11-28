@@ -111,6 +111,9 @@ func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 		view = "queue"
 	}
 	base := s.base(r, "loader", "Loader - "+s.booruName())
+	if s.loaderUnavailable {
+		view, path = "queue", ""
+	}
 	var panel loaderPanel
 	if path != "" {
 		if s.managedLoader != nil {
@@ -143,5 +146,6 @@ func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 		Offline      bool
 		Destinations []string
 		Limit        int
-	}{base, view, panel, managed, managed && s.managedLoader.Offline(), destinations, limit})
+		Unavailable  string
+	}{base, view, panel, s.usesManagedLoader(), managed && s.managedLoader.Offline(), destinations, limit, s.acquisitionUnavailableMessage()})
 }

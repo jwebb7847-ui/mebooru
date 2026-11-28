@@ -21,6 +21,7 @@ import (
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/managedqa"
 	"github.com/jwebb7847-ui/mebooru/shared/windowregistry"
+	"github.com/monbooru/monbooru/internal/acquisitionpolicy"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/jobs"
 	"github.com/monbooru/monbooru/internal/library"
@@ -203,45 +204,54 @@ func main() {
 	}
 	defer srv.Close()
 	var managed *managedApplication
-	if *managedDisposable != "" || cfg.Desktop.ManagedAcquisition {
-		dir := *managedDisposable
-		var live *windowregistry.LiveConfig
-		if dir == "" {
-			if *meloaderBinary != "" {
-				fatalf("managed acquisition uses the installed Meloader sibling")
+	managedMode := *managedDisposable != "" || cfg.Desktop.ManagedAcquisition
+	if managedMode {
+		start := func() error {
+			dir := *managedDisposable
+			var live *windowregistry.LiveConfig
+			if dir == "" {
+				if *meloaderBinary != "" {
+					return errors.New("managed acquisition uses the installed Meloader sibling")
+				}
+				settings := cmp.Or(*meloaderConfig, cfg.Desktop.MeloaderConfig)
+				if settings != "" && !filepath.IsAbs(settings) {
+					settings = filepath.Join(filepath.Dir(*configPath), settings)
+				}
+				options, err := readLiveConfig(settings)
+				if err != nil {
+					return fmt.Errorf("managed acquisition settings: %w", err)
+				}
+				dir, err = prepareLiveDirectory(*configPath)
+				if err != nil {
+					return fmt.Errorf("managed acquisition profile: %w", err)
+				}
+				live = &options
 			}
-			settings := cmp.Or(*meloaderConfig, cfg.Desktop.MeloaderConfig)
-			if settings != "" && !filepath.IsAbs(settings) {
-				settings = filepath.Join(filepath.Dir(*configPath), settings)
-			}
-			options, err := readLiveConfig(settings)
-			if err != nil {
-				fatalf("managed acquisition settings: %v", err)
-			}
-			dir, err = prepareLiveDirectory(*configPath)
-			if err != nil {
-				fatalf("managed acquisition profile: %v", err)
-			}
-			live = &options
+			return srv.AttachManagedLoader(func(set *library.Set) (internalweb.ManagedLoader, error) {
+				var err error
+				managed, err = openManagedApplication(dir, fixture, live, set, cfg.Gallery)
+				return managed, err
+			})
 		}
-		if err := srv.AttachManagedLoader(func(set *library.Set) (internalweb.ManagedLoader, error) {
-			var err error
-			managed, err = openManagedApplication(dir, fixture, live, set, cfg.Gallery)
-			return managed, err
-		}); err != nil {
-			fatalf("starting managed acquisition: %v", err)
-		}
-		defer func() {
-			if err := managed.Close(); err != nil {
-				reportFatal("shutting down managed acquisition: " + err.Error())
-				exitCode = 1
+		if err := start(); err != nil {
+			if *managedDisposable != "" || errors.Is(err, acquisitionpolicy.ErrProfileOwned) {
+				fatalf("starting managed acquisition: %v", err)
 			}
-		}()
+			logx.Errorf("acquisition unavailable; local library remains available: %v", err)
+			srv.DisableManagedLoader()
+		} else {
+			defer func() {
+				if err := managed.Close(); err != nil {
+					reportFatal("shutting down managed acquisition: " + err.Error())
+					exitCode = 1
+				}
+			}()
+		}
 	}
 
 	bundledCompanion := false
 	bundledConfigCreated := false
-	if managed == nil && *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
+	if !managedMode && *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
 		*meloaderBinary = cfg.Desktop.MeloaderBinary
 		*meloaderConfig = cfg.Desktop.MeloaderConfig
 		if *meloaderBinary == "" && *meloaderConfig == "" {
@@ -266,7 +276,7 @@ func main() {
 		}
 	}
 	stopMeloader := func() {}
-	if managed == nil && (*meloaderBinary != "" || *meloaderConfig != "") {
+	if !managedMode && (*meloaderBinary != "" || *meloaderConfig != "") {
 		stop, err := launchMeloader(*meloaderBinary, *meloaderConfig, bundledCompanion, bootstrap)
 		if err != nil {
 			logx.Errorf("starting Meloader: %v", err)
@@ -297,7 +307,7 @@ func main() {
 			srvErr <- err
 		}
 	}()
-	if managed != nil {
+	if managedMode {
 		fmt.Printf("Managed Loader listening at http://%s/loader\n", ln.Addr())
 	}
 

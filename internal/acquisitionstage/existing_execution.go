@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -280,7 +281,9 @@ func(a *Allocator) landExistingTarget(ctx context.Context,grant workerproto.Stag
 	f:=e.Files[0]
 	if err:=readCheckedLinks(ctx,dst,finalName(grant,f),f.Size,f.SHA256,io.Discard,2);err!=nil{return err}
 	res,err:=g.LandInPlace(ctx,filepath.Join(r.GalleryRoot,finalName(grant,f)),library.LandSpec{Origin:newReceiptOrigin,MaxBytes:f.Size})
-	if err!=nil||res.Image==nil||res.Dropped||res.Image.ID!=plan.Target.ImageID||res.Duplicate!=(plan.Target.Kind==existingHeld){return ErrStageRecovery}
+	if err!=nil{return fmt.Errorf("%w: gallery landing: %w",ErrStageRecovery,err)}
+	if res.Image==nil||res.Dropped||res.Image.ID!=plan.Target.ImageID||res.Duplicate!=(plan.Target.Kind==existingHeld){return fmt.Errorf("%w: gallery landing result differs from existing target",ErrStageRecovery)}
 	_,err=a.observeExistingLandingLocked(ctx,grant,g,disposition,extras,naming)
-	return err
+	if err!=nil{return fmt.Errorf("read back existing image landing: %w",err)}
+	return nil
 }

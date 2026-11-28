@@ -65,6 +65,9 @@ func boundedRegularBytes(root *os.Root,name string,limit int64)([]byte,error){
 // readSeal validates structural state only. Never publish final media
 // or permit cleanup from this alone; Sealed rechecks actual bytes.
 func readSeal(operation *os.Root,g workerproto.StageAllocation)(SealedEvidence,error){
+	return readSealMode(operation,g,false)
+}
+func readSealMode(operation *os.Root,g workerproto.StageAllocation,archivedChild bool)(SealedEvidence,error){
 	var zero SealedEvidence
 	dir,err:=openDir(operation,"sealed")
 	if err!=nil{return zero,err}
@@ -82,7 +85,11 @@ func readSeal(operation *os.Root,g workerproto.StageAllocation)(SealedEvidence,e
 	media,err:=openDir(dir,"media")
 	if err!=nil{return zero,err}
 	defer media.Close()
-	if err:=checkSealedInventory(operation,media,g,e);err!=nil{return zero,err}
+	if archivedChild {
+		p,err:=openDir(operation,"publication");if err!=nil{return zero,err};defer p.Close()
+		r,err:=readRecord(operation);if err!=nil{return zero,err}
+		if _,err:=readOperationClosure(p,r,e);err!=nil{return zero,err}
+	} else if err:=checkSealedInventory(operation,media,g,e);err!=nil{return zero,err}
 	if len(entries)==4{
 		if _,err:=readPolicyBinding(dir,e);err!=nil{return zero,ErrStageRecovery}
 	}

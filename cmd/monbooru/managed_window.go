@@ -215,7 +215,7 @@ func(o *managedWindowOwner) handle(c context.Context,op workerproto.Operation,ra
 	case workerproto.ImportMedia:
 		p,err:=workerproto.DecodeWindowCommitRequest(raw)
 		if err!=nil||p.Allocation!=o.grant||p.PolicySHA256!=o.hash||len(o.result.Items)!=0{return fault(managedqa.ErrFixture)}
-		if err:=o.commit(c);err!=nil{return fault(err)}
+		if err:=o.commit(c);err!=nil{return fault(fmt.Errorf("job %d: %w",o.window.Request.JobID,err))}
 		body,err:=workerproto.EncodeWindowOutcome(o.result,o.grant,o.hash);if err!=nil{return fault(err)};return body,nil
 	case workerproto.FetchOutcome:
 		p,err:=workerproto.DecodeWindowCommitRequest(raw)
@@ -272,11 +272,22 @@ func(o *managedWindowOwner) commit(c context.Context)error{
 			},
 		},Reclaim:reclaim,
 	}
-	if _,err:=o.a.CompleteTransferredForOwner(c,o.lease,o.set,o.grant,owner);err!=nil{return err}
+	if _,err:=o.a.CompleteTransferredForOwner(c,o.lease,o.set,o.grant,owner);err!=nil{
+		if o.live==nil||current(c,o.grant)!=nil{return err}
+		// A failed publication is not a lost custodian. If the owner can
+		// read the plan and its exact partial outcome, keep every record
+		// and settle the stopped window. Unresolved posts still fail.
+		v,readErr:=o.a.ObserveWindowOutcome(c,o.grant,o.hash)
+		if readErr!=nil||!slices.ContainsFunc(v.Items,func(item workerproto.WindowItemOutcome)bool{return item.State=="unresolved"}){return err}
+		if settleErr:=o.registry.RecordOutcome(c,windowregistry.Outcome{Grant:o.window,Kind:"abandoned"});settleErr!=nil{return errors.Join(err,settleErr)}
+		o.result=v
+		logx.Warnf("managed acquisition job=%d retained unresolved publication: %v",o.window.Request.JobID,err)
+		return nil
+	}
 	settlement:=time.Now()
-	if _,err:=o.a.ArchiveBatch(c,o.grant,reclaim);err!=nil{return err}
-	v,err:=o.a.ObserveWindowOutcome(c,o.grant,o.hash);if err!=nil{return err}
-	if err:=o.registry.RecordOutcome(c,windowregistry.Outcome{Grant:o.window,Kind:"committed",PolicySHA256:v.PolicySHA256,PlanSHA256:v.PlanSHA256});err!=nil{return err}
+	if _,err:=o.a.ArchiveBatch(c,o.grant,reclaim);err!=nil{return fmt.Errorf("archive batch: %w",err)}
+	v,err:=o.a.ObserveWindowOutcome(c,o.grant,o.hash);if err!=nil{return fmt.Errorf("read publication result: %w",err)}
+	if err:=o.registry.RecordOutcome(c,windowregistry.Outcome{Grant:o.window,Kind:"committed",PolicySHA256:v.PolicySHA256,PlanSHA256:v.PlanSHA256});err!=nil{return fmt.Errorf("record window outcome: %w",err)}
 	o.result=v
 	logx.Infof("managed acquisition job=%d stage=settlement duration=%s",o.window.Request.JobID,time.Since(settlement).Round(time.Millisecond))
 	return nil

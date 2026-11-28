@@ -59,6 +59,7 @@ type settingsData struct {
 	AcquisitionError   bool
 	AcquisitionSaved   bool
 	AcquisitionMax     int
+	AcqUnavailable     string
 	FFmpegAvailable    bool
 }
 
@@ -106,14 +107,14 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 	var acquisitionErr error
 	var offline bool
 	var legacy loaderPanel
-	managed := s.managedLoader != nil
+	managed := s.usesManagedLoader()
 	local := desktop.LocalRequest(r)
-	if managed {
+	if s.managedLoader != nil {
 		offline = s.managedLoader.Offline()
 		if editor, ok := s.managedLoader.(managedSettingsEditor); ok && local {
 			acquisition, acquisitionErr = editor.ReadAcquisitionSettings()
 		}
-	} else {
+	} else if !managed {
 		legacy = s.loaderPanel(r, base, "/settings")
 	}
 	s.renderTemplate(w, "settings.html", settingsData{
@@ -139,6 +140,7 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		AcquisitionError:   acquisitionErr != nil,
 		AcquisitionSaved:   local && managed && r.URL.Query().Get("acquisition") == "saved",
 		AcquisitionMax:     workerproto.MaxMetadataWindow,
+		AcqUnavailable:     s.acquisitionUnavailableMessage(),
 		Themes:             s.themeCluster(),
 		ThemesDir:          s.themesDir(),
 		DesktopProfile:     s.desktopLocal(r),

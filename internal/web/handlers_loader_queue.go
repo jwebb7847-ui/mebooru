@@ -32,6 +32,9 @@ type loaderResult struct {
 }
 
 func (s *Server) loaderJobResults(w http.ResponseWriter, r *http.Request) {
+	if s.refuseUnavailableAcquisition(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		http.NotFound(w, r)
@@ -122,6 +125,9 @@ func buildLoaderResult(gallery string, item monloader.ImportItem, number int) lo
 }
 
 func (s *Server) loaderJobs(w http.ResponseWriter, r *http.Request) {
+	if s.refuseUnavailableAcquisition(w, r) {
+		return
+	}
 	page, _ := contract.PageParams(r.URL.Query().Get("page"), "", loaderQueueLimit, loaderQueueLimit)
 	view := struct {
 		monloader.ImportQueuePage
@@ -185,6 +191,9 @@ func (s *Server) loaderJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) loaderImport(w http.ResponseWriter, r *http.Request) {
+	if s.refuseUnavailableAcquisition(w, r) {
+		return
+	}
 	if !parseFormOK(w, r) {
 		return
 	}
@@ -237,6 +246,9 @@ func (s *Server) loaderImport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) loaderJobAction(w http.ResponseWriter, r *http.Request) {
+	if s.refuseUnavailableAcquisition(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	action := r.PathValue("action")
 	if s.managedLoader != nil && err == nil && id > 0 {

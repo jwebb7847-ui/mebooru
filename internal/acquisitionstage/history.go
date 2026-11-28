@@ -7,6 +7,7 @@ import(
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -69,27 +70,33 @@ func treeDigest(ctx context.Context,root *os.Root)(string,error){
 }
 func readHistoryEntry(ctx context.Context,history *os.Root,id,stage string)(HistoryEntry,error){
 	var zero HistoryEntry
-	if !validID(id){return zero,ErrStageRecovery}
-	d,err:=openDir(history,id);if err!=nil{return zero,err};defer d.Close()
-	entries,err:=list(d,2);if err!=nil||len(entries)!=2{return zero,ErrStageRecovery}
+	if !validID(id){return zero,fmt.Errorf("%w: unexpected archive entry %q",ErrStageRecovery,id)}
+	d,err:=openDir(history,id);if err!=nil{return zero,fmt.Errorf("archive envelope: %w",err)};defer d.Close()
+	entries,err:=list(d,2);if err!=nil||len(entries)!=2{return zero,fmt.Errorf("%w: archive envelope must contain index.json and operation",ErrStageRecovery)}
 	raw,err:=boundedRegularBytes(d,"index.json",maxRecordBytes)
 	var out HistoryEntry
-	if err!=nil||json.Unmarshal(raw,&out)!=nil||out.Version!=1||out.Allocation.Request.OperationID!=id||!validDigest(out.TreeSHA256){return zero,ErrStageRecovery}
-	body,err:=json.Marshal(out);if err!=nil||!bytes.Equal(raw,body){return zero,ErrStageRecovery}
-	op,err:=openDir(d,"operation");if err!=nil{return zero,err};defer op.Close()
-	r,err:=readRecord(op);if err!=nil||r.Allocation!=out.Allocation||r.StageRoot!=stage{return zero,ErrStageRecovery}
-	e,err:=readSeal(op,r.Allocation);if err!=nil{return zero,err}
+	if err!=nil||json.Unmarshal(raw,&out)!=nil||out.Version!=1||out.Allocation.Request.OperationID!=id||!validDigest(out.TreeSHA256){return zero,fmt.Errorf("%w: archive index is missing or invalid",ErrStageRecovery)}
+	body,err:=json.Marshal(out);if err!=nil||!bytes.Equal(raw,body){return zero,fmt.Errorf("%w: archive index encoding changed",ErrStageRecovery)}
+	op,err:=openDir(d,"operation");if err!=nil{return zero,fmt.Errorf("archived operation directory: %w",err)};defer op.Close()
+	r,err:=readRecord(op);if err!=nil||r.Allocation!=out.Allocation{return zero,fmt.Errorf("%w: archive allocation differs from index",ErrStageRecovery)}
+	if r.StageRoot!=stage{return zero,fmt.Errorf("%w: archive allocation belongs to another staging path",ErrStageRecovery)}
+	// Archived children are completed read-only evidence. The tree was
+	// checked before it was moved here. Verify its exact bytes before
+	// decoding terminal records that contain pre-reboot device identities.
+	hash,err:=treeDigest(ctx,op);if err!=nil{return zero,fmt.Errorf("archive tree read: %w",err)}
+	if hash!=out.TreeSHA256{return zero,fmt.Errorf("%w: archive tree digest differs from index",ErrStageRecovery)}
+	e,err:=readSealMode(op,r.Allocation,out.BatchSHA256=="");if err!=nil{return zero,fmt.Errorf("archive sealed inventory: %w",err)}
 	if out.BatchSHA256!=""{
 		if !validDigest(out.BatchSHA256)||out.Closure!=(operationClosure{}){return zero,ErrStageRecovery}
 		v,charge,err:=archivableBatch(ctx,op,r,e)
-		if err!=nil||charge!=out.BatchCharge||v!=out.BatchSHA256{return zero,ErrStageRecovery}
+		if err!=nil{return zero,fmt.Errorf("archive batch receipts and retained files: %w",err)}
+		if charge!=out.BatchCharge||v!=out.BatchSHA256{return zero,fmt.Errorf("%w: archived batch receipt differs from index",ErrStageRecovery)}
 	}else{
 		if out.BatchCharge!=0{return zero,ErrStageRecovery}
-		if _,err:=readPublication(op,r,e);err!=nil{return zero,err}
+		if _,err:=readPublicationMode(op,r,e,true);err!=nil{return zero,fmt.Errorf("archive publication: %w",err)}
 		p,err:=openDir(op,"publication");if err!=nil{return zero,err};defer p.Close()
-		c,err:=readOperationClosure(p,r,e);if err!=nil||c!=out.Closure{return zero,ErrStageRecovery}
+		c,err:=readOperationClosure(p,r,e);if err!=nil||c!=out.Closure{return zero,fmt.Errorf("%w: archive closure differs from index",ErrStageRecovery)}
 	}
-	hash,err:=treeDigest(ctx,op);if err!=nil||hash!=out.TreeSHA256{return zero,ErrStageRecovery}
 	return out,nil
 }
 func(a *Allocator) historyLive()bool{
@@ -106,7 +113,9 @@ func(a *Allocator) loadHistory()error{
 	entries,err:=list(h,maxHistoryEntries);if err!=nil{return err}
 	for _,e:=range entries{
 		v,err:=readHistoryEntry(context.Background(),h,e.Name(),a.path)
-		if err!=nil||a.historyTransfers[v.Allocation.TransferID]||v.charge()>maxReservedBytes-a.historyCharge{return ErrStageRecovery}
+		if err!=nil{return fmt.Errorf("history/%s: %w",e.Name(),err)}
+		if a.historyTransfers[v.Allocation.TransferID]{return fmt.Errorf("%w: duplicate transfer in history/%s",ErrStageRecovery,e.Name())}
+		if v.charge()>maxReservedBytes-a.historyCharge{return fmt.Errorf("%w: archived reservation exceeds capacity at history/%s",ErrStageRecovery,e.Name())}
 		a.history[e.Name()]=v;a.historyTransfers[v.Allocation.TransferID]=true;a.historyCharge+=v.charge()
 	}
 	a.historyInfo=info
@@ -161,7 +170,8 @@ func(a *Allocator) archiveEvidenceLocked(ctx context.Context,v HistoryEntry)(His
 	if err:=a.root.Rename(id,filepath.Join(historyDirName,id,"operation"));err!=nil{return zero,ErrStageRecovery}
 	syncDirectory(a.root);syncDirectory(h)
 	stored,err:=readHistoryEntry(ctx,h,id,a.path)
-	if err!=nil||stored!=v{return zero,ErrStageRecovery}
+	if err!=nil{return zero,fmt.Errorf("history/%s after archive: %w",id,err)}
+	if stored!=v{return zero,fmt.Errorf("%w: history/%s readback differs",ErrStageRecovery,id)}
 	a.history[id]=v;a.historyTransfers[grant.TransferID]=true;a.historyCharge+=charge;a.historyPoisoned=false
 	return v,nil
 }
