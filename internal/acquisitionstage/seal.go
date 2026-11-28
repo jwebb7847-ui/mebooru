@@ -106,6 +106,7 @@ func(a *Allocator)Seal(ctx context.Context,g workerproto.StageAllocation,observe
 	operation,err:=openDir(a.root,g.Request.OperationID)
 	if err!=nil{return zero,err}
 	defer operation.Close()
+	if _,err:=operation.Lstat("abandoned");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRefused}
 	if _,err:=operation.Lstat("sealed");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
 	manifest,files,err:=observe(ctx,g)
 	if err!=nil||ctx.Err()!=nil||len(manifest)>workerproto.MaxMetadataOutputBytes||len(files)>int(g.MaxFiles){return zero,ErrStageRefused}
@@ -186,6 +187,7 @@ func(a *Allocator)sealedModeLocked(ctx context.Context,g workerproto.StageAlloca
 	operation,err:=openDir(a.root,g.Request.OperationID)
 	if err!=nil{return zero,err}
 	defer operation.Close()
+	if _,err:=operation.Lstat("abandoned");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRefused}
 	e,err:=readSeal(operation,g)
 	if err!=nil{return zero,err}
 	sealed,err:=openDir(operation,"sealed")

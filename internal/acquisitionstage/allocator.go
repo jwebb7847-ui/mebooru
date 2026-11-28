@@ -223,6 +223,10 @@ func(a *Allocator)load(id string)(record,error){
 	if err!=nil||r.Allocation.Request.OperationID!=id||r.StageRoot!=a.path{return zero,ErrStageRecovery}
 	entries,err:=list(dir,4)
 	if err!=nil||len(entries)<2||len(entries)>4{return zero,ErrStageRecovery}
+	if _,err:=dir.Lstat("abandoned");err==nil{
+		if _,err:=readAbandoned(dir,r);err!=nil{return zero,err}
+		return r,nil
+	}else if !errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
 	if len(entries)>=3{
 		e,err:=readSeal(dir,r.Allocation)
 		if err!=nil{return zero,ErrStageRecovery}
@@ -333,6 +337,7 @@ func(a *Allocator)Workspace(ctx context.Context,grant workerproto.StageAllocatio
 	if err!=nil{return "",err}
 	defer dir.Close()
 	if _,err:=dir.Lstat("sealed");!errors.Is(err,os.ErrNotExist){return "",ErrStageRecovery}
+	if _,err:=dir.Lstat("abandoned");!errors.Is(err,os.ErrNotExist){return "",ErrStageRefused}
 	path:=filepath.Join(a.path,grant.Request.OperationID,grant.TransferID)
 	if _,_,err:=directory(path);err!=nil||!a.live()||ctx.Err()!=nil{return "",ErrStageRefused}
 	return path,nil

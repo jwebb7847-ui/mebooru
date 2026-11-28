@@ -51,6 +51,11 @@ func readOperationClosure(p *os.Root,r record,e SealedEvidence)(operationClosure
 func(a *Allocator)closedCharge(ctx context.Context,r record)(bool,uint64,error){
 	op,err:=openDir(a.root,r.Allocation.Request.OperationID)
 	if err!=nil{return false,0,err};defer op.Close()
+	if _,err:=op.Lstat("abandoned");err==nil{
+		m,err:=readAbandoned(op,r)
+		if err!=nil{return false,0,err}
+		return true,m.RetainedReservation,nil
+	}else if !errors.Is(err,os.ErrNotExist){return false,0,ErrStageRecovery}
 	if _,err:=op.Lstat("publication");errors.Is(err,os.ErrNotExist){return false,r.Allocation.MaxBytes,nil}else if err!=nil{return false,0,ErrStageRecovery}
 	p,err:=openDir(op,"publication")
 	if err!=nil{return false,0,err};defer p.Close()
