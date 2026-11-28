@@ -27,6 +27,7 @@ type VersionProbeStarter func(context.Context)(VersionProbeChild,error)
 // The actual custodian must also retain the same OperationSet for final
 // receipt proof. No path, argv, environment, output or network API.
 type probeBroker struct{
+	managed *managedRuntimeSession
 	mu sync.Mutex
 	set *OperationSet
 	start ProbeStarter
