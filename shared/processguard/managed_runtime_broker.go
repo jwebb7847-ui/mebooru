@@ -26,6 +26,9 @@ type ManagedRuntimeGrant struct {
 	Transfer func(context.Context)(workerproto.StageAllocation,string,error)
 	Start func(context.Context,[]string)(StreamProbeChild,error)
 	Complete func(context.Context,workerproto.StageAllocation,[]acquisitionplan.VerifiedTransferFile)error
+	// MetadataComplete observes exact native resolution only after actual Stop.
+	// It lets independent library authority validate the worker projection.
+	MetadataComplete func(context.Context,workerproto.MetadataPlanRequest,string,[]byte)error
 }
 
 type managedRuntimeSession struct{
@@ -182,6 +185,9 @@ func(c *managedRuntimeChild) Stop(ctx context.Context)error{
 			s.failed=true;return ErrMetadataOperation
 		}
 		s.subcategory=sub
+	}
+	if c.phase==1&&s.grant.MetadataComplete!=nil{
+		if err:=s.grant.MetadataComplete(ctx,s.grant.Metadata,s.subcategory,bytes.Clone(c.buf.Bytes()));err!=nil{s.failed=true;return err}
 	}
 	if c.phase==5{
 		// Re-verify the actual bytes after the contained child stopped.
