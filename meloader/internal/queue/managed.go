@@ -77,6 +77,9 @@ func(q *Queue) ReserveManagedIdle(ctx context.Context)(bool,error){
 	m.mu.Lock();defer m.mu.Unlock()
 	q.mu.Lock()
 	if q.closed||q.managedRetiring||q.managedStoreFault||len(q.pending)!=0||len(q.running)!=0{q.mu.Unlock();return false,nil}
+	if !q.managedOffline&&q.managedWatchesEnabled{
+		for _,watch:=range q.watches{if watch.IntervalHours>0&&!q.now().Before(watch.Next()){q.mu.Unlock();return false,nil}}
+	}
 	q.managedRetiring=true
 	q.managedOffline=true
 	q.mu.Unlock()
@@ -129,4 +132,11 @@ func(q *Queue) ManagedControl(wake func())workerproto.Handler{
 		default:return nil,&workerproto.Fault{Code:"unsupported"}
 		}
 	}
+}
+
+// EnableManagedWatches must be set only by explicit owner configuration.
+// The existing RunWatches loop then checks this opt-in and the online gate.
+func(q *Queue)EnableManagedWatches(enabled bool){
+	q.mu.Lock();defer q.mu.Unlock()
+	if q.managed!=nil&&!q.managedRetiring&&!q.closed{q.managedWatchesEnabled=enabled}
 }

@@ -167,6 +167,16 @@ func(m *Manager)ensure(ctx context.Context)error{
 func(m *Manager)Tick(ctx context.Context,demand bool)error{
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.tickLocked(ctx,demand)
+}
+
+// TickNetworkDemand atomically gates scheduler wake against the persisted
+// offline setting. Explicit local interactions may still use Tick/Acquire.
+func(m *Manager)TickNetworkDemand(ctx context.Context,demand bool)error{
+	m.mu.Lock();defer m.mu.Unlock()
+	return m.tickLocked(ctx,demand&&!m.policy.ConfiguredOffline())
+}
+func(m *Manager)tickLocked(ctx context.Context,demand bool)error{
 	if err:=m.available(ctx);err!=nil{return err}
 	if demand{
 		if err:=m.ensure(ctx);err!=nil{return err}

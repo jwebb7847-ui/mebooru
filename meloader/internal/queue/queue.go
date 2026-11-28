@@ -119,6 +119,7 @@ type Queue struct {
 	managedOffline bool
 	managedRetiring bool
 	managedStoreFault bool
+	managedWatchesEnabled bool
 
 	// Mirrored to the store: a crash loop must not refill a spent budget.
 	budgetLimit int

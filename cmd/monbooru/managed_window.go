@@ -247,7 +247,11 @@ func runManagedWindowProbe(countArg string)(result error){
 	v,err:=readJob();if err!=nil||v.Status!="queued"{return fmt.Errorf("offline queue: %v %v",v.Status,err)}
 	requestMu.Lock();none:=len(requests)==0;requestMu.Unlock()
 	if !none{return managedqa.ErrFixture}
+	demand,err:=acquisitionpolicy.ReadQueueDemand(ctx,filepath.Join(dir,"queue"),time.Now(),false)
+	if err!=nil||!demand.Queued{return fmt.Errorf("durable queue demand: %v",err)}
+	if err:=manager.TickNetworkDemand(ctx,demand.Queued);err!=nil{return err}
 	if err:=manager.SetOffline(ctx,false);err!=nil{return err}
+	if err:=manager.TickNetworkDemand(ctx,demand.Queued);err!=nil{return err}
 	lease,err:=manager.AcquireOnline(ctx);if err!=nil{return err}
 	defer lease.Release()
 	o.mu.Lock();o.lease=lease;o.mu.Unlock()

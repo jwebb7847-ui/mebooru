@@ -212,7 +212,7 @@ func (q *Queue) RunWatches(ctx context.Context, held func() bool) {
 func (q *Queue) queueDueWatches() {
 	now := q.now()
 	q.mu.Lock()
-	if q.managedOffline||q.managedRetiring { q.mu.Unlock();return }
+	if q.managedOffline||q.managedRetiring||q.managedStoreFault||q.managed!=nil&&!q.managedWatchesEnabled { q.mu.Unlock();return }
 	var ids []int64
 	for _, w := range q.watches {
 		if w.IntervalHours > 0 && !now.Before(w.Next()) && !q.watchLiveLocked(w.ID) {
