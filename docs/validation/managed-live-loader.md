@@ -1,34 +1,42 @@
 # Managed Loader acceptance on Apple Silicon
 
-Use Chapter II candidate `986c331c02ae7fbf395cf5621f363d2e165b0a55`. It includes the repeat-acquisition, shutdown, recovery, and Loader form fixes. Run the copy-and-paste checkout from your Mebooru repository.
+Use Chapter II candidate `352586d4dfdc94966f6ba5daaae839634fb7136d`. It includes archive reopening, duplicate and publication fixes, and library startup if acquisition requires repair. Run the checkout commands from your Mebooru repository.
 
 ```zsh
-git fetch origin codex/ii6-owner-acceptance
+git fetch origin codex/ii6-publication-repair
 qa_checkout="$(mktemp -d "${TMPDIR:-/tmp}/mebooru-acceptance.XXXXXX")"
-git worktree add --detach "$qa_checkout/source" 986c331c02ae7fbf395cf5621f363d2e165b0a55
+git worktree add --detach "$qa_checkout/source" 352586d4dfdc94966f6ba5daaae839634fb7136d
 cd "$qa_checkout/source"
 ```
 
-## Recover the preserved LiveTest profile
+## Reopen the two preserved profiles
 
-Restart the Mac before using the recovery command. After reboot, open Terminal and run the checkout commands above. Build both corrected executables into a new directory and reuse the preserved profile and gallery.
+Build both executables into a new directory. The original LiveTest profile already completed the post-reboot ownership repair, so try ordinary startup first.
 
 ```zsh
 test_root="$HOME/Downloads/Projects/Coding/Mebooru/testing"
 qa="$test_root/ii6-live.jryLAd"
-fixed="$(mktemp -d "$test_root/ii6-fixed.XXXXXX")"
+fixed="$(mktemp -d "$test_root/ii6-publication.XXXXXX")"
 export GOWORK=off GOTOOLCHAIN=local
 go build -mod=readonly -o "$fixed/monbooru" ./cmd/monbooru &&
   (cd meloader && go build -mod=readonly -o "$fixed/monloader" ./cmd/monloader) &&
-  "$fixed/monbooru" -config "$qa/monbooru.toml" -recover-managed-after-reboot &&
   "$fixed/monbooru" -config "$qa/monbooru.toml"
 ```
 
-Recovery checks that the old ownership record predates the current Mac boot, takes the profile lock and sets acquisition offline. The original receipt, gallery, queue, and staging evidence stay in place. If recovery refuses, keep the files and share its terminal output. Use the printed Loader URL and confirm the original image and job history are present.
+Confirm the original image opens and job history is visible in Loader. If Loader says acquisition is unavailable, use the library normally offline and keep the terminal line starting with `acquisition unavailable`. Keep the profile and staging records in place. If the only reported problem is an invalid cleanup receipt, the previous [post-reboot ownership repair procedure](https://github.com/jwebb7847-ui/mebooru/blob/4ad88c441baa794101393d666112cefadf9b25b2/docs/validation/managed-live-loader.md#recover-the-preserved-livetest-profile) also applies to these binaries.
+
+Quit the first profile before opening the second.
+
+```zsh
+qa="$test_root/ii6-fresh.HhTP7s"
+"$fixed/monbooru" -config "$qa/monbooru.toml"
+```
+
+Confirm its already imported images and job history. Preserve the unresolved staging records from the earlier failures. If that state still prevents a repeat, keep the new `acquisition owner:` or `retained unresolved publication` terminal line and use the fresh-profile commands below for the live sequence.
 
 ## Start with a fresh disposable gallery
 
-As an alternative to recovering the old profile, run the following from the candidate checkout. It builds both executables, installs the pinned runtime and creates an isolated profile that starts offline.
+Run the following from the candidate checkout for a repeatable live check without prior failed jobs. It builds both executables, installs the pinned runtime and creates an isolated profile that starts offline.
 
 ```zsh
 test_root="$HOME/Downloads/Projects/Coding/Mebooru/testing"
@@ -90,22 +98,20 @@ printf 'Profile: %s\nLoader: http://127.0.0.1:%s/loader\n' "$qa" "$port"
 
 1. Open the printed Loader URL. Select **LiveTest**, paste a known permitted public Derpibooru still-image URL, and set **Maximum posts** to 1. Queue it while offline and verify that it remains queued.
 2. Select **Go online**. Open the job's post results and then the image in the gallery. Check the source URL, visible tags, and rating. Use the **Unrated** view to inspect a source item with no rating if your test data includes one.
-3. Repeat the permitted post. Verify the job completes as a duplicate, the gallery contains one copy, and the next submission runs. Then try a permitted search URL with **Maximum posts** set to 3 and check the selected gallery and result count.
-4. Edit `[tags].blacklist` in `$qa/monloader.toml` and submit a known matching post. Verify Loader reports **Blacklisted** and pre-existing media stays visible. If a transfer stays active long enough, select **Cancel** and then **Retry**. Retry creates a fresh job against the same gallery and uses the current policy. Keep the log if a job reports reconciliation required.
+3. Repeat the permitted post. Verify the job completes as a duplicate and the gallery contains one copy. Run a permitted search with **Maximum posts** set to 3. Check that its results contain at most three posts, including blacklist exclusions, and use the selected gallery. Repeat the original post again after the search.
+4. Open **Settings → Acquisition** in the running profile and edit **Strict blacklist**. Submit a known matching post and verify Loader reports **Blacklisted**. Pre-existing media should stay visible. If a transfer stays active long enough, select **Cancel** and then **Retry**. Retry creates a fresh job against the same gallery and uses the current policy.
 5. Select **Go offline** and open an imported image again. Press Ctrl-C in the terminal. Rerun only the normal launch line with the same binary and config. Check that offline status, gallery files and queue history persist, then test **Quit Mebooru** from Settings.
 
 Record the URL type, configured limit, status counts and any first failure from Loader or the terminal. Keep the profile folder for diagnosis. The live check is limited to this profile and requires no companion web server or pairing.
 
-## Test the separate Chapter III Settings work
+## Test the separate Chapter III PTR work
 
-To test the Settings increment, use `16388ca2ebb37dd45bf057b8ca1026a4b50a2554` in the checkout command and build both executables again. Open **Settings → Acquisition**.
+To test the PTR increment, use `85a3fa6c9d322d326dec5526f5c58c1aa5fab09e` in the checkout command and build both executables again. The existing **Settings → Acquisition** controls are included.
 
-- Edit the strict blacklist and check that the next matching job is blacklisted. Saving preserves other TOML settings and rewrites file formatting. The editor keeps rule comments entered as blacklist lines.
-- Change the request delay or maximum posts. Save and check for the restart notice. Quit with **Quit Mebooru** at the top of Settings, then launch the same profile again.
-- Check that **Plugins** continues to show pairing requests from external plugins. Managed profiles use the native acquisition controls. PTR and watches continue to use their existing standalone paths pending managed integration.
+- In the disposable acquisition configuration, set `[ptr].enabled = true` and `[ptr].data_path` to the directory containing a test copy of an existing `ptr.sqlite` index. Open **Loader → PTR** with acquisition offline and enter a known SHA-256. The page reads display tags from that index. Managed sync, contributions, and watches remain follow-up work.
 
 ## Candidate scope
 
 - The managed entry point supports Derpibooru posts and searches and the qualified Danbooru and e621 post and tag extractor paths. Derpibooru is the owner acceptance target. Authenticated sites, custom extractor options and raw gallery-dl configuration require further integration. A configured installation of gallery-dl must be trusted by the operator. The app pins the selected launcher bytes during startup and verifies version 1.32.19 inside containment before source work.
 - Normal staged publication supports the existing guarded still formats (PNG, JPEG, GIF and WebP). Start with still images. Video, complex claims and cross-volume publication remain compatibility work. Select a gallery on the same volume as the managed profile.
-- An exact same-source repeat with matching verified media and source evidence retains the existing image. Source changes and replacements need their own workflow. Canceling an active transfer parks its unpublished staging evidence for reconciliation and frees the worker for a new job. Canceling during publication can leave partial results that require reconciliation. Abandoned payloads retain their reservation.
+- An exact same-source repeat with matching verified media keeps the existing image, tags, rating and source record. Current acquisition rules still apply before transfer. Source refreshes and replacements need their own workflow. Canceling during publication can leave partial results that require reconciliation. Unresolved payloads retain their reservation.
