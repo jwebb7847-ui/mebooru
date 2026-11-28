@@ -22,6 +22,7 @@ import(
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/managedqa"
 	"github.com/jwebb7847-ui/mebooru/shared/processguard"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
@@ -51,6 +52,7 @@ type windowFixtureOwner struct{
 	dir string
 	setup managedqa.Setup
 	set *library.Set
+	naming config.GalleryConfig
 	a *acquisitionstage.Allocator
 	lease *acquisitionpolicy.OnlineLease
 	bindOnline func() (*acquisitionpolicy.OnlineLease, error)
@@ -65,10 +67,24 @@ type windowFixtureOwner struct{
 }
 
 func(o *windowFixtureOwner) current(c context.Context)bool{return c.Err()==nil&&o.lease!=nil&&o.lease.Current()}
+func (o *windowFixtureOwner) galleryIdentity(name string) string {
+	g := o.set.Get(name)
+	if g == nil || g.Degraded || g.Closed() {
+		return ""
+	}
+	return managedqa.Digest([]byte(g.Name + "\x00" + g.DBPath + "\x00" + g.GalleryPath))
+}
+
 func(o *windowFixtureOwner) scope(c context.Context,q workerproto.StageAllocateRequest)(acquisitionstage.Scope,error){
 	if !o.current(c)||q.Transfer.Metadata!=o.window.Request||o.allowed[q.OperationID]!=q{return acquisitionstage.Scope{},managedqa.ErrFixture}
-	root:=filepath.Join(o.dir,"gallery")
-	s:=acquisitionstage.Scope{GalleryIdentity:o.window.GalleryIdentity,GalleryRoot:root,GalleryRoots:[]string{root},MaxFiles:1,MaxBytes:128<<10}
+	g := o.set.Get(q.Transfer.Metadata.Gallery)
+	if g == nil || o.galleryIdentity(g.Name) != o.window.GalleryIdentity {
+		return acquisitionstage.Scope{}, managedqa.ErrFixture
+	}
+	members := o.set.All()
+	roots := make([]string, 0, len(members))
+	for _, member := range members { roots = append(roots, member.GalleryPath) }
+	s:=acquisitionstage.Scope{GalleryIdentity:o.window.GalleryIdentity,GalleryRoot:g.GalleryPath,GalleryRoots:roots,MaxFiles:1,MaxBytes:128<<10}
 	if q.OperationID==managedqa.ParentID(q.Transfer.Metadata.JobID){s.MaxFiles=uint32(o.setup.Count);s.MaxBytes=8<<20}
 	return s,nil
 }
@@ -125,7 +141,7 @@ func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,ra
 			if _,err:=o.registry.ObserveSettlement(o.window);err!=nil{return fault(err)}
 		}
 		sub,err:=o.registry.ObserveSubmission(p.IntentID)
-		if err!=nil||sub.GalleryIdentity!="disposable-window:"+o.dir{return fault(managedqa.ErrFixture)}
+		if err!=nil||sub.GalleryIdentity!=o.galleryIdentity(p.Request.Gallery){return fault(managedqa.ErrFixture)}
 		if o.bindOnline != nil {
 			o.lease.Release()
 			o.lease, err = o.bindOnline()
@@ -197,13 +213,14 @@ func(o *windowFixtureOwner) commit(c context.Context)error{
 				if current(c,parent)!=nil||q.Transfer.Metadata!=o.window.Request{return acquisitionstage.OwnerCommit{},managedqa.ErrFixture}
 				file, ok := filesByID[row.PostID]
 				if !ok { return acquisitionstage.OwnerCommit{}, managedqa.ErrFixture }
-				disposition,err:=acquisitionstage.ResolveOwnerDisposition(c,o.set,managedqa.Gallery,file,row)
+				destination := parent.Request.Transfer.Metadata.Gallery
+				disposition,err:=acquisitionstage.ResolveOwnerDisposition(c,o.set,destination,file,row)
 				if err!=nil{return acquisitionstage.OwnerCommit{},err}
 				o.allowed[q.OperationID]=q
 				return acquisitionstage.OwnerCommit{
 					Current:current,
 					Disposition:func(c context.Context,g workerproto.StageAllocation)(string,error){return disposition,current(c,g)},
-					Naming:func(c context.Context,g workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){return gallery.ReceivedNamingRequest{Gallery:managedqa.Gallery,ReceivedName:row.PostID+".png",Source:row.SourceLabel,PostID:row.PostID,DefaultName:"{source}-{post_id}"},current(c,g)},
+					Naming:func(c context.Context,g workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){return gallery.ReceivedNamingRequest{Gallery:destination,ReceivedName:file.RelativeName,Source:row.SourceLabel,PostID:row.PostID,DefaultFolder:o.naming.DefaultUploadFolder,DefaultName:o.naming.DefaultUploadName},current(c,g)},
 					Extras:func(c context.Context,g workerproto.StageAllocation)(contract.JobExtras,error){return contract.JobExtras{},current(c,g)},
 					Cleanup:cleanup,
 				},nil
@@ -211,15 +228,19 @@ func(o *windowFixtureOwner) commit(c context.Context)error{
 		},Reclaim:reclaim,
 	}
 	if _,err:=o.a.CompleteTransferredForOwner(c,o.lease,o.set,o.grant,owner);err!=nil{return err}
+	settlement:=time.Now()
 	if _,err:=o.a.ArchiveBatch(c,o.grant,reclaim);err!=nil{return err}
 	v,err:=o.a.ObserveWindowOutcome(c,o.grant,o.hash);if err!=nil{return err}
 	if err:=o.registry.RecordOutcome(c,windowregistry.Outcome{Grant:o.window,Kind:"committed",PolicySHA256:v.PolicySHA256,PlanSHA256:v.PlanSHA256});err!=nil{return err}
 	o.result=v
+	logx.Infof("managed acquisition job=%d stage=settlement duration=%s",o.window.Request.JobID,time.Since(settlement).Round(time.Millisecond))
 	return nil
 }
 
 func runManagedWindowProbe(countArg string)(result error){
 	windows:=1
+	cancelFirst := countArg == "app-cancel"
+	if cancelFirst { countArg = "app-3" }
 	app := strings.HasPrefix(countArg, "app-")
 	if app {
 		countArg = strings.TrimPrefix(countArg, "app-")
@@ -261,16 +282,27 @@ func runManagedWindowProbe(countArg string)(result error){
 	})}
 	defer server.Close();go server.Serve(ln)
 	setup:=managedqa.Setup{Count:count,Windows:windows,Port:ln.Addr().(*net.TCPAddr).Port,Python:python,ScriptSHA256:managedqa.Digest([]byte(managedqa.PythonFixture)),Application:app}
+	setup.CancelFirst = cancelFirst
+	if app && count == 3 && !cancelFirst {
+		setup.Destination = "Imports"
+		if err := os.Mkdir(filepath.Join(dir,"second-gallery"),0700); err != nil { return err }
+	}
 	if err:=managedqa.Write(dir,managedqa.ScriptName,[]byte(managedqa.PythonFixture));err!=nil{return err}
 	if err:=managedqa.WriteJSON(dir,managedqa.SetupName,setup);err!=nil{return err}
 	if app {
-		err := probeManagedApplication(ctx, self, dir, setup, imageBytes[2])
+		var err error
+		if cancelFirst {
+			err = probeActiveManagedCancel(ctx,self,dir,setup)
+		} else {
+			err = probeManagedApplication(ctx,self,dir,setup,imageBytes[2])
+		}
 		if err != nil { return err }
 		requestMu.Lock()
 		defer requestMu.Unlock()
 		for id := 1; id <= count*windows; id++ {
 			want := 0
-			if id <= count && !setup.Blocked(1, id-1) { want = 1 }
+			if !cancelFirst && id <= count && !setup.Blocked(1, id-1) { want = 1 }
+			if cancelFirst && id > count && !setup.Blocked(2, id-count-1) { want = 1 }
 			if requests[id] != want { return fmt.Errorf("post %d: %d media requests, expected %d", id, requests[id], want) }
 		}
 		safe = true
@@ -280,7 +312,7 @@ func runManagedWindowProbe(countArg string)(result error){
 	set,err:=library.OpenSet(windowHost{cfg},jobs.NewManager(),[]config.Gallery{cfg},cfg.Name);if err!=nil{return err}
 	defer set.Close()
 	registry,err:=windowregistry.Open(filepath.Join(dir,"windows"));if err!=nil{return err};defer registry.Close()
-	o:=&windowFixtureOwner{dir:dir,setup:setup,set:set,allowed:map[string]workerproto.StageAllocateRequest{},registry:registry}
+	o:=&windowFixtureOwner{dir:dir,setup:setup,set:set,allowed:map[string]workerproto.StageAllocateRequest{},registry:registry,naming:config.GalleryConfig{DefaultUploadName:"{source}-{post_id}"}}
 	a,err:=acquisitionstage.Open(filepath.Join(dir,"stage"),2,32<<20,o.scope);if err!=nil{return err}
 	o.a=a;defer a.Close()
 	lock,err:=acquisitionpolicy.LockProfile(dir);if err!=nil{return err};defer lock.Close()
@@ -311,7 +343,7 @@ func runManagedWindowProbe(countArg string)(result error){
 	for job:=int64(1);job<=int64(windows);job++{
 		md:=setup.MetadataFor(job)
 		if _,err:=call(workerproto.QueuePause,nil);err!=nil{return err}
-		intent,err:=registry.NewSubmission(ctx,workerproto.QueueCommand{URL:md.URL,Gallery:md.Gallery,MaxItems:count},"disposable-window:"+dir);if err!=nil{return err}
+		intent,err:=registry.NewSubmission(ctx,workerproto.QueueCommand{URL:md.URL,Gallery:md.Gallery,MaxItems:count},o.galleryIdentity(md.Gallery));if err!=nil{return err}
 		body,err:=workerproto.EncodeQueueCommand(workerproto.QueueEnqueue,intent.Command);if err!=nil{return err}
 		raw,err:=call(workerproto.QueueEnqueue,body);if err!=nil{return err}
 		var accepted struct{JobID int64 `json:"job_id"`}

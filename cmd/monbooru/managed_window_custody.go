@@ -103,6 +103,7 @@ func runManagedWindowRuntimeLeaf(dir,encoded string)error{
 	cmd:=exec.Command(setup.Python,append([]string{filepath.Join(dir,managedqa.ScriptName)},args...)...)
 	cmd.Dir=dir
 	cmd.Env=append(os.Environ(),"MEBOORU_WINDOW_PORT="+strconv.Itoa(setup.Port),"MEBOORU_WINDOW_COUNT="+strconv.Itoa(setup.Count),"MEBOORU_WINDOW_WINDOWS="+strconv.Itoa(setup.Windows))
+	cmd.Env=append(cmd.Env,"MEBOORU_WINDOW_CANCEL_FIRST="+strconv.FormatBool(setup.CancelFirst))
 	cmd.Stdout=os.Stdout
 	var stderr probeOutput
 	cmd.Stderr=&stderr
@@ -160,5 +161,12 @@ func(r *fixtureWindowResolver)Claim(c context.Context,q workerproto.MetadataPlan
 }
 func(r *fixtureWindowResolver)Settle(c context.Context,q workerproto.MetadataPlanRequest,phase int,failed bool)error{
 	if q!=r.active.Request{return managedqa.ErrFixture}
+	// Close arrives after the broker has stopped all runtime handles.
+	// Before metadata completion this window could not allocate any
+	// workspace or publish gallery data. It is safe to retire it and
+	// let the next independently authorized job use the same worker.
+	if failed && phase < 2 {
+		if err := r.registry.RecordOutcome(c, windowregistry.Outcome{Grant:r.active,Kind:"abandoned"}); err != nil { return err }
+	}
 	return r.registry.Settle(c,r.active,phase,failed)
 }

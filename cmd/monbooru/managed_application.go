@@ -38,6 +38,7 @@ func disposableManagedConfig(dir string) (*config.Config, managedqa.Setup, error
 	cfg.Server.BindAddress = "127.0.0.1:0"
 	cfg.Server.BaseURL = ""
 	cfg.SetupDone = true
+	cfg.Log.Level = "info"
 	cfg.Paths.DataPath = filepath.Join(dir, "data")
 	cfg.Paths.ModelPath = filepath.Join(dir, "data", "models")
 	cfg.DefaultGallery = managedqa.Gallery
@@ -47,7 +48,20 @@ func disposableManagedConfig(dir string) (*config.Config, managedqa.Setup, error
 		DBPath:         filepath.Join(dir, "data", "gallery.sqlite"),
 		ThumbnailsPath: filepath.Join(dir, "data", "thumbs"),
 	}}
+	if setup.Destination != "" {
+		root := filepath.Join(dir, "second-gallery")
+		if info, err := os.Lstat(root); err != nil || !info.IsDir() {
+			return nil, setup, managedqa.ErrFixture
+		}
+		cfg.Galleries = append(cfg.Galleries, config.Gallery{
+			Name:           setup.Destination,
+			GalleryPath:    root,
+			DBPath:         filepath.Join(dir, "data", "second.sqlite"),
+			ThumbnailsPath: filepath.Join(dir, "data", "second-thumbs"),
+		})
+	}
 	cfg.Gallery.WatchEnabled = false
+	cfg.Gallery.DefaultUploadName = "{source}-{post_id}"
 	cfg.Schedule = config.ScheduleConfig{}
 	return cfg, setup, nil
 }
@@ -64,7 +78,7 @@ type managedApplication struct {
 	policyMu sync.Mutex
 }
 
-func openManagedApplication(dir string, setup managedqa.Setup, set *library.Set) (*managedApplication, error) {
+func openManagedApplication(dir string, setup managedqa.Setup, set *library.Set, naming config.GalleryConfig) (*managedApplication, error) {
 	self, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -89,7 +103,7 @@ func openManagedApplication(dir string, setup managedqa.Setup, set *library.Set)
 		closePolicy()
 		return nil, err
 	}
-	o := &windowFixtureOwner{dir: dir, setup: setup, set: set, allowed: make(map[string]workerproto.StageAllocateRequest), registry: registry}
+	o := &windowFixtureOwner{dir: dir, setup: setup, set: set, allowed: make(map[string]workerproto.StageAllocateRequest), registry: registry, naming: naming}
 	o.a, err = acquisitionstage.Open(filepath.Join(dir, "stage"), 2, 32<<20, o.scope)
 	if err != nil {
 		registry.Close()
@@ -224,7 +238,11 @@ func (a *managedApplication) SubmitImport(ctx context.Context, source, gallery s
 	if !match {
 		return 0, web.ErrManagedImportUnsupported
 	}
-	intent, err := a.owner.registry.NewSubmission(ctx, workerproto.QueueCommand{URL: source, Gallery: gallery, MaxItems: limit}, "disposable-window:"+a.owner.dir)
+	identity := a.owner.galleryIdentity(gallery)
+	if identity == "" {
+		return 0, web.ErrManagedImportUnsupported
+	}
+	intent, err := a.owner.registry.NewSubmission(ctx, workerproto.QueueCommand{URL: source, Gallery: gallery, MaxItems: limit}, identity)
 	if err != nil {
 		return 0, err
 	}

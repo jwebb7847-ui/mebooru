@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -55,7 +56,7 @@ func (p *loaderProbe) request(ctx context.Context, path string, form url.Values,
 }
 
 var probeCSRF = regexp.MustCompile(`name="_csrf" value="([^"]+)"`)
-var probeGalleryLink = regexp.MustCompile(`href="(/i/[a-f0-9]{64}\?gallery=A)"`)
+var probeGalleryLink = regexp.MustCompile(`href="(/i/[a-f0-9]{64}\?gallery=[A-Za-z_]+)"`)
 
 func withManagedApplication(ctx context.Context, executable, dir string, run func(*loaderProbe) error) error {
 	start := time.Now()
@@ -118,10 +119,10 @@ func withManagedApplication(ctx context.Context, executable, dir string, run fun
 	return cmd.Wait()
 }
 
-func (p *loaderProbe) upload(ctx context.Context, data []byte) error {
+func (p *loaderProbe) upload(ctx context.Context, gallery string, data []byte) error {
 	var form bytes.Buffer
 	writer := multipart.NewWriter(&form)
-	if err := writer.WriteField("_gallery", managedqa.Gallery); err != nil {
+	if err := writer.WriteField("_gallery", gallery); err != nil {
 		return err
 	}
 	file, err := writer.CreateFormFile("files", "existing.png")
@@ -156,6 +157,11 @@ func (p *loaderProbe) upload(ctx context.Context, data []byte) error {
 }
 
 func probeManagedApplication(ctx context.Context, executable, dir string, setup managedqa.Setup, duplicate []byte) error {
+	destination := setup.MetadataFor(1).Gallery
+	switchGallery := func(p *loaderProbe, name string) error {
+		_, err := p.request(ctx, "/internal/gallery/switch", url.Values{"name": {name}, "return_to": {"/loader"}}, http.StatusSeeOther)
+		return err
+	}
 	submit := func(p *loaderProbe, id int64) error {
 		plan := setup.MetadataFor(id)
 		_, err := p.request(ctx, "/loader/import", url.Values{
@@ -165,7 +171,10 @@ func probeManagedApplication(ctx context.Context, executable, dir string, setup 
 	}
 	if err := withManagedApplication(ctx, executable, dir, func(p *loaderProbe) error {
 		if setup.Windows > 1 {
-			if err := p.upload(ctx, duplicate); err != nil {
+			if err := switchGallery(p, destination); err != nil {
+				return err
+			}
+			if err := p.upload(ctx, destination, duplicate); err != nil {
 				return err
 			}
 		}
@@ -175,6 +184,9 @@ func probeManagedApplication(ctx context.Context, executable, dir string, setup 
 		queue, err := p.request(ctx, "/loader/jobs", nil, http.StatusOK)
 		if err != nil || !strings.Contains(queue, "data-live=\"true\"") || !strings.Contains(queue, "<td>queued") {
 			return fmt.Errorf("offline submission did not park: %v", err)
+		}
+		if setup.Destination != "" {
+			return switchGallery(p, managedqa.Gallery)
 		}
 		return nil
 	}); err != nil {
@@ -222,6 +234,11 @@ func probeManagedApplication(ctx context.Context, executable, dir string, setup 
 		if len(links) != wantLinks || strings.Contains(results, ">Blacklisted<") != (setup.Count > 1) {
 			return fmt.Errorf("unexpected managed Loader results: %d gallery links", len(links))
 		}
+		for _, link := range links {
+			if !strings.HasSuffix(link[1], "?gallery="+destination) {
+				return fmt.Errorf("result linked outside the submitted gallery")
+			}
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.base+links[0][1], nil)
 		if err != nil {
 			return err
@@ -246,6 +263,9 @@ func probeManagedApplication(ctx context.Context, executable, dir string, setup 
 			if !strings.Contains(results, ">duplicate<") || !strings.Contains(results, ">created<") {
 				return fmt.Errorf("expected an existing image and a new image in Loader results")
 			}
+			if err := switchGallery(p, destination); err != nil {
+				return err
+			}
 			if err := submit(p, 2); err != nil {
 				return err
 			}
@@ -258,6 +278,70 @@ func probeManagedApplication(ctx context.Context, executable, dir string, setup 
 			}
 		}
 		fmt.Printf("PASS: application Loader imported %d posts, with durable queue restart, offline browsing and shutdown\n", len(setup.ExpectedIDs(1)))
+		return nil
+	})
+}
+
+func probeActiveManagedCancel(ctx context.Context, executable, dir string, setup managedqa.Setup) error {
+	return withManagedApplication(ctx, executable, dir, func(p *loaderProbe) error {
+		ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+		defer cancel()
+		submit := func(id int64) error {
+			plan := setup.MetadataFor(id)
+			_, err := p.request(ctx, "/loader/import", url.Values{
+				"url": {plan.URL}, "_gallery": {plan.Gallery}, "max_items": {strconv.Itoa(setup.Count)},
+			}, http.StatusSeeOther)
+			return err
+		}
+		wait := func(check func() (bool, error)) error {
+			tick := time.NewTicker(100 * time.Millisecond)
+			defer tick.Stop()
+			for {
+				done, err := check()
+				if err != nil || done {
+					return err
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-tick.C:
+				}
+			}
+		}
+		if _, err := p.request(ctx, "/loader/offline", url.Values{"offline": {"false"}}, http.StatusSeeOther); err != nil {
+			return err
+		}
+		if err := submit(1); err != nil {
+			return err
+		}
+		if err := wait(func() (bool, error) {
+			_, err := os.Stat(filepath.Join(dir, "cancel-fixture-ready"))
+			if os.IsNotExist(err) {
+				return false, nil
+			}
+			return err == nil, err
+		}); err != nil {
+			return fmt.Errorf("wait for active metadata: %w", err)
+		}
+		if _, err := p.request(ctx, "/loader/jobs/1/cancel", url.Values{}, http.StatusSeeOther); err != nil {
+			return err
+		}
+		if err := wait(func() (bool, error) {
+			queue, err := p.request(ctx, "/loader/jobs", nil, http.StatusOK)
+			return strings.Contains(queue, "<td>canceled"), err
+		}); err != nil {
+			return fmt.Errorf("wait for canceled job: %w", err)
+		}
+		if err := submit(2); err != nil {
+			return err
+		}
+		if err := wait(func() (bool, error) {
+			queue, err := p.request(ctx, "/loader/jobs", nil, http.StatusOK)
+			return strings.Contains(queue, "<td>succeeded"), err
+		}); err != nil {
+			return fmt.Errorf("wait for next job: %w", err)
+		}
+		fmt.Println("PASS: canceled active metadata and imported the next job in the same application session")
 		return nil
 	})
 }

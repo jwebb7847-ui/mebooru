@@ -55,7 +55,7 @@ func (q *Queue) Close() {
 	q.Stop()
 	q.mu.Lock()
 	for _, cancel := range q.cancels {
-		cancel()
+		cancel(nil)
 	}
 	q.mu.Unlock()
 	q.wg.Wait()
@@ -90,14 +90,14 @@ func (q *Queue) nextJob() (*Job, context.Context, func(error), bool) {
 			q.cond.Wait()
 		}
 		if q.closed { return nil,nil,nil,false }
-		ctx,cancel:=context.WithCancel(context.Background())
+		ctx,cancel:=context.WithCancelCause(context.Background())
 		var finish func(error)
 		if q.managed!=nil{
 			// Admission and removal from pending share the same lock
 			// as the offline transition. A denied job stays queued.
 			admitted,done,err:=q.managed.gate.Admit(ctx)
 			if err!=nil{
-				cancel()
+				cancel(nil)
 				q.managedOffline=true
 				continue
 			}
@@ -150,6 +150,8 @@ func (q *Queue) runJob(j *Job, ctx context.Context, finish func(error)) {
 	var err error
 	if q.managed!=nil { err,cleanupErr=q.managed.proc.ProcessManaged(ctx,j);if cleanupErr!=nil{err=errManagedCleanup} } else { err=q.proc.Process(ctx,j) }
 	switch {
+	case q.managed != nil && context.Cause(ctx) == errUserCancellation && cleanupErr == nil:
+		j.cancel(q.now())
 	case ctx.Err() != nil && (q.closing() || q.managed!=nil):
 		// A shutdown is not an operator cancel: settle it like a crash,
 		// so a restart keeps the requeue.
@@ -172,7 +174,7 @@ func (q *Queue) finish(j *Job) {
 	q.mu.Lock()
 	delete(q.running, j.ID)
 	if cancel, ok := q.cancels[j.ID]; ok {
-		cancel()
+		cancel(nil)
 		delete(q.cancels, j.ID)
 	}
 	var evicted []int64

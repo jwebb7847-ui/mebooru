@@ -37,6 +37,8 @@ type Setup struct{
 	Python string
 	ScriptSHA256 string
 	Application bool `json:",omitempty"`
+	Destination string `json:",omitempty"`
+	CancelFirst bool `json:",omitempty"`
 }
 func Digest(b []byte)string{v:=sha256.Sum256(b);return hex.EncodeToString(v[:])}
 func ValidateDir(dir string)error{
@@ -72,6 +74,8 @@ func Load(dir string)(Setup,error){
 	var s Setup
 	if err:=ReadJSON(dir,SetupName,&s,8192);err!=nil{return s,err}
 	if !ValidCount(s.Count,s.Application)||(s.Windows<1||s.Windows>3)||s.Windows>1&&s.Count!=3||s.Port<1||s.Port>65535||!filepath.IsAbs(s.Python)||s.ScriptSHA256!=Digest([]byte(PythonFixture)){return Setup{},ErrFixture}
+	if s.Destination!=""&&(!s.Application||!workerproto.ValidMetadataPlan(s.MetadataFor(1))){return Setup{},ErrFixture}
+	if s.CancelFirst&&(!s.Application||s.Count!=3||s.Windows!=2){return Setup{},ErrFixture}
 	b,err:=Read(dir,ScriptName,1<<20);if err!=nil||Digest(b)!=s.ScriptSHA256{return Setup{},ErrFixture}
 	return s,nil
 }
@@ -82,7 +86,9 @@ func(s Setup) Metadata()workerproto.MetadataPlanRequest{return s.MetadataFor(1)}
 func(s Setup) MetadataFor(job int64)workerproto.MetadataPlanRequest{
 	if job<1||job>int64(s.Windows){return workerproto.MetadataPlanRequest{}}
 	url:=Search;if job>1{url+=strconv.FormatInt(job,10)}
-	return workerproto.MetadataPlanRequest{JobID:job,Gallery:Gallery,Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:url,First:1,Last:uint32(s.Count)}
+	gallery := s.Destination
+	if gallery == "" { gallery = Gallery }
+	return workerproto.MetadataPlanRequest{JobID:job,Gallery:gallery,Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:url,First:1,Last:uint32(s.Count)}
 }
 func JobFile(name string,job int64)string{return strconv.FormatInt(job,10)+"-"+name}
 func ParentID(job int64)string{return fmt.Sprintf("%032x",job)}
@@ -122,7 +128,7 @@ type Proof struct{
 // fixture refuses every network socket except the controller's IPv4
 // loopback server; not a general OS sandbox or production trust record.
 const PythonFixture = `
-import os, socket, sys
+import os, socket, sys, time
 from gallery_dl import main
 from gallery_dl.extractor import philomena
 port = int(os.environ["MEBOORU_WINDOW_PORT"])
@@ -150,6 +156,10 @@ def checked_lookup(host, service, *a, **k):
 socket.socket.connect, socket.socket.connect_ex, socket.getaddrinfo = checked_connect, checked_connect_ex, checked_lookup
 def posts(self):
     job = 3 if sys.argv[-1].endswith("q=fixture3") else 2 if sys.argv[-1].endswith("q=fixture2") else 1
+    if job == 1 and os.environ.get("MEBOORU_WINDOW_CANCEL_FIRST") == "true":
+        with open("cancel-fixture-ready", "x"):
+            pass
+        time.sleep(30)
     offset = (job - 1) * count
     for ident in range(offset + 1, offset + count + 1):
         blocked = (count > 1 and ident == offset + 1) or (windows == 3 and job == 2)

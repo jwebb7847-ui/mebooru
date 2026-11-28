@@ -24,6 +24,7 @@ var ErrNoneRetried = errors.New("no window could be re-run")
 var ErrNotRunning = errors.New("job is not running")
 
 var errStopping = errors.New("the queue is stopping")
+var errUserCancellation = errors.New("job canceled by user")
 
 // ItemsAll fetches every window, each queued when the last comes back capped.
 const ItemsAll = -1
@@ -102,7 +103,7 @@ type Queue struct {
 	cond             *sync.Cond
 	pending          []*Job
 	running          map[int64]*Job
-	cancels          map[int64]context.CancelFunc
+	cancels          map[int64]context.CancelCauseFunc
 	finished         []*Job
 	index            map[int64]*Job
 	maxFinished      int
@@ -153,7 +154,7 @@ func New(proc Processor, workers, maxFinished int) *Queue {
 	}
 	q := &Queue{
 		running:     map[int64]*Job{},
-		cancels:     map[int64]context.CancelFunc{},
+		cancels:     map[int64]context.CancelCauseFunc{},
 		index:       map[int64]*Job{},
 		maxFinished: maxFinished,
 		proc:        proc,
@@ -775,7 +776,7 @@ func (q *Queue) cancelKeepingRow(id int64) error {
 		return ErrNotFound
 	}
 	if cancel, ok := q.cancels[id]; ok {
-		cancel()
+		cancel(errUserCancellation)
 		q.mu.Unlock()
 		return nil
 	}
@@ -820,7 +821,7 @@ func (q *Queue) cancel(id int64, liveOnly bool) {
 		return
 	}
 	if cancel, ok := q.cancels[id]; ok {
-		cancel()
+		cancel(errUserCancellation)
 		q.mu.Unlock()
 		return
 	}

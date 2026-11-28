@@ -84,13 +84,13 @@ func(g *DrainGate)admitLocked(caller context.Context)(context.Context,func(error
 	if err:=caller.Err();err!=nil{return nil,nil,err}
 	if g.active==0{g.empty=make(chan struct{})}
 	g.active++
-	ctx,cancel:=context.WithCancel(g.online)
-	stop:=context.AfterFunc(caller,cancel)
+	ctx,cancel:=context.WithCancelCause(g.online)
+	stop:=context.AfterFunc(caller,func(){cancel(context.Cause(caller))})
 	var once sync.Once
 	return ctx,func(cleanupErr error){
 		once.Do(func(){
 			stop()
-			cancel()
+			cancel(nil)
 			g.mu.Lock()
 			defer g.mu.Unlock()
 			if cleanupErr!=nil{

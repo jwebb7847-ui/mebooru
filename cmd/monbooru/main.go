@@ -193,7 +193,7 @@ func main() {
 	if *managedDisposable != "" {
 		if err := srv.AttachManagedLoader(func(set *library.Set) (internalweb.ManagedLoader, error) {
 			var err error
-			managed, err = openManagedApplication(*managedDisposable, fixture, set)
+			managed, err = openManagedApplication(*managedDisposable, fixture, set, cfg.Gallery)
 			return managed, err
 		}); err != nil {
 			fatalf("starting managed acquisition: %v", err)
