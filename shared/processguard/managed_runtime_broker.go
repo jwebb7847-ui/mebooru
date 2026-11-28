@@ -222,7 +222,7 @@ func(b *probeBroker) startManagedRuntime(ctx context.Context,op workerproto.Oper
 			if stopErr!=nil{b.sealed=true;b.revoke();return streamFault("cleanup_unconfirmed")}
 		}
 		if errors.Is(err,ErrOperationUnconfirmed){b.sealed=true;b.revoke();return streamFault("cleanup_unconfirmed")}
-		return streamFault("start_refused")
+		return streamFault(workerproto.ManagedStartRefused)
 	}
 	b.next++
 	b.streams[b.next]=&streamProbe{lease:lease,child:child}

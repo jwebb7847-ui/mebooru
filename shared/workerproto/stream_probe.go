@@ -3,6 +3,7 @@ package workerproto
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
 
 const (
@@ -45,10 +46,17 @@ func DecodeStreamTerminal(body []byte)(StreamTerminal,error){
 	return StreamTerminal{StreamCursor:StreamCursor{ID:q.ID,Offset:*q.Offset},ExitCode:*q.ExitCode,Stderr:q.Stderr},nil
 }
 
+const (
+	StreamFinishStopped = "operation_failed_stopped"
+	ManagedStartRefused = "start_refused"
+)
+
+var ErrProbeOperationStopped = errors.New("contained operation failed with cleanup confirmed")
+
 // StreamProbeClient requests fixed diagnostic output, not a command.
 // Read/Finish are not retried: on any uncertain read, discard the partial
 // result and Stop the exact operation using a fresh cleanup context.
-// Only successful Finish or Stop acknowledges containment cleanup.
+// Finish acknowledges cleanup even when the result is unusable.
 type StreamProbeClient struct{session *Session}
 func NewStreamProbeClient(s *Session)(*StreamProbeClient,error){
 	if s==nil||s.role!=OperationRequester{return nil,ErrDirection}
@@ -74,6 +82,9 @@ func(c *StreamProbeClient)Read(ctx context.Context,q StreamCursor)(StreamChunk,e
 func(c *StreamProbeClient)Finish(ctx context.Context,q StreamCursor)(StreamTerminal,error){
 	body,_:=json.Marshal(q)
 	e,err:=c.session.Call(ctx,OperationStreamFinish,body)
+	if err == nil && e.Error != nil && e.Error.Code == StreamFinishStopped {
+		return StreamTerminal{}, ErrProbeOperationStopped
+	}
 	if err!=nil||e.Error!=nil{
 		// Finish may have consumed the operation handle. Never infer proof
 		// from its absence. Ambiguity closes the entire diagnostic session.

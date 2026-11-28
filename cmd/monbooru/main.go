@@ -52,11 +52,22 @@ func main() {
 	meloaderBinary := flag.String("meloader", "", "start this Meloader executable alongside Mebooru")
 	meloaderConfig := flag.String("meloader-config", "", "config file for the Meloader companion")
 	managedDisposable := flag.String("managed-disposable", "", "start Loader with a prepared disposable managed-acquisition fixture")
+	recoverManaged := flag.Bool("recover-managed-after-reboot", false, "recover an existing managed acquisition profile offline after restarting this Mac")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(versionLine())
+		return
+	}
+	if *recoverManaged {
+		if explicitFlag("config", *configPath) == "" || *managedDisposable != "" {
+			fatalf("recovery requires -config with the existing managed profile")
+		}
+		if err := recoverManagedProfile(*configPath); err != nil {
+			fatalf("recovering managed acquisition: %v", err)
+		}
+		fmt.Println("Managed acquisition is ready to restart offline.")
 		return
 	}
 	if *hashPassword != "" {

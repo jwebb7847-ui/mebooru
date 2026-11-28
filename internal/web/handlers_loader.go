@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/jwebb7847-ui/mebooru/shared/desktop"
@@ -119,11 +120,28 @@ func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	managed := s.managedLoader != nil
+	var destinations []string
+	var limit int
+	if managed {
+		s.set.RLock()
+		for _, gallery := range s.set.All() {
+			if !gallery.Degraded {
+				destinations = append(destinations, gallery.Name)
+			}
+		}
+		s.set.RUnlock()
+		slices.Sort(destinations)
+		if provider, ok := s.managedLoader.(managedSettingsProvider); ok {
+			limit = provider.AcquisitionSettings().MaxItems
+		}
+	}
 	s.renderTemplate(w, "loader.html", struct {
 		baseData
-		View    string
-		Panel   loaderPanel
-		Managed bool
-		Offline bool
-	}{base, view, panel, managed, managed && s.managedLoader.Offline()})
+		View         string
+		Panel        loaderPanel
+		Managed      bool
+		Offline      bool
+		Destinations []string
+		Limit        int
+	}{base, view, panel, managed, managed && s.managedLoader.Offline(), destinations, limit})
 }

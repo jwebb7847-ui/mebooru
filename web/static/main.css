@@ -95,6 +95,12 @@ button.footer-rating-link { color: var(--fg-dim); }
 .loader-import label { display: grid; gap: 4px; }
 .loader-import label:has(input[type="url"]) { flex: 1 1 22rem; min-width: 0; }
 .loader-import input[type="number"] { width: 10ch; }
+.loader-import input[type="number"], .loader-import select {
+  background: var(--bg-surface);
+  color: var(--fg);
+  border: 1px solid var(--border-strong, var(--border));
+  padding: 6px 8px;
+}
 .loader-import > span { align-self: center; }
 .loader-jobs { margin-top: 8px; }
 .loader-jobs td { overflow-wrap: anywhere; }

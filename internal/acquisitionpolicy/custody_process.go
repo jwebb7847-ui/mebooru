@@ -43,6 +43,7 @@ func StartCustodyProcess(ctx context.Context,cmd *exec.Cmd,fence *WorkerFence)(*
 	defer r.Close()
 	defer w.Close()
 	cmd.Stdout=w
+	isolateCustodyProcess(cmd)
 	if err:=cmd.Start();err!=nil{_ = life.Close();return nil,err}
 	_ = w.Close()
 	p:=&CustodyProcess{fence:fence,life:life,done:make(chan struct{})}
@@ -117,7 +118,7 @@ func(p *CustodyProcess)Stop(ctx context.Context)error{
 		defer l.mu.Unlock()
 		if l.file==nil||l.root==nil||l.activeFence!=f{return ErrWorkerRecoveryRequired}
 		if err:=verifyCleanupReceipt(l.root,f.Generation());err!=nil{
-			return errors.Join(ErrWorkerRecoveryRequired,err)
+			return errors.Join(ErrWorkerRecoveryRequired,err,p.waitErr)
 		}
 	}
 	p.stopped=true

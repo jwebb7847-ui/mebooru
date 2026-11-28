@@ -129,11 +129,11 @@ func(b *probeBroker)handleStream(ctx context.Context,op workerproto.Operation,bo
 		if stopErr:=b.streamStop(ctx,q.ID,s);stopErr!=nil{return streamFault("cleanup_unconfirmed")}
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.failed||err!=nil||waitErr!=nil||ctx.Err()!=nil{return streamFault("stream_failed")}
-		if len(stderr)>workerproto.StreamStderrLimit{return streamFault("stream_failed")}
+		if s.failed||err!=nil||waitErr!=nil||ctx.Err()!=nil{return streamFault(workerproto.StreamFinishStopped)}
+		if len(stderr)>workerproto.StreamStderrLimit{return streamFault(workerproto.StreamFinishStopped)}
 		if stderr==nil{stderr=[]byte{}}
 		out,_:=json.Marshal(workerproto.StreamTerminal{StreamCursor:q,ExitCode:exit,Stderr:stderr})
-		if _,err:=workerproto.DecodeStreamTerminal(out);err!=nil{return streamFault("stream_failed")}
+		if _,err:=workerproto.DecodeStreamTerminal(out);err!=nil{return streamFault(workerproto.StreamFinishStopped)}
 		return out,nil
 	default:
 		s.mu.Unlock()

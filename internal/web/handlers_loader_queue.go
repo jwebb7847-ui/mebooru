@@ -188,14 +188,20 @@ func (s *Server) loaderImport(w http.ResponseWriter, r *http.Request) {
 	if !parseFormOK(w, r) {
 		return
 	}
-	// Check the gallery advertised by this form. Release the gallery lock
-	// before waiting on the peer, and send the captured name explicitly.
+	// Managed imports target the explicit destination. Legacy forms
+	// remain bound to the active gallery shown when they were rendered.
 	s.set.RLock()
 	cx := s.active()
 	name := s.activeGallery()
-	available := cx != nil && !cx.Degraded && name != ""
+	selected := r.FormValue("_gallery")
+	if s.managedLoader != nil {
+		name = cmp.Or(r.FormValue("destination"), selected)
+		selected = name
+		cx = s.set.Get(name)
+	}
+	available := selected == name && cx != nil && !cx.Degraded && name != ""
 	s.set.RUnlock()
-	if r.FormValue("_gallery") != name || !available {
+	if !available {
 		externalErr(w, r, "The destination gallery changed or is unavailable. Reload Loader.", http.StatusConflict)
 		return
 	}

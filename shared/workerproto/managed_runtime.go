@@ -28,8 +28,8 @@ func DecodeManagedTransferStart(body []byte,expected StageAllocateRequest)(Manag
 }
 
 // StartManagedMetadata and StartManagedTransfer require the separately
-// authenticated custody session. A start refusal/lost response closes
-// the channel because a remote handle may have been created.
+// authenticated custody session. A known refusal proves there is no
+// remote handle. Other errors close the channel if delivery is ambiguous.
 func(c *StreamProbeClient) StartManagedMetadata(ctx context.Context,q MetadataPlanRequest)(ProbeOperationRef,error){
 	if !ValidMetadataPlan(q){return ProbeOperationRef{},ErrMessage}
 	body,err:=json.Marshal(ManagedMetadataStart{Request:q});if err!=nil{return ProbeOperationRef{},err}
@@ -43,6 +43,9 @@ func(c *StreamProbeClient) StartManagedTransfer(ctx context.Context,a StageAlloc
 }
 func(c *StreamProbeClient) startManaged(ctx context.Context,op Operation,body json.RawMessage)(ProbeOperationRef,error){
 	e,err:=c.session.Call(ctx,op,body)
+	if err == nil && e.Error != nil && e.Error.Code == ManagedStartRefused {
+		return ProbeOperationRef{}, ErrProbeOperationStopped
+	}
 	if err!=nil||e.Error!=nil{c.session.Close();if err!=nil{return ProbeOperationRef{},err};return ProbeOperationRef{},ErrProbeBrokerRefused}
 	v,err:=DecodeProbeOperationRef(e.Payload)
 	if err!=nil{c.session.Close()}

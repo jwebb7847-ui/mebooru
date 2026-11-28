@@ -2,6 +2,7 @@ package processguard
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
@@ -56,6 +57,10 @@ func(c *remoteRuntimeChild) Activate()error{
 	if c.started||c.stopped||c.ctx.Err()!=nil{return ErrOperationsSealed}
 	c.started=true
 	ref,err:=c.start(c.ctx)
+	if errors.Is(err, workerproto.ErrProbeOperationStopped) {
+		c.stopped = true
+		return err
+	}
 	if err!=nil||ref.ID==0{c.uncertain=true;return ErrOperationUnconfirmed}
 	c.ref=ref
 	return nil
@@ -81,6 +86,10 @@ func(c *remoteRuntimeChild) Result(ctx context.Context)(int,[]byte,error){
 	c.mu.Unlock()
 	result,err:=c.client.Finish(ctx,q)
 	c.mu.Lock();defer c.mu.Unlock()
+	if errors.Is(err, workerproto.ErrProbeOperationStopped) {
+		c.stopped = true
+		return -1, nil, err
+	}
 	if err!=nil{c.uncertain=true;return -1,nil,ErrOperationUnconfirmed}
 	// Finish acknowledges the custodian's actual contained Stop.
 	c.stopped=true

@@ -10,20 +10,31 @@
   {{end}}
   {{if and (not .Managed) (not .MonloaderPaired)}}
   <p>Connect Meloader in <a href="/settings#plugins">Settings → Plugins</a> to queue imports.</p>
-  {{else if not .ActiveGallery}}
+  {{else if or (and .Managed (not .Destinations)) (and (not .Managed) (not .ActiveGallery))}}
   <p>Choose a destination gallery to queue imports.</p>
-  {{else if .Degraded}}
+  {{else if and (not .Managed) .Degraded}}
   <p>The destination gallery is unavailable.</p>
   {{else}}
   <form class="loader-import" method="post" action="/loader/import"
         hx-post="/loader/import" hx-target="#loader-flash" hx-swap="innerHTML"
-        hx-on::after-request="if (event.detail.xhr.getResponseHeader('HX-Trigger') === 'loader-queue-updated') this.reset()">
+        hx-on::after-request="if (event.detail.xhr.getResponseHeader('HX-Trigger') === 'loader-queue-updated') this.elements.url.value = ''">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    {{if .Managed}}
+    <label>Source URL <input type="url" name="url" placeholder="Paste a post or search URL" required></label>
+    <label>Destination gallery
+      <select name="destination" required>
+        {{range .Destinations}}<option value="{{.}}"{{if eq . $.ActiveGallery}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </label>
+    <label>Maximum posts <input type="number" name="max_items" min="1" step="1"
+           {{if .Limit}}max="{{.Limit}}" value="{{.Limit}}"{{else}}placeholder="Default"{{end}}></label>
+    {{else}}
     <input type="hidden" name="_gallery" value="{{.ActiveGallery}}">
     <label>Source URL <input type="url" name="url" placeholder="Paste a booru search, pool, or post URL" required></label>
     <label>Post limit <input type="number" name="max_items" min="1" placeholder="Default"
                              title="Lowers the configured search batch limit. Pools are imported whole."></label>
     <span>Destination <strong>{{.ActiveGallery}}</strong></span>
+    {{end}}
     <button type="submit" hx-disabled-elt="this">Queue import</button>
   </form>
   {{end}}
