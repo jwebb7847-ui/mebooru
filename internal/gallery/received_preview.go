@@ -76,15 +76,25 @@ func PreviewReceivedNaming(ctx context.Context, database *db.DB, b *Boundary, id
 // dimensions, local MD5 and other landed-only facts are deliberately refused;
 // a template that would fall back to a future row ID also refuses.
 func PreviewUnlandedReceivedNaming(ctx context.Context, database *db.DB, b *Boundary, req ReceivedNamingRequest, sha256 string, size int64) (ReceivedNamingPreview,error) {
+	return previewUnlandedReceivedNaming(ctx,database,b,req,NameFacts{Gallery:req.Gallery,SHA256:sha256,Size:size})
+}
+
+// PreviewMeasuredReceivedNaming additionally accepts trusted local facts
+// independently measured on the exact prepared bytes, not source claims.
+// ID and ingest-time facts remain unavailable before landing.
+func PreviewMeasuredReceivedNaming(ctx context.Context,database *db.DB,b *Boundary,req ReceivedNamingRequest,sha256 string,size int64,mediaType string,width,height int,md5 string)(ReceivedNamingPreview,error){
+	if mediaType==""||width<=0||height<=0||len(md5)!=32{return ReceivedNamingPreview{},errors.New("invalid measured naming facts")}
+	return previewUnlandedReceivedNaming(ctx,database,b,req,NameFacts{Gallery:req.Gallery,SHA256:sha256,Size:size,Type:mediaType,Width:width,Height:height,MD5:md5})
+}
+func previewUnlandedReceivedNaming(ctx context.Context,database *db.DB,b *Boundary,req ReceivedNamingRequest,facts NameFacts)(ReceivedNamingPreview,error){
 	var zero ReceivedNamingPreview
-	if b==nil||database==nil||ctx.Err()!=nil||req.Gallery==""||len(sha256)!=64||size<=0{return zero,errors.New("invalid unlanded naming scope")}
+	if b==nil||database==nil||ctx.Err()!=nil||req.Gallery==""||len(facts.SHA256)!=64||facts.Size<=0{return zero,errors.New("invalid unlanded naming scope")}
 	for _,s:=range []string{req.Gallery,req.ReceivedName,req.RequestFolder,req.DefaultFolder,req.DefaultName,req.Source,req.PostID}{
 		if len(s)>4096||strings.IndexByte(s,0)>=0{return zero,errors.New("invalid received naming input")}
 	}
 	if req.ReceivedName==""||strings.ContainsAny(req.ReceivedName,"/\\"){return zero,errors.New("received name must be one filename")}
 	received:=SanitizeReceivedName(req.ReceivedName)
 	if received==""||received=="."||received!=filepath.Base(received)||!filepath.IsLocal(received)||len(received)>255{return zero,errors.New("invalid received filename")}
-	facts:=NameFacts{Gallery:req.Gallery,SHA256:sha256,Size:size}
 	return previewReceivedWithFacts(ctx,database,b,req,received,facts,true)
 }
 
@@ -109,6 +119,8 @@ func previewReceivedWithFacts(ctx context.Context,database *db.DB,b *Boundary,re
 			for _,part:=range tmpl.parts{
 				switch part.tok{
 				case tokLiteral,tokName,tokExt,tokHash,tokGallery,tokSize,tokFolder,tokSource,tokPostID:
+				case tokType,tokImgWidth,tokImgHeight,tokMD5:
+					if facts.Type==""||facts.Width<=0||facts.Height<=0||len(facts.MD5)!=32{return zero,errors.New("naming requires measured local media facts")}
 				default:return zero,errors.New("naming template requires landed facts")
 				}
 			}
