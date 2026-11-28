@@ -24,7 +24,7 @@ import (
 )
 
 func TestPlannedNewPublication(t *testing.T){
-	for _,mode:=range []string{"plain","template","collision","nested","unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","changed naming","changed job","changed collision","changed directory","forged plan","revoked after intent","changed after intent","DB reopen","changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt","changed after landing","changed job after naming","changed client after landing","shared source tag","legacy marker substitution","lost attempt after receipt","full closure","JPEG","JPEG extension","animated GIF","WebP","bad JPEG","mismatched GIF","unsupported video","media facts changed","media facts changed after receipt","forged media facts"}{
+	for _,mode:=range []string{"plain","template","collision","nested","unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","changed naming","changed job","changed collision","changed directory","forged plan","revoked after intent","changed after intent","DB reopen","changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt","changed after landing","changed job after naming","changed client after landing","shared source tag","legacy marker substitution","lost attempt after receipt","full closure","JPEG","JPEG extension","animated GIF","WebP","bad JPEG","mismatched GIF","unsupported video","media facts changed","media facts changed after receipt","forged media facts","measured naming"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -33,7 +33,7 @@ func TestPlannedNewPublication(t *testing.T){
 			if mode=="bad PNG"{data=[]byte("not a PNG")}
 			if mode=="wrong extension"{ext="jpg"}
 			switch mode{
-			case "JPEG","JPEG extension","media facts changed","media facts changed after receipt","forged media facts":
+			case "JPEG","JPEG extension","media facts changed","media facts changed after receipt","forged media facts","measured naming":
 				var out bytes.Buffer
 				if err:=jpeg.Encode(&out,image.NewRGBA(image.Rect(0,0,16,16)),nil);err!=nil{t.Fatal(err)}
 				data=out.Bytes();ext="jpg"
@@ -79,6 +79,7 @@ func TestPlannedNewPublication(t *testing.T){
 			switch mode{
 			case "shared source tag":job.Tags=append(job.Tags,"fixture")
 			case "template":req.DefaultName="{source}-{post_id}-{hash:8}"
+			case "measured naming":req.DefaultName="{type}-{w}x{h}-{md5}"
 			case "collision":
 				if err:=os.WriteFile(filepath.Join(s.GalleryRoot,f.RelativeName),[]byte("operator"),0600);err!=nil{t.Fatal(err)}
 			case "nested","changed directory":
