@@ -84,6 +84,7 @@ func readHistoryEntry(ctx context.Context,history *os.Root,id,stage string)(Hist
 	return out,nil
 }
 func(a *Allocator) historyLive()bool{
+	if a.historyPoisoned||a.root==nil{return false}
 	info,err:=a.root.Lstat(historyDirName)
 	if a.historyInfo==nil{return errors.Is(err,os.ErrNotExist)}
 	return err==nil&&info.IsDir()&&os.SameFile(info,a.historyInfo)
@@ -123,6 +124,7 @@ func(a *Allocator) ArchiveClosed(ctx context.Context,grant workerproto.StageAllo
 	v:=HistoryEntry{Version:1,Allocation:grant,Closure:c,TreeSHA256:hash}
 	raw,err:=json.Marshal(v);if err!=nil||len(raw)>maxRecordBytes{return zero,ErrStageLimit}
 	if authorize(ctx,grant,c.Witness)!=nil||ctx.Err()!=nil{return zero,ErrStageRefused}
+	a.historyPoisoned=true // failure after this point blocks all new grants until reopen/reconciliation
 	if a.historyInfo==nil{
 		if err:=a.root.Mkdir(historyDirName,0700);err!=nil{return zero,ErrStageRecovery}
 		a.historyInfo,err=a.root.Lstat(historyDirName);if err!=nil{return zero,ErrStageRecovery}
@@ -140,7 +142,7 @@ func(a *Allocator) ArchiveClosed(ctx context.Context,grant workerproto.StageAllo
 	syncDirectory(a.root);syncDirectory(h)
 	stored,err:=readHistoryEntry(ctx,h,id,a.path)
 	if err!=nil||stored!=v{return zero,ErrStageRecovery}
-	a.history[id]=v;a.historyTransfers[grant.TransferID]=true;a.historyCharge+=charge
+	a.history[id]=v;a.historyTransfers[grant.TransferID]=true;a.historyCharge+=charge;a.historyPoisoned=false
 	return v,nil
 }
 func(a *Allocator) HistoricalReceipt(ctx context.Context,id string)(HistoryEntry,error){

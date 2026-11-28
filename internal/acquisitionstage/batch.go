@@ -162,6 +162,7 @@ func(a *Allocator) copyBatchChild(ctx context.Context,parent workerproto.StageAl
 		src,err:=openDir(sealed,"media");if err!=nil{return err};defer src.Close()
 		co,err:=openDir(a.root,child.Request.OperationID);if err!=nil{return err};defer co.Close()
 		cr,err:=readRecord(co);if err!=nil||cr.Allocation!=child{return ErrStageRecovery}
+		pr,err:=readRecord(op);if err!=nil||pr.Allocation!=parent||cr.GalleryIdentity!=pr.GalleryIdentity||cr.GalleryRoot!=pr.GalleryRoot{return ErrStageRefused}
 		w,err:=openDir(co,child.TransferID);if err!=nil{return err};defer w.Close()
 		if entries,err:=list(w,0);err!=nil||len(entries)!=0{return ErrStageRecovery}
 		if err:=writeOwnerBytes(ctx,w,"strict-blacklist.json",manifest);err!=nil{return err}
@@ -221,6 +222,12 @@ func(a *Allocator) CommitBatchForOwner(ctx context.Context,parent workerproto.St
 		if ctx.Err()!=nil||owner.Current(ctx,parent)!=nil{return a.batchFailure(ctx,parent,ErrStageRefused)}
 		row:=snapshot.Rows[i]
 		auth,err:=owner.Child(ctx,parent,item.Request,row);if err!=nil{return a.batchFailure(ctx,parent,err)}
+		current:=auth.Current
+		if current==nil{return a.batchFailure(ctx,parent,ErrStageRefused)}
+		auth.Current=func(c context.Context,q workerproto.StageAllocation)error{
+			if owner.Current(c,parent)!=nil{return ErrStageRefused}
+			return current(c,q)
+		}
 		one,err:=json.Marshal(map[string]json.RawMessage{item.PostID:native[item.PostID]})
 		if err!=nil||digestBytes(one)!=item.Request.Transfer.ManifestSHA256{return a.batchFailure(ctx,parent,ErrStageRecovery)}
 		child,err:=a.copyBatchChild(ctx,parent,item,one,row,auth);if err!=nil{return a.batchFailure(ctx,parent,err)}
@@ -232,6 +239,7 @@ func(a *Allocator) CommitBatchForOwner(ctx context.Context,parent workerproto.St
 	op,err:=openDir(a.root,parent.Request.OperationID);if err!=nil{return zero,err};defer op.Close()
 	b,err:=openDir(op,"batch");if err!=nil{return zero,err};defer b.Close()
 	out,err:=batchOutcome(b,p,false);if err!=nil{return zero,err}
+	if err:=a.verifyBatchChildrenLocked(ctx,p,out);err!=nil{return zero,err}
 	raw,err:=json.Marshal(out);if err!=nil||len(raw)>maxBatchRecord{return zero,ErrStageLimit}
 	if err:=writeOwnerBytes(ctx,b,"result.json",raw);err!=nil{return zero,err};syncDirectory(b)
 	return readBatchResult(b,p)
@@ -249,6 +257,52 @@ func(a *Allocator) ObserveBatch(ctx context.Context,parent workerproto.StageAllo
 	e,err:=readSeal(op,parent);if err!=nil{return zero,err}
 	p,err:=readBatchPlan(op,r,e);if err!=nil{return zero,err}
 	b,err:=openDir(op,"batch");if err!=nil{return zero,err};defer b.Close()
-	if _,err:=b.Lstat("result.json");err==nil{return readBatchResult(b,p)}else if !errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
-	return batchOutcome(b,p,true)
+	if _,err:=b.Lstat("result.json");err==nil{
+		out,err:=readBatchResult(b,p);if err!=nil{return zero,err}
+		if err:=a.verifyBatchChildrenLocked(ctx,p,out);err!=nil{return zero,err}
+		return out,nil
+	}else if !errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
+	out,err:=batchOutcome(b,p,true);if err!=nil{return zero,err}
+	// A lost aggregate acknowledgement can be reconciled read-only from
+	// an exact completed child closure, never by rerunning that child.
+	for i,v:=range out.Items{
+		if v.State!="unresolved"{continue}
+		w,err:=a.batchChildWitnessLocked(ctx,p.Items[i]);if err!=nil{continue}
+		out.Items[i]=BatchItemOutcome{PostID:v.PostID,State:"committed",Receipt:&w}
+	}
+	if err:=a.verifyBatchChildrenLocked(ctx,p,out);err!=nil{return zero,err}
+	return out,nil
+}
+
+func(a *Allocator) batchChildWitnessLocked(ctx context.Context,item batchItem)(OwnerReceipt,error){
+	var zero OwnerReceipt
+	if item.File.ID==""||!validID(item.Request.OperationID){return zero,ErrStageRefused}
+	var w OwnerReceipt
+	if archived,ok:=a.history[item.Request.OperationID];ok{
+		h,err:=openDir(a.root,historyDirName);if err!=nil{return zero,err}
+		got,err:=readHistoryEntry(ctx,h,item.Request.OperationID,a.path);h.Close()
+		if err!=nil||got!=archived{return zero,ErrStageRecovery}
+		w=got.Closure.Witness
+	}else{
+		r,err:=a.load(item.Request.OperationID);if err!=nil||r.Allocation.Request!=item.Request{return zero,ErrStageRecovery}
+		done,_,err:=a.closedCharge(ctx,r);if err!=nil||!done{return zero,ErrStageRecovery}
+		op,err:=openDir(a.root,item.Request.OperationID);if err!=nil{return zero,err};defer op.Close()
+		e,err:=readSeal(op,r.Allocation);if err!=nil||len(e.Files)!=1||e.Files[0]!=item.File{return zero,ErrStageRecovery}
+		p,err:=openDir(op,"publication");if err!=nil{return zero,err};defer p.Close()
+		c,err:=readOperationClosure(p,r,e);if err!=nil{return zero,err}
+		w=c.Witness
+	}
+	if w.Allocation.Request!=item.Request||w.Row.PostID!=item.PostID||w.Row.SHA256!=item.File.SHA256||w.Row.Size!=item.File.Size||!validDigest(w.ReceiptSHA256){return zero,ErrStageRecovery}
+	return w,nil
+}
+func(a *Allocator) verifyBatchChildrenLocked(ctx context.Context,p batchPlan,out BatchOutcome)error{
+	if len(out.Items)!=len(p.Items){return ErrStageRecovery}
+	for i,v:=range out.Items{
+		item:=p.Items[i]
+		if v.PostID!=item.PostID{return ErrStageRecovery}
+		if v.State!="committed"{continue}
+		w,err:=a.batchChildWitnessLocked(ctx,item)
+		if err!=nil||v.Receipt==nil||w!=*v.Receipt{return ErrStageRecovery}
+	}
+	return nil
 }

@@ -68,6 +68,7 @@ type Allocator struct {
 	historyTransfers map[string]bool
 	historyInfo os.FileInfo
 	historyCharge uint64
+	historyPoisoned bool
 }
 
 func Open(path string,maxCount int,maxBytes uint64,authority Authority)(*Allocator,error){
