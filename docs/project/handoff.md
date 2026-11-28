@@ -2,7 +2,7 @@
 
 **Historical snapshot, not a live roadmap.** Begin with [MEBOORU.md](../../MEBOORU.md) for current decisions, chapter status and next action. Preserve this document for operational context and earlier acceptance evidence. Current branch/PR/CI instructions are in [Development workflow](../../MEBOORU.md#development-workflow); the old per-change PR process and separate repository instructions are superseded.
 
-**Current resume (2026-11-28):** [Cold-start engineering resume](cold-start.md) supersedes historical next-action language below. Exact a0e054f executable baseline passed all seven development jobs, including actual Linux 200-post acquisition (199 committed, one blocked) and Windows 3-post acquisition. Prepared multi-window code f2d88d0 remains unqualified; normal app production binding and full acceptance pending.
+**Current resume (2026-11-28):** [Cold-start engineering resume](cold-start.md). Exact a0e054f executable baseline passed 7/7 incl Linux 200/199/1. Combined e6399dec multi-window, running-job owner admission and no-transfer settlement submitted for consolidated verification; production binding and full acceptance pending.
 
 **Snapshot:** 2026-11-25, after visual closeout. **Mebooru working branch:** `mebooru-foundation`, feature merge `3715067d067417dabeec94c05f1b6bb90148f293` (PR #15). **Meloader working branch:** `main`, feature merge `10542e66537430d21cc295449103bb2832e0693a` (PR #25). Recheck live GitHub heads before editing; a snapshot is not a floating reference.
 
