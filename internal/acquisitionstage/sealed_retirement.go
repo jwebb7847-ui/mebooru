@@ -104,6 +104,7 @@ func checkSealedInventory(op,media *os.Root,grant workerproto.StageAllocation,e 
 	p,err:=openDir(op,"publication")
 	if err!=nil{
 		if _,err:=op.Lstat("publication");!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
+		if _,err:=op.Lstat("batch");err==nil{return checkBatchSealedInventory(op,media,grant,e)}else if !errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
 		if !exactInventory(media,e.Files){return ErrStageRecovery};return nil
 	}
 	defer p.Close()

@@ -83,13 +83,13 @@ func readBatchPlan(op *os.Root,r record,e SealedEvidence)(batchPlan,error){
 	var zero batchPlan
 	if _,err:=op.Lstat("publication");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
 	b,err:=openDir(op,"batch");if err!=nil{return zero,err};defer b.Close()
-	entries,err:=list(b,len(e.Files)+2);if err!=nil{return zero,err}
+	entries,err:=list(b,len(e.Files)+4);if err!=nil{return zero,err}
 	manifest,snapshot,err:=readBatchInputs(op,r,e);if err!=nil{return zero,err}
 	want,err:=makeBatchPlan(r,e,manifest,snapshot);if err!=nil{return zero,err}
 	raw,err:=boundedRegularBytes(b,"plan.json",maxBatchRecord)
 	body,e2:=json.Marshal(want)
 	if err!=nil||e2!=nil||!bytes.Equal(raw,body){return zero,ErrStageRecovery}
-	allowed:=map[string]bool{"plan.json":true,"result.json":true}
+	allowed:=map[string]bool{"plan.json":true,"result.json":true,"reclaim-attempt.json":true,"reclaim-result.json":true}
 	for _,i:=range want.Items{if i.File.ID!=""{allowed[i.Request.OperationID+".json"]=true}}
 	for _,x:=range entries{if !allowed[x.Name()]||!x.Type().IsRegular(){return zero,ErrStageRecovery}}
 	return want,nil

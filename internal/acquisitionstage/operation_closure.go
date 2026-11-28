@@ -61,9 +61,11 @@ func(a *Allocator)closedCharge(ctx context.Context,r record)(bool,uint64,error){
 		plan,err:=readBatchPlan(op,r,e);if err!=nil{return false,0,err}
 		b,err:=openDir(op,"batch");if err!=nil{return false,0,err};defer b.Close()
 		if _,err:=b.Lstat("result.json");errors.Is(err,os.ErrNotExist){return false,r.Allocation.MaxBytes,nil}else if err!=nil{return false,0,ErrStageRecovery}
-		if _,err:=readBatchResult(b,plan);err!=nil{return false,0,err}
-		// Parent retains original evidence and full byte reservation.
-		return true,r.Allocation.MaxBytes,nil
+		out,err:=readBatchResult(b,plan);if err!=nil{return false,0,err}
+		if _,err:=b.Lstat("reclaim-result.json");errors.Is(err,os.ErrNotExist){return true,r.Allocation.MaxBytes,nil}else if err!=nil{return false,0,ErrStageRecovery}
+		m,err:=readBatchReclaim(b,plan,out,true);if err!=nil{return false,0,err}
+		if err:=verifyBatchPrivate(ctx,op,r,e,true,true);err!=nil{return false,0,err}
+		return true,m.RetainedSidecarBytes,nil
 	}else if !errors.Is(err,os.ErrNotExist){return false,0,ErrStageRecovery}
 	if _,err:=op.Lstat("publication");errors.Is(err,os.ErrNotExist){return false,r.Allocation.MaxBytes,nil}else if err!=nil{return false,0,ErrStageRecovery}
 	p,err:=openDir(op,"publication")
