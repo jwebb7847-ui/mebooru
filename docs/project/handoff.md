@@ -2,7 +2,7 @@
 
 **Historical snapshot, not a live roadmap.** Begin with [MEBOORU.md](../../MEBOORU.md) for current decisions, chapter status and next action. Preserve this document for operational context and earlier acceptance evidence. Current branch/PR/CI instructions are in [Development workflow](../../MEBOORU.md#development-workflow); the old per-change PR process and separate repository instructions are superseded.
 
-**Current resume pointer (2026-11-28):** II.6.4a accepted; b isolated verified; c/d/e active. 520748d CI compile error fixed. 691f4f21 new typed custody/queue dispatch and receipt-linked processor; consolidated CI pending. Actual executable/owner/scheduler and integrated real runtime remain. [Exact evidence](../validation/managed-guarded-acquisition-2026-11-28.md).
+**Current resume pointer (2026-11-28):** II.6.4a accepted; b isolated verified; c/d/e active. 32cfbbc 7/7 development passed. b87f652a actual disposable executable binding and scheduler demand, 3/200-post candidate in one consolidated CI. Normal app binding/generalized owner, compatibility and Mac remain. [Exact evidence](../validation/managed-guarded-acquisition-2026-11-28.md).
 
 **Snapshot:** 2026-11-25, after visual closeout. **Mebooru working branch:** `mebooru-foundation`, feature merge `3715067d067417dabeec94c05f1b6bb90148f293` (PR #15). **Meloader working branch:** `main`, feature merge `10542e66537430d21cc295449103bb2832e0693a` (PR #25). Recheck live GitHub heads before editing; a snapshot is not a floating reference.
 
