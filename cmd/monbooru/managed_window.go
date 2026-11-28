@@ -152,10 +152,16 @@ func(o *windowFixtureOwner) commit(c context.Context)error{
 			Current:current,Archive:cleanup,
 			Child:func(c context.Context,parent workerproto.StageAllocation,q workerproto.StageAllocateRequest,row acquisitionplan.ApprovedPolicyRow)(acquisitionstage.OwnerCommit,error){
 				if current(c,parent)!=nil||q.Transfer.Metadata!=o.setup.Metadata(){return acquisitionstage.OwnerCommit{},managedqa.ErrFixture}
+				var receipt managedqa.Proof
+				if err:=managedqa.ReadJSON(o.dir,managedqa.ProofName,&receipt,1<<20);err!=nil{return acquisitionstage.OwnerCommit{},err}
+				var file acquisitionplan.VerifiedTransferFile
+				for _,f:=range receipt.Files{if f.ID==row.PostID{file=f;break}}
+				disposition,err:=acquisitionstage.ResolveOwnerDisposition(c,o.set,managedqa.Gallery,file,row)
+				if err!=nil{return acquisitionstage.OwnerCommit{},err}
 				o.allowed[q.OperationID]=q
 				return acquisitionstage.OwnerCommit{
 					Current:current,
-					Disposition:func(c context.Context,g workerproto.StageAllocation)(string,error){return acquisitionstage.OwnerDispositionNew,current(c,g)},
+					Disposition:func(c context.Context,g workerproto.StageAllocation)(string,error){return disposition,current(c,g)},
 					Naming:func(c context.Context,g workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){return gallery.ReceivedNamingRequest{Gallery:managedqa.Gallery,ReceivedName:row.PostID+".png",Source:row.SourceLabel,PostID:row.PostID,DefaultName:"{source}-{post_id}"},current(c,g)},
 					Extras:func(c context.Context,g workerproto.StageAllocation)(contract.JobExtras,error){return contract.JobExtras{},current(c,g)},
 					Cleanup:cleanup,

@@ -86,8 +86,13 @@ func TestOwnerBatchMixedAndArchive(t *testing.T){
 				Child:func(_ context.Context,_ workerproto.StageAllocation,req workerproto.StageAllocateRequest,row acquisitionplan.ApprovedPolicyRow)(OwnerCommit,error){
 					if partial&&row.PostID=="42"{return OwnerCommit{},ErrStageRefused}
 					allowed[req.OperationID]=req
-					kind:=OwnerDispositionNew
-					if row.PostID=="42"{kind=OwnerDispositionHeld};if row.PostID=="43"{kind=OwnerDispositionRestore}
+					var f acquisitionplan.VerifiedTransferFile
+					for _,v:=range files{if v.ID==row.PostID{f=v;break}}
+					kind,err:=ResolveOwnerDisposition(ctx,set,cfg.Name,f,row)
+					if err!=nil{return OwnerCommit{},err}
+					want:=OwnerDispositionNew
+					if row.PostID=="42"{want=OwnerDispositionHeld};if row.PostID=="43"{want=OwnerDispositionRestore}
+					if kind!=want{return OwnerCommit{},fmt.Errorf("disposition %s, want %s",kind,want)}
 					return OwnerCommit{
 						Current:func(context.Context,workerproto.StageAllocation)error{return nil},
 						Disposition:func(context.Context,workerproto.StageAllocation)(string,error){return kind,nil},

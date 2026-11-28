@@ -28,9 +28,9 @@ import(
 func runManagedWindowWorker(args []string)error{
 	if len(args)<1{return managedqa.ErrFixture}
 	dir:=args[0]
-	setup,err:=managedqa.Load(dir);if err!=nil{return err}
 	r,w,br,bw,err:=managedProbeChannels(args[1:]);if err!=nil{return err}
-	defer r.Close();defer w.Close()
+	defer r.Close();defer w.Close();defer br.Close();defer bw.Close()
+	setup,err:=managedqa.Load(dir);if err!=nil{return err}
 	ctx,cancel:=context.WithTimeout(context.Background(),12*time.Minute);defer cancel()
 	broker,err:=workerproto.OpenSession(ctx,br,bw,workerproto.OperationRequester,nil);if err!=nil{return err}
 	defer broker.Close()

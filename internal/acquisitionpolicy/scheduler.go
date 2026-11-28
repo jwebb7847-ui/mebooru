@@ -66,6 +66,6 @@ func(m *Manager)RunQueueScheduler(ctx context.Context,dir string,watchesEnabled 
 		demand,err:=ReadQueueDemand(ctx,dir,time.Now(),watchesEnabled())
 		if err==nil{err=m.TickNetworkDemand(ctx,demand.Queued||demand.WatchDue)}
 		if err!=nil&&ctx.Err()==nil{report(err)}
-		select{case <-ctx.Done():return;case <-m.lifetime.Done():return;case <-tick.C:case <-wake:}
+		select{case <-ctx.Done():return;case <-m.lifetime.Done():return;case <-tick.C:case _,ok:=<-wake:if !ok{wake=nil}}
 	}
 }
