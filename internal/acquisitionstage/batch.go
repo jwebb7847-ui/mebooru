@@ -38,6 +38,7 @@ type BatchItemOutcome struct{
 type BatchOutcome struct{
 	Version int
 	PlanSHA256 string
+	PolicySHA256 string
 	Items []BatchItemOutcome
 }
 type BatchOwner struct{
@@ -110,7 +111,7 @@ func readBatchItem(b *os.Root,item batchItem)(BatchItemOutcome,error){
 func batchOutcome(b *os.Root,p batchPlan,partial bool)(BatchOutcome,error){
 	var zero BatchOutcome
 	raw,err:=json.Marshal(p);if err!=nil{return zero,err}
-	out:=BatchOutcome{Version:1,PlanSHA256:digestBytes(raw),Items:make([]BatchItemOutcome,0,len(p.Items))}
+	out:=BatchOutcome{Version:1,PlanSHA256:digestBytes(raw),PolicySHA256:p.PolicySHA256,Items:make([]BatchItemOutcome,0,len(p.Items))}
 	for _,i:=range p.Items{
 		if i.File.ID==""{out.Items=append(out.Items,BatchItemOutcome{PostID:i.PostID,State:"not_transferred"});continue}
 		if _,err:=b.Lstat(i.Request.OperationID+".json");errors.Is(err,os.ErrNotExist)&&partial{
