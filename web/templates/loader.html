@@ -23,6 +23,19 @@
   {{else if and .Managed (eq .View "ptr")}}
     <div class="loader-queue">
       <h2>Public Tag Repository</h2>
+      {{if .PTR.Enabled}}
+      <form method="post" action="/loader/ptr/sync">
+        <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+        {{if .PTR.SyncState}}
+        <span role="status">Sync status {{.PTR.SyncState}}</span>
+        <button name="run" value="false">Stop sync</button>
+        <a href="/loader?view=ptr">Refresh status</a>
+        {{else}}
+        <button name="run" value="true"{{if .Offline}} disabled{{end}}>Start sync</button>
+        {{if .Offline}}<span>Go online in Loader to start synchronization.</span>{{end}}
+        {{end}}
+      </form>
+      {{end}}
       <form class="loader-import" method="get" action="/loader">
         <input type="hidden" name="view" value="ptr">
         <label>Image SHA-256 <input type="text" name="sha256" value="{{.PTR.Query}}" pattern="[0-9A-Fa-f]{64}" size="40" spellcheck="false" required></label>

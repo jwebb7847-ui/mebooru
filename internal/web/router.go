@@ -401,6 +401,7 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.free("GET /loader/jobs/{id}/results", s.loaderJobResults)
 	rt.free("POST /loader/import", s.loaderImport)
 	rt.free("POST /loader/watches", s.loaderWatchAction)
+	rt.free("POST /loader/ptr/sync", s.loaderPTRSync)
 	rt.free("POST /loader/offline", s.loaderOffline)
 	rt.free("POST /loader/jobs/{id}/{action}", s.loaderJobAction)
 	rt.read("GET /", s.notFoundHandler)

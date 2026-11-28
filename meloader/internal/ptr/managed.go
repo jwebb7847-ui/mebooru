@@ -1,6 +1,7 @@
 package ptr
 
 import(
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -9,6 +10,18 @@ import(
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monloader/internal/config"
 )
+
+// StartManagedSync is explicit. The worker lifetime owns the sync loop
+// and the shared online generation gates its full pass and HTTP bodies.
+func(e *Engine) StartManagedSync(lifetime context.Context) error {
+	e.lifecycleMu.Lock()
+	defer e.lifecycleMu.Unlock()
+	if lifetime.Err()!=nil||e.managedGate==nil||e.managedGate.CurrentGeneration()==(workerproto.DrainGeneration{}){
+		return workerproto.ErrOffline
+	}
+	e.baseCtx=lifetime
+	return e.enableLocked()
+}
 
 // NewManagedEngine wraps the actual repository client, including
 // account/contribution requests, with the same gate as the queue.

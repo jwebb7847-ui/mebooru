@@ -9,10 +9,25 @@ type PTRLocalTagsRequest struct {
 }
 
 type PTRLocalTags struct {
-	Enabled bool     `json:"enabled"`
-	Indexed bool     `json:"indexed"`
-	Found   bool     `json:"found"`
-	Tags    []string `json:"tags,omitempty"`
+	Enabled   bool     `json:"enabled"`
+	Indexed   bool     `json:"indexed"`
+	Found     bool     `json:"found"`
+	Tags      []string `json:"tags,omitempty"`
+	SyncState string   `json:"sync_state,omitempty"`
+}
+
+type PTRSyncRequest struct {
+	Run bool `json:"run"`
+}
+
+func DecodePTRSyncRequest(body []byte) (PTRSyncRequest, error) {
+	var value struct {
+		Run *bool `json:"run"`
+	}
+	if err := decodeObject(body, &value, "run"); err != nil || value.Run == nil {
+		return PTRSyncRequest{}, ErrMessage
+	}
+	return PTRSyncRequest{Run: *value.Run}, nil
 }
 
 func ValidPTRHash(s string) bool {

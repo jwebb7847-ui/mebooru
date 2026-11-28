@@ -3,6 +3,7 @@ package web
 import (
 	"cmp"
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"slices"
@@ -24,6 +25,7 @@ type loaderPanel struct {
 
 type localPTRLoader interface {
 	LocalPTRTags(context.Context, string) (workerproto.PTRLocalTags, error)
+	SetPTRSync(context.Context, bool) error
 }
 
 type loaderPTR struct {
@@ -47,6 +49,34 @@ func (s *Server) loaderLocalPTR(r *http.Request) loaderPTR {
 		return loaderPTR{Query: hash, Message: "Could not read the local PTR index."}
 	}
 	return loaderPTR{Query: hash, PTRLocalTags: result}
+}
+
+func (s *Server) loaderPTRSync(w http.ResponseWriter, r *http.Request) {
+	if s.refuseUnavailableAcquisition(w, r) {
+		return
+	}
+	service, ok := s.managedLoader.(localPTRLoader)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if !parseFormOK(w, r) {
+		return
+	}
+	run := r.FormValue("run")
+	if run != "true" && run != "false" {
+		http.Error(w, "Choose Start sync or Stop sync.", http.StatusBadRequest)
+		return
+	}
+	if err := service.SetPTRSync(r.Context(), run == "true"); err != nil {
+		if errors.Is(err, workerproto.ErrOffline) {
+			externalErr(w, r, "Go online before starting PTR synchronization.", http.StatusConflict)
+			return
+		}
+		externalErr(w, r, "Could not change PTR synchronization. Check the acquisition log.", http.StatusServiceUnavailable)
+		return
+	}
+	hxRedirect(w, r, "/loader?view=ptr")
 }
 
 func (s *Server) loaderPanel(r *http.Request, base baseData, path string) loaderPanel {

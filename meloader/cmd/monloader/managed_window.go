@@ -2,7 +2,6 @@ package main
 
 import(
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -144,10 +143,12 @@ func runManagedWindowWorker(args []string)error{
 		return managedqa.ErrFixture
 	}
 	dispatch:=q.PrivateDispatch(authorize,notify)
-	s,err:=workerproto.OpenSession(ctx,r,w,workerproto.Worker,func(c context.Context,op workerproto.Operation,body json.RawMessage)(json.RawMessage,*workerproto.Fault){
-		if liveErr==nil&&op==workerproto.PTRTags{return managedPTRTags(c,live.PolicyConfig,body)}
-		return dispatch(c,op,body)
-	});if err!=nil{return err}
+	if liveErr==nil {
+		ptr:=&managedPTR{configPath:live.PolicyConfig,lifetime:ctx,gate:gate}
+		defer ptr.stop()
+		dispatch=ptr.wrap(dispatch)
+	}
+	s,err:=workerproto.OpenSession(ctx,r,w,workerproto.Worker,dispatch);if err!=nil{return err}
 	defer s.Close();session.Store(s)
 	// Session loss cancels all worker admissions, independent of pending
 	// queue commands. The outer custodian still owns the real child proof.

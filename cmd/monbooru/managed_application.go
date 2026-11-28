@@ -256,6 +256,22 @@ func (a *managedApplication) LocalPTRTags(ctx context.Context, hash string) (wor
 	return result, err
 }
 
+func (a *managedApplication) SetPTRSync(ctx context.Context, run bool) error {
+	a.policyMu.Lock()
+	defer a.policyMu.Unlock()
+	if run && a.Offline() {
+		return workerproto.ErrOffline
+	}
+	if a.owner.live == nil {
+		return web.ErrManagedImportUnsupported
+	}
+	raw, err := json.Marshal(workerproto.PTRSyncRequest{Run: run})
+	if err != nil {
+		return err
+	}
+	return a.request(ctx, workerproto.PTRSync, raw, nil)
+}
+
 func (a *managedApplication) ImportQueue(ctx context.Context, page, limit int) (monloader.ImportQueuePage, error) {
 	result := monloader.ImportQueuePage{Page: page, Limit: limit}
 	err := a.call(ctx, workerproto.QueueList, workerproto.QueueCommand{Page: page, Limit: limit}, &result)
