@@ -76,6 +76,8 @@ func TestPlannedNewPublication(t *testing.T){
 				res,err:=g.Land(ctx,s.GalleryRoot,"existing.png",library.FromReader(bytes.NewReader(data)),library.LandSpec{Origin:"fixture"})
 				if err!=nil||res.Image==nil||res.Duplicate{t.Fatal("existing fixture",err)}
 			}
+			var existingCollectionID int64
+			var existingCollectionBefore collectionSnapshot
 			addExistingCollection:=func(){
 				t.Helper()
 				var b bytes.Buffer
@@ -84,6 +86,16 @@ func TestPlannedNewPublication(t *testing.T){
 				if err!=nil||res.Image==nil||res.Duplicate{t.Fatal("collection fixture",err)}
 				order:=2
 				if err:=gallery.AddCollectionMembership(g.DB,res.Image.ID,"POOL",&order);err!=nil{t.Fatal(err)}
+				existingCollectionID=res.Image.ID
+				existingCollectionBefore,err=inspectCollection(ctx,g,existingCollectionID,"POOL")
+				if err!=nil{t.Fatal("existing collection snapshot",err)}
+			}
+			assertExistingCollectionUnchanged:=func(){
+				t.Helper()
+				if mode!="collection existing label"{return}
+				if existingCollectionID<=0{t.Fatal("missing existing collection fixture")}
+				after,err:=inspectCollection(ctx,g,existingCollectionID,"POOL")
+				if err!=nil||!reflect.DeepEqual(after,existingCollectionBefore){t.Fatal("existing collection membership changed",existingCollectionBefore,after,err)}
 			}
 			if mode=="collection existing label"{addExistingCollection()}
 			req:=gallery.ReceivedNamingRequest{Gallery:g.Name,ReceivedName:f.RelativeName,Source:row.SourceLabel,PostID:row.PostID}
@@ -234,6 +246,7 @@ func TestPlannedNewPublication(t *testing.T){
 				if err!=nil{t.Fatal("apply collection",err)}
 				var label string;var position int
 				if err:=g.DB.Read.QueryRow("SELECT name,position FROM image_collections WHERE image_id=?",mapped[0].ImageID).Scan(&label,&position);err!=nil||label!=plan.Collection.Label||position!=7{t.Fatal("collection membership",label,position,err)}
+				assertExistingCollectionUnchanged()
 			}
 			if mode=="media facts changed"{
 				if _,err:=g.DB.Write.Exec("UPDATE images SET width=17 WHERE id=?",mapped[0].ImageID);err!=nil{t.Fatal(err)}
@@ -291,6 +304,7 @@ func TestPlannedNewPublication(t *testing.T){
 				if _,err:=a.retireSealedMedia(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("retire",err)}
 				if _,err:=a.closeRetiredOperation(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("close",err)}
 				if _,err:=a.observeClosedOperation(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("observe closed",err)}
+				assertExistingCollectionUnchanged()
 				if got,err:=os.ReadFile(preview.FinalPath);err!=nil||!bytes.Equal(got,data){t.Fatal("canonical bytes after closure",err)}
 			}
 		})
