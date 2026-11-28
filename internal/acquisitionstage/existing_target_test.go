@@ -34,6 +34,10 @@ func TestGuardedExistingMetadata(t *testing.T){
 	testExistingPublicationTargetModes(t, []string{"exec meta held","restore exec meta","exec meta alias","exec meta reopen","exec meta revoked","exec meta revoked after intent","exec meta changed after intent","exec meta source failure","exec meta source conflict","exec meta changed after result","exec meta changed source","exec meta lost result","exec meta lost intent","exec meta corrupt result","exec meta changed path","exec meta revoked after result","exec meta unexpected claim","exec meta changed membership"})
 }
 
+func TestGuardedExistingHeldReceipt(t *testing.T){
+	testExistingPublicationTargetModes(t, []string{"exec meta dispose held","exec meta dispose alias","exec meta dispose reopen","exec meta dispose revoked after intent","exec meta dispose changed after intent","exec meta dispose revoked after unlink","exec meta dispose DB failure","exec meta dispose changed row","exec meta dispose changed canonical","exec meta dispose receipt revoked","exec meta dispose lost receipt","exec meta dispose changed retained"})
+}
+
 func testExistingPublicationTargetModes(t *testing.T, modes []string){
 	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
@@ -74,7 +78,7 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 			}
 			kind := existingHeld
 			if strings.HasPrefix(mode,"restore") { kind = existingRestore }
-			if mode == "held alias" || mode == "restore alias" || mode == "exec alias" || mode == "exec meta alias" {
+			if mode == "held alias" || mode == "restore alias" || mode == "exec alias" || mode == "exec meta alias" || mode == "exec meta dispose alias" {
 				alias := filepath.Join(s.GalleryRoot,"operator.png")
 				if err := os.WriteFile(alias,data,0600); err != nil { t.Fatal(err) }
 				if res,err := g.LandInPlace(ctx,alias,library.LandSpec{Origin:"fixture"}); err != nil || !res.Duplicate { t.Fatal("alias",err) }
@@ -333,7 +337,7 @@ func checkGuardedExistingExecution(t *testing.T,ctx context.Context,ap **Allocat
 	if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("premature receipt")}
 	if got.Kind==existingHeld{
 		if b,err:=os.ReadFile(old);err!=nil||!bytes.Equal(b,data){t.Fatal("canonical bytes",err)}
-		if mode=="exec alias"||mode=="exec meta alias"{if b,err:=os.ReadFile(filepath.Join(g.GalleryPath,"operator.png"));err!=nil||!bytes.Equal(b,data){t.Fatal("operator alias",err)}}
+		if mode=="exec alias"||mode=="exec meta alias"||mode=="exec meta dispose alias"{if b,err:=os.ReadFile(filepath.Join(g.GalleryPath,"operator.png"));err!=nil||!bytes.Equal(b,data){t.Fatal("operator alias",err)}}
 	}else if _,err:=os.Stat(old);!os.IsNotExist(err){t.Fatal("old path reappeared",err)}
 	if strings.Contains(mode,"exec meta"){
 		checkGuardedExistingMetadata(t,ctx,ap,stage,grant,g,got,extras,authority,mode,naming,decision,old,data)
@@ -411,6 +415,10 @@ func checkGuardedExistingMetadata(t *testing.T,ctx context.Context,ap **Allocato
 	if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("premature terminal receipt")}
 	if b,err:=os.ReadFile(managed);err!=nil||!bytes.Equal(b,data){t.Fatal("managed bytes",err)}
 	if got.Kind==existingHeld{if b,err:=os.ReadFile(old);err!=nil||!bytes.Equal(b,data){t.Fatal("canonical bytes",err)}}
+	if strings.Contains(mode,"exec meta dispose"){
+		checkGuardedExistingHeldReceipt(t,ctx,ap,stage,grant,g,got,extras,authority,mode,decision,old,data)
+		return
+	}
 	switch mode{
 	case "exec meta reopen":
 		if err:=a.Close();err!=nil{t.Fatal(err)}
@@ -436,4 +444,83 @@ func checkGuardedExistingMetadata(t *testing.T,ctx context.Context,ap **Allocato
 	again,err:=a.observeExistingMetadata(ctx,grant,g,decision,extras,naming)
 	want:=mode=="exec meta held"||mode=="restore exec meta"||mode=="exec meta alias"||mode=="exec meta reopen"||mode=="exec meta revoked after result"
 	if (err==nil)!=want||want&&!sameMetadataObservation(again,v){t.Fatal("metadata observation",again,err)}
+}
+
+func checkGuardedExistingHeldReceipt(t *testing.T,ctx context.Context,ap **Allocator,stage string,grant workerproto.StageAllocation,g *library.Gallery,got existingPublicationTarget,extras extrasAuthority,authority Authority,mode string,decision existingDispositionAuthority,old string,data []byte){
+	t.Helper()
+	a:=*ap
+	dir:=filepath.Join(stage,grant.Request.OperationID,"publication")
+	attempt:=filepath.Join(dir,existingHeldAttemptName)
+	receipt:=filepath.Join(dir,existingHeldReceiptName)
+	managed:=filepath.Join(g.GalleryPath,finalName(grant,got.File))
+	id:=got.ImageID
+	if _,err:=a.finishExistingHeldReceipt(ctx,grant,g,decision,extras);err==nil{t.Fatal("premature receipt")}
+	if mode=="exec meta dispose DB failure"{
+		if _,err:=g.DB.Write.Exec("CREATE TRIGGER fixture_reject_delete BEFORE DELETE ON image_paths WHEN OLD.is_canonical=0 BEGIN SELECT RAISE(ABORT,'fixture'); END");err!=nil{t.Fatal(err)}
+	}
+	if mode=="exec meta dispose changed row"{
+		if _,err:=g.DB.Write.Exec("UPDATE image_paths SET id=id+10000 WHERE path=?",managed);err!=nil{t.Fatal(err)}
+	}
+	if mode=="exec meta dispose changed canonical"{
+		if err:=os.Rename(old,filepath.Join(filepath.Dir(stage),"original-canonical.png"));err!=nil{t.Fatal(err)}
+		if err:=os.WriteFile(old,data,0600);err!=nil{t.Fatal(err)}
+	}
+	original:=decision
+	injected:=false
+	decision=func(ctx context.Context,grant workerproto.StageAllocation)(string,error){
+		if _,err:=os.Stat(attempt);err==nil{
+			if mode=="exec meta dispose revoked after intent"{return "",ErrStageRefused}
+			if mode=="exec meta dispose changed after intent"&&!injected{
+				injected=true
+				if _,err:=g.DB.Write.Exec("UPDATE images SET note='late' WHERE id=?",id);err!=nil{t.Fatal(err)}
+			}
+			if mode=="exec meta dispose revoked after unlink"{if _,err:=os.Stat(managed);os.IsNotExist(err){return "",ErrStageRefused}}
+		}
+		if mode=="exec meta dispose receipt revoked"{if _,err:=os.Stat(receipt);err==nil{return "",ErrStageRefused}}
+		return original(ctx,grant)
+	}
+	err:=a.disposeExistingHeld(ctx,grant,g,decision,extras)
+	pre:=mode=="exec meta dispose changed row"||mode=="exec meta dispose changed canonical"
+	beforeUnlink:=mode=="exec meta dispose revoked after intent"||mode=="exec meta dispose changed after intent"
+	afterUnlink:=mode=="exec meta dispose revoked after unlink"||mode=="exec meta dispose DB failure"
+	if (err!=nil)!=(pre||beforeUnlink||afterUnlink){t.Fatal("dispose",err)}
+	var n int
+	if err:=g.DB.Read.QueryRow("SELECT COUNT(*) FROM image_paths WHERE path=?",managed).Scan(&n);err!=nil{t.Fatal(err)}
+	if pre||beforeUnlink||afterUnlink{
+		if n!=1{t.Fatal("partial state lost path row",n)}
+		_,err:=os.Stat(managed)
+		if afterUnlink!=os.IsNotExist(err){t.Fatal("wrong partial physical state",err)}
+		_,err=os.Stat(attempt)
+		if pre!=os.IsNotExist(err){t.Fatal("wrong attempt state",err)}
+		if _,err:=a.finishExistingHeldReceipt(ctx,grant,g,decision,extras);err==nil{t.Fatal("partial state got receipt")}
+		if !pre{if err:=a.disposeExistingHeld(ctx,grant,g,decision,extras);err==nil{t.Fatal("partial disposal replayed")}}
+		return
+	}
+	if n!=0{t.Fatal("managed row remains")}
+	if _,err:=os.Stat(managed);!os.IsNotExist(err){t.Fatal("managed file remains",err)}
+	if b,err:=os.ReadFile(old);err!=nil||!bytes.Equal(b,data){t.Fatal("canonical bytes",err)}
+	if mode=="exec meta dispose alias"{if b,err:=os.ReadFile(filepath.Join(g.GalleryPath,"operator.png"));err!=nil||!bytes.Equal(b,data){t.Fatal("retained alias",err)}}
+	if err:=a.disposeExistingHeld(ctx,grant,g,decision,extras);err==nil{t.Fatal("disposal replay")}
+	v,err:=a.finishExistingHeldReceipt(ctx,grant,g,decision,extras)
+	if mode=="exec meta dispose receipt revoked"{
+		if err==nil{t.Fatal("revoked receipt acknowledged")}
+		decision=original
+		v,err=a.observeExistingHeldReceipt(ctx,grant,g,decision,extras)
+	}
+	if err!=nil||v.Witness.Kind!=existingHeldReceiptKind||v.Witness.Row.ImageID!=id||v.Witness.FileIdentity!=got.Held.CanonicalIdentity{t.Fatal("receipt",v,err)}
+	if _,err:=a.finishExistingHeldReceipt(ctx,grant,g,decision,extras);err==nil{t.Fatal("receipt overwritten")}
+	if _,err:=a.observeTerminalReceipt(ctx,grant,g,nil,extras);err==nil{t.Fatal("legacy reclamation accepted guarded receipt")}
+	switch mode{
+	case "exec meta dispose reopen":
+		if err:=a.Close();err!=nil{t.Fatal(err)}
+		next,err:=Open(stage,2,4096,authority);if err!=nil{t.Fatal(err)}
+		*ap=next;a=next
+	case "exec meta dispose lost receipt":
+		if err:=os.Remove(receipt);err!=nil{t.Fatal(err)}
+	case "exec meta dispose changed retained":
+		if _,err:=g.DB.Write.Exec("UPDATE images SET note='changed retained' WHERE id=?",id);err!=nil{t.Fatal(err)}
+	}
+	again,err:=a.observeExistingHeldReceipt(ctx,grant,g,decision,extras)
+	want:=mode!="exec meta dispose lost receipt"&&mode!="exec meta dispose changed retained"
+	if (err==nil)!=want||want&&again!=v{t.Fatal("receipt witness",again,err)}
 }
