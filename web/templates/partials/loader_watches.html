@@ -52,7 +52,7 @@
           <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
           <input type="hidden" name="watch_id" value="{{.ID}}">
           {{if .Live}}<button name="action" value="cancel">Cancel check</button>
-          {{else}}<button name="action" value="check"{{if .Unavailable}} disabled{{end}}>Check now</button>{{end}}
+          {{else}}<button name="action" value="check"{{if .Unavailable}} disabled{{end}}>{{if or (eq .Last.Status "canceled") (eq .Last.Status "failed") (eq .Last.Status "interrupted")}}Retry check{{else}}Check now{{end}}</button>{{end}}
           <button name="action" value="remove">Remove</button>
         </form>
       </td>

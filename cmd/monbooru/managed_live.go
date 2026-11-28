@@ -34,6 +34,7 @@ type liveSettings struct {
 		Blacklist []string `toml:"blacklist"`
 	} `toml:"tags"`
 	Sites []struct {
+		Name                                 string `toml:"name"`
 		Username, Password, Cookies, Options string
 		Agent                                string `toml:"user_agent"`
 		APIKey                               string `toml:"api_key"`
@@ -87,11 +88,6 @@ func (conf *liveSettings) bind(path string) (windowregistry.LiveConfig, error) {
 	var out windowregistry.LiveConfig
 	if strings.TrimSpace(conf.GalleryDL.Raw) != "" || conf.Downloader.Folder != "" {
 		return out, errors.New("managed acquisition supports generated gallery-dl options and Mebooru gallery naming settings")
-	}
-	for _, site := range conf.Sites {
-		if site.Username != "" || site.Password != "" || site.Cookies != "" || site.Options != "" || site.Agent != "" || site.APIKey != "" || site.UserID != "" {
-			return out, errors.New("managed acquisition does not yet support site credentials or custom extractor options")
-		}
 	}
 	if conf.GalleryDL.Sleep < 0 || math.IsInf(conf.GalleryDL.Sleep, 0) || math.IsNaN(conf.GalleryDL.Sleep) ||
 		conf.Downloader.Limit < 1 || conf.Downloader.Limit > workerproto.MaxMetadataWindow {

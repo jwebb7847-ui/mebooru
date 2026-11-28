@@ -145,7 +145,11 @@ func openManagedApplication(dir string, setup managedqa.Setup, live *windowregis
 		return nil, err
 	}
 	if live != nil {
-		if err := saveLiveConfig(dir, *live); err != nil {
+		err := prepareSourceOptions(dir, live)
+		if err == nil {
+			err = saveLiveConfig(dir, *live)
+		}
+		if err != nil {
 			cancel()
 			o.a.Close()
 			registry.Close()
@@ -304,7 +308,8 @@ func (a *managedApplication) submitImport(ctx context.Context, source, gallery s
 		match = match || source == plan.URL && gallery == plan.Gallery && limit == setup.Count
 	}
 	if a.owner.live != nil {
-		match = workerproto.StrictQueueSource(source) != "" && limit > 0 && limit <= a.owner.live.MaxItems
+		site := workerproto.StrictQueueSource(source)
+		match = site != "" && a.owner.live.SourceOptions[site] != "-" && limit > 0 && limit <= a.owner.live.MaxItems
 	}
 	if !match {
 		return 0, web.ErrManagedImportUnsupported
@@ -344,6 +349,9 @@ func (a *managedApplication) RetryImport(ctx context.Context, id int64) (int64, 
 	j, err := a.ImportResults(ctx, id)
 	if err != nil {
 		return 0, err
+	}
+	if j.Kind != "" {
+		return 0, web.ErrManagedImportUnsupported
 	}
 	switch j.Status {
 	case "failed", "partial", "interrupted", "canceled":

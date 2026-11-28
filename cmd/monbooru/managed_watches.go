@@ -83,7 +83,9 @@ func (a *managedApplication) enqueueDueWatch(ctx context.Context, now time.Time)
 			continue
 		}
 		destination := a.watchGallery(watch)
-		if a.owner.galleryIdentity(destination) == "" || watch.MaxItems > a.owner.live.MaxItems {
+		source := workerproto.StrictQueueSource(watch.URL)
+		if source == "" || a.owner.live.SourceOptions[source] == "-" ||
+			a.owner.galleryIdentity(destination) == "" || watch.MaxItems > a.owner.live.MaxItems {
 			continue
 		}
 		_, err := a.submitImport(ctx, watch.URL, destination, watch.MaxItems, watch.ID)

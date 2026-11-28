@@ -215,6 +215,12 @@ func main() {
 	defer srv.Close()
 	var managed *managedApplication
 	managedMode := *managedDisposable != "" || cfg.Desktop.ManagedAcquisition
+	migrationPending := !managedMode && *desktopMode && defaultManagedAcquisition == "true" && *meloaderBinary == "" && *meloaderConfig == ""
+	if migrationPending {
+		srv.OfferLegacyMigration(func(ctx context.Context, legacyConfig, state, defaultGallery string) (string, error) {
+			return migrateLegacyAcquisition(ctx, *configPath, legacyConfig, state, defaultGallery)
+		})
+	}
 	if managedMode {
 		start := func() error {
 			dir := *managedDisposable
@@ -262,7 +268,7 @@ func main() {
 
 	bundledCompanion := false
 	bundledConfigCreated := false
-	if !managedMode && *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
+	if !managedMode && !migrationPending && *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
 		*meloaderBinary = cfg.Desktop.MeloaderBinary
 		*meloaderConfig = cfg.Desktop.MeloaderConfig
 		if *meloaderBinary == "" && *meloaderConfig == "" {
@@ -287,7 +293,7 @@ func main() {
 		}
 	}
 	stopMeloader := func() {}
-	if !managedMode && (*meloaderBinary != "" || *meloaderConfig != "") {
+	if !managedMode && !migrationPending && (*meloaderBinary != "" || *meloaderConfig != "") {
 		stop, err := launchMeloader(*meloaderBinary, *meloaderConfig, bundledCompanion, bootstrap)
 		if err != nil {
 			logx.Errorf("starting Meloader: %v", err)

@@ -116,7 +116,7 @@ func runManagedWindowWorker(args []string)error{
 		},
 	}
 	proc:=&pipeline.ManagedJobProcessor{Gate:gate,Owner:owner}
-	q,err:=queue.NewManagedWithGate(gate,proc,1,20);if err!=nil{return err}
+	q,err:=queue.NewManagedWithGate(gate,proc,1,0);if err!=nil{return err}
 	st,err:=queue.OpenStore(filepath.Join(dir,"queue"));if err!=nil{return err}
 	defer st.Close()
 	q.UseStore(st)

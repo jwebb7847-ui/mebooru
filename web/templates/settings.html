@@ -1342,7 +1342,19 @@
   <section id="meloader" class="settings-section">
     {{if .ManagedAcquisition}}
     {{template "webui/settings_section_header" dict "Title" "Acquisition"}}
-    {{if .AcqUnavailable}}
+    {{if .LegacyMigration}}
+    <div class="settings-sub">
+      <h4>Import a Meloader profile</h4>
+      <p>Your galleries stay in place. Mebooru copies the acquisition state, keeps a backup of the library configuration, and restarts offline. Unfinished jobs will be available for explicit retry.</p>
+      <form method="post" action="/settings/acquisition/migrate">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <label>Meloader configuration path <input type="text" name="config" placeholder="Leave blank for a library-only profile"></label>
+        <label>State folder <input type="text" name="state" placeholder="Find next to the configuration"></label>
+        <label><input type="checkbox" name="confirmed" required> I have quit the old Meloader app and backed up the library.</label>
+        <button type="submit">Import profile and restart offline</button>
+      </form>
+    </div>
+    {{else if .AcqUnavailable}}
     <p role="status">{{.AcqUnavailable}}</p>
     {{else}}
     <div class="settings-actions">
@@ -1396,6 +1408,32 @@
       </div>
       <div class="settings-actions"><button type="submit">Save acquisition settings</button></div>
     </form>
+    <details id="acquisition-sources" class="settings-sub">
+      <summary>Source credentials and options</summary>
+      {{if .Acquisition.BlockedSources}}<p role="status">Managed options need attention for {{range .Acquisition.BlockedSources}}<code>{{.}}</code> {{end}}. Clear unsupported options or repair the cookie file.</p>{{end}}
+      <p>Blank fields keep their saved values. Restart after saving.</p>
+      <form method="post" action="/settings/acquisition/source">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <div class="settings-cols">
+          <div class="field">
+            <label>Source <select name="source"><option value="derpibooru">Derpibooru</option><option value="danbooru">Danbooru</option><option value="e621">e621</option></select></label>
+            <label>Username <input type="text" name="username" autocomplete="off"></label>
+            <label>Password <input type="password" name="password" autocomplete="new-password"></label>
+            <label>API key <input type="password" name="api_key" autocomplete="new-password"></label>
+            <label>User ID <input type="text" name="user_id" autocomplete="off"></label>
+          </div>
+          <div class="field">
+            <label>Cookie file <input type="text" name="cookies"></label>
+            <label>User agent <input type="text" name="user_agent"></label>
+            <label>Custom options <textarea name="options" rows="2" spellcheck="false" placeholder='{"filter": 56027, "comments": false}'></textarea></label>
+            <span class="field-hint">Managed custom options support Derpibooru's filter and comments settings.</span>
+            <label><input type="checkbox" name="clear_credentials"> Clear saved credentials and cookie file for this source</label>
+            <label><input type="checkbox" name="clear_options"> Clear saved custom options and user agent for this source</label>
+          </div>
+        </div>
+        <button type="submit">Save source settings</button>
+      </form>
+    </details>
     {{end}}
     <p class="field-hint">Settings file <code>{{.Acquisition.PolicyFile}}</code></p>
     {{end}}

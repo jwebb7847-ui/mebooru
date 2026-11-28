@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 )
 
 type LoaderWatch struct {
@@ -70,7 +72,7 @@ func (v *loaderWatches) markUnavailable(destinations []string, limit int) {
 		if destination == "" {
 			destination = v.DefaultGallery
 		}
-		watch.Unavailable = !slices.Contains(destinations, destination) || watch.MaxItems > limit
+		watch.Unavailable = !slices.Contains(destinations, destination) || watch.MaxItems > limit || workerproto.StrictQueueSource(watch.URL) == ""
 	}
 }
 

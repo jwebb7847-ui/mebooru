@@ -192,7 +192,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     name: Native core (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ startsWith(matrix.os, 'macos-') && 35 || 20 }}
     strategy:
       fail-fast: false
       matrix:

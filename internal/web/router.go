@@ -109,6 +109,7 @@ type Server struct {
 	ml                *monloader.Link
 	managedLoader     ManagedLoader
 	loaderUnavailable bool
+	legacyMigration   func(context.Context, string, string, string) (string, error)
 
 	themeWarn *themeWarnings
 
@@ -533,6 +534,8 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.free("POST /settings/desktop", s.localOnly(s.settingsDesktopPost))
 	rt.free("POST /settings/acquisition", s.saveAcquisitionSettings)
 	rt.free("POST /settings/acquisition/runtime", s.acquisitionRuntime)
+	rt.free("POST /settings/acquisition/source", s.saveAcquisitionSource)
+	rt.free("POST /settings/acquisition/migrate", s.localOnly(s.migrateLegacyAcquisition))
 	rt.free("POST /settings/quit", s.settingsQuit)
 	rt.free("POST /settings/restart", s.localOnly(s.settingsRestart))
 	rt.free("GET /internal/desktop-power", s.localOnly(s.desktopPowerFragment))
@@ -678,7 +681,13 @@ func (s *Server) registerRoutes(rt *routes) {
 	// A mux of its own so the API subtree takes the read mode. The
 	// methods are spelled out: a bare "/api/v1/" conflicts with "GET /".
 	apiMux := http.NewServeMux()
-	api.New(s.cfgSnapshot, s.jobs, s.apiResolver, Version).WithGalleryLock(func() func() {
+	api.New(func() *config.Config {
+		cfg := s.cfgSnapshot()
+		if s.usesManagedLoader() {
+			cfg.Auth.Tokens = withoutLegacyAcquisitionTokens(cfg.Auth.Tokens)
+		}
+		return cfg
+	}, s.jobs, s.apiResolver, Version).WithGalleryLock(func() func() {
 		s.set.RLock()
 		return s.set.RUnlock
 	}).WithFetchStatus(s.ml.Fetches.Record).WithMemoryMark(autotagMemoryMark).WithDone(s.done).Mount(apiMux)
@@ -1126,7 +1135,7 @@ func themeFaviconVersion(e webui.Theme) string {
 func (s *Server) monloaderLink() monloader.LinkConfig {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
-	if s.cfg.Desktop.ManagedAcquisition {
+	if s.cfg.Desktop.ManagedAcquisition || s.legacyMigration != nil {
 		return monloader.LinkConfig{Paused: true}
 	}
 	c := monloader.LinkConfig{APIURL: s.cfg.Monloader.APIURL, Token: s.cfg.Monloader.APIToken, Paused: s.cfg.Monloader.Paused}

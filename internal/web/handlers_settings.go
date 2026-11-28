@@ -59,6 +59,7 @@ type settingsData struct {
 	AcquisitionError   bool
 	AcquisitionSaved   bool
 	AcquisitionMax     int
+	LegacyMigration    bool
 	RuntimeMessage     string
 	AcqUnavailable     string
 	FFmpegAvailable    bool
@@ -143,6 +144,7 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		AcquisitionError:   acquisitionErr != nil,
 		AcquisitionSaved:   local && managed && r.URL.Query().Get("acquisition") == "saved",
 		AcquisitionMax:     workerproto.MaxMetadataWindow,
+		LegacyMigration:    local && s.legacyMigration != nil && !cfg.Desktop.ManagedAcquisition,
 		RuntimeMessage:     runtimeMessage,
 		AcqUnavailable:     s.acquisitionUnavailableMessage(),
 		Themes:             s.themeCluster(),

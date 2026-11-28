@@ -157,7 +157,18 @@ func runLiveRuntimeLeaf(dir, encoded string, cfg windowregistry.LiveConfig) erro
 			return fmt.Errorf("managed acquisition requires gallery-dl %s", cfg.Version())
 		}
 	}
-	cmd := exec.Command(cfg.Runtime, cfg.RuntimeArgs(request.Args)...)
+	args := cfg.RuntimeArgs(request.Args)
+	if request.Args[len(request.Args)-1] == request.Request.URL {
+		source := request.Request.Source
+		if digest := cfg.SourceOptions[source]; digest != "" {
+			path := sourceOptionsPath(dir, source)
+			if !windowregistry.ValidLiveSource(source) || digest == "-" || !runtimeFileMatches(path, digest) {
+				return errors.New("The source options are unavailable for managed acquisition.")
+			}
+			args = append([]string{"--config-json", path}, args...)
+		}
+	}
+	cmd := exec.Command(cfg.Runtime, args...)
 	cmd.Dir, cmd.Env = dir, env
 	cmd.Stdout = os.Stdout
 	var native boundedMetadata

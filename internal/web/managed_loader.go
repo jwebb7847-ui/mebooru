@@ -37,6 +37,16 @@ type AcquisitionSettings struct {
 	NeedsRestart                                                                           bool
 	RuntimeVersion, RuntimeSource, RuntimeSelection                                        string
 	RuntimeReady, RuntimeUpdates, RuntimeRollback, RuntimeUpdateDamaged, RuntimeConfigured bool
+	BlockedSources                                                                         []string
+}
+
+type AcquisitionSource struct {
+	Name, Username, Password, Key, UserID, Cookies, Agent, Options string
+	ClearCredentials, ClearOptions                                 bool
+}
+
+type managedSourceEditor interface {
+	SaveAcquisitionSource(context.Context, AcquisitionSource) error
 }
 
 type managedSettingsProvider interface {
@@ -136,6 +146,32 @@ func (s *Server) acquisitionRuntime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	hxRedirect(w, r, "/settings?runtime_message="+url.QueryEscape(message)+"#acquisition-runtime")
+}
+
+func (s *Server) saveAcquisitionSource(w http.ResponseWriter, r *http.Request) {
+	if s.refuseUnavailableAcquisition(w, r) {
+		return
+	}
+	editor, ok := s.managedLoader.(managedSourceEditor)
+	if !ok || !desktop.LocalRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
+	if !parseFormOK(w, r) {
+		return
+	}
+	source := AcquisitionSource{
+		Name: r.FormValue("source"), Username: r.FormValue("username"), Password: r.FormValue("password"),
+		Key: r.FormValue("api_key"), UserID: r.FormValue("user_id"), Cookies: strings.TrimSpace(r.FormValue("cookies")),
+		Agent: r.FormValue("user_agent"), Options: strings.TrimSpace(r.FormValue("options")),
+		ClearCredentials: r.FormValue("clear_credentials") == "on", ClearOptions: r.FormValue("clear_options") == "on",
+	}
+	if err := editor.SaveAcquisitionSource(r.Context(), source); err != nil {
+		externalErr(w, r, err.Error(), http.StatusBadRequest)
+		return
+	}
+	hxRedirect(w, r, "/settings?runtime_message="+url.QueryEscape("Source settings saved. Restart Mebooru to apply them.")+"#acquisition-sources")
 }
 
 func (s *Server) loaderOffline(w http.ResponseWriter, r *http.Request) {

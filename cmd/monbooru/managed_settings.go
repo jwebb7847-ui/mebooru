@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +35,12 @@ func (a *managedApplication) ReadAcquisitionSettings() (web.AcquisitionSettings,
 	settings.SleepRequest = conf.GalleryDL.Sleep
 	settings.MaxItems = conf.Downloader.Limit
 	settings.Blacklist = strings.Join(conf.Tags.Blacklist, "\n")
+	for source, digest := range a.owner.live.SourceOptions {
+		if digest == "-" {
+			settings.BlockedSources = append(settings.BlockedSources, source)
+		}
+	}
+	slices.Sort(settings.BlockedSources)
 	runtime, _ := liveRuntimePath(settings.Runtime)
 	settings.NeedsRestart = runtime != a.owner.live.Runtime || settings.SleepRequest != a.owner.live.SleepRequest || settings.MaxItems != a.owner.live.MaxItems
 	a.readRuntimeStatus(&settings)

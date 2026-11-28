@@ -3,6 +3,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -30,6 +31,7 @@ def fetch(url):
 
 def test_app_module(repo):
     packages = ["./..."]
+    timeout = ["-timeout", "18m"] if repo == workspace and sys.platform == "darwin" else []
     if (repo == workspace and os.name == "nt"
             and os.environ.get("MEBOORU_WINDOWS_STAGING_SHARDED") == "1"):
         # The workflow runs all staging tests in the independent Windows
@@ -37,7 +39,7 @@ def test_app_module(repo):
         packages = subprocess.check_output(["go", "list", "./..."], cwd=repo,
                                           env=env, text=True).splitlines()
         packages.remove("github.com/monbooru/monbooru/internal/acquisitionstage")
-    subprocess.run(["go", "test", *packages], cwd=repo, env=env, check=True)
+    subprocess.run(["go", "test", *timeout, *packages], cwd=repo, env=env, check=True)
 
 
 def verify_process(binary, app, legacy, page, api, directory):

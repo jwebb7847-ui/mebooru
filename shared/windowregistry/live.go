@@ -29,6 +29,7 @@ type LiveConfig struct {
 	RuntimeWheel, RuntimeWheelSHA256     string
 	SleepRequest                         float64
 	MaxItems                             int
+	SourceOptions                        map[string]string `json:",omitempty"`
 }
 
 func LoadLive(dir string) (LiveConfig, error) {
@@ -44,7 +45,16 @@ func LoadLive(dir string) (LiveConfig, error) {
 	if cfg.RuntimeWheel != "" && (!filepath.IsAbs(cfg.RuntimeWheel) || !validHex(cfg.RuntimeWheelSHA256, 32)) {
 		return LiveConfig{}, ErrWindow
 	}
+	for source, digest := range cfg.SourceOptions {
+		if !ValidLiveSource(source) || digest != "-" && !validHex(digest, 32) {
+			return LiveConfig{}, ErrWindow
+		}
+	}
 	return cfg, nil
+}
+
+func ValidLiveSource(source string) bool {
+	return source == "derpibooru" || source == "danbooru" || source == "e621"
 }
 
 func (c LiveConfig) Version() string {
@@ -55,7 +65,7 @@ func (c LiveConfig) Version() string {
 }
 
 func (c LiveConfig) Identity(source string) (acquisitionplan.MetadataConfig, acquisitionplan.MetadataIdentity) {
-	config := acquisitionplan.MetadataConfig{Generation: 1, Source: source}
+	config := acquisitionplan.MetadataConfig{Generation: 1, Source: source, SourceOptionsSHA256: c.SourceOptions[source]}
 	digest, _ := config.Identity()
 	return config, acquisitionplan.MetadataIdentity{
 		Config:  digest,

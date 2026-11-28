@@ -48,6 +48,7 @@ func (r RuntimeIdentity) valid() bool {
 type MetadataConfig struct {
 	Generation uint64
 	Source string
+	SourceOptionsSHA256 string
 }
 
 func (c MetadataConfig) args() ([]string, error) {
@@ -78,6 +79,9 @@ func (c MetadataConfig) Identity() (ConfigIdentity, error) {
 	if err != nil { return ConfigIdentity{}, err }
 	// Domain-separate the profile from runtime or arbitrary file digests.
 	body, err := json.Marshal([]any{"metadata-config-v1", c.Source, args})
+	if c.SourceOptionsSHA256 != "" {
+		body, err = json.Marshal([]any{"metadata-config-v1", c.Source, args, c.SourceOptionsSHA256})
+	}
 	if err != nil { return ConfigIdentity{}, ErrMetadataPlan }
 	digest := sha256.Sum256(body)
 	return ConfigIdentity{Generation:c.Generation, SHA256:hex.EncodeToString(digest[:])}, nil
