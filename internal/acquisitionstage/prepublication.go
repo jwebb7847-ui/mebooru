@@ -16,7 +16,7 @@ import (
 )
 
 // Guarded publication candidate: one genuinely new native image, explicit
-// source provenance, no relationship/collection claim, supported client
+// source provenance, no parent claim, optional explicit ordered collection, supported client
 // tags, existing destination directories and known pre-landing naming
 // facts. Neither this snapshot nor a successful link is a terminal receipt
 // or production authorization. Owner must still exclude other writers.
@@ -31,6 +31,7 @@ type newPublicationPlan struct {
 	Job contract.JobExtras
 	Client []clientResolution
 	Media *plannedImageFacts `json:",omitempty"`
+	Collection *plannedCollection `json:",omitempty"`
 }
 
 
@@ -46,6 +47,7 @@ type plannedPublicationAttempt struct {
 func encodePlannedAttempt(plan newPublicationPlan)([]byte,error){
 	version:=2
 	if plan.Media!=nil{version=3}
+	if plan.Collection!=nil{version=4}
 	body,err:=json.Marshal(plannedPublicationAttempt{Version:version,Plan:plan})
 	if err!=nil||len(body)>maxPlannedAttemptBytes{return nil,ErrStageLimit}
 	return body,nil
@@ -58,7 +60,7 @@ func readPublicationAttempt(p *os.Root,grant workerproto.StageAllocation)(*newPu
 	if err!=nil{return nil,"",err}
 	if string(body)==grant.TransferID{return nil,"",nil}
 	var marker plannedPublicationAttempt
-	if json.Unmarshal(body,&marker)!=nil||(marker.Version!=2&&marker.Version!=3){return nil,"",ErrStageRecovery}
+	if json.Unmarshal(body,&marker)!=nil||(marker.Version!=2&&marker.Version!=3&&marker.Version!=4){return nil,"",ErrStageRecovery}
 	v:=marker.Plan
 	canonical,err:=encodePlannedAttempt(v)
 	if err!=nil||!bytes.Equal(body,canonical){return nil,"",ErrStageRecovery}
@@ -66,7 +68,8 @@ func readPublicationAttempt(p *os.Root,grant workerproto.StageAllocation)(*newPu
 	db:=landingAttempt{Version:1,Allocation:grant,GalleryIdentity:v.DB.GalleryIdentity,DBPath:v.DB.DBPath,DBFileIdentity:v.DB.DBFileIdentity}
 	if v.DB!=db||db.GalleryIdentity==""||len(db.GalleryIdentity)>1024||!filepath.IsAbs(db.DBPath)||filepath.Clean(db.DBPath)!=db.DBPath||
 		db.DBFileIdentity==""||len(db.DBFileIdentity)>128||!validDigest(v.PolicySHA256)||!validResultFile(v.File)||
-		(marker.Version==2&&(v.Media!=nil||filepath.Ext(v.File.RelativeName)!=".png"))||(marker.Version==3&&!validPlannedImageFacts(v.File,v.Media))||
+		(marker.Version==2&&(v.Media!=nil||filepath.Ext(v.File.RelativeName)!=".png"))||(marker.Version>=3&&!validPlannedImageFacts(v.File,v.Media))||
+		(marker.Version<4&&v.Collection!=nil)||(marker.Version==4&&!validPlannedCollection(v.Collection))||
 		v.FileIdentity==""||len(v.FileIdentity)>128||!validNamingRequest(v.Naming)||v.Naming.Gallery!=grant.Request.Transfer.Metadata.Gallery||
 		v.Naming.ReceivedName!=v.File.RelativeName||v.Naming.PostID!=v.File.ID||!validClientJob(v.Job)||!validClientResolutions(v.Client){return nil,"",ErrStageRecovery}
 	for i,path:=range []string{v.Preview.InitialPath,v.Preview.FinalPath}{
@@ -118,12 +121,14 @@ func(a *Allocator)newPublicationPlanLocked(ctx context.Context,grant workerproto
 	if err:=g.DB.Read.QueryRowContext(ctx,`SELECT COUNT(*) FROM image_paths WHERE path=?`,filepath.Join(r.GalleryRoot,finalName(grant,f))).Scan(&n);err!=nil||n!=0{return zero,ErrStageRefused}
 	snapshot,err:=a.boundPolicyLocked(ctx,grant)
 	if err!=nil{return zero,err}
-	rows,err:=newOnlyRows(e,snapshot)
+	rows,err:=newOnlyRowsMode(e,snapshot,true)
 	if err!=nil||len(rows)!=1{return zero,ErrStageRefused}
 	if err:=verifyNewOnlyEligibility(ctx,g,e,snapshot);err!=nil{return zero,err}
 	_,hash,err:=acquisitionplan.EncodeApprovedPolicy(snapshot.Transfer,snapshot.Rows)
 	if err!=nil{return zero,ErrStageRecovery}
 	row:=rows[0]
+	collection,err:=inspectPlannedCollection(ctx,g,row.Provenance)
+	if err!=nil{return zero,err}
 	identity,err:=namingFile(ctx,src,f.RelativeName,f,links)
 	if err!=nil{return zero,err}
 	media,err:=inspectPlannedImage(ctx,src,f,links)
@@ -155,7 +160,7 @@ func(a *Allocator)newPublicationPlanLocked(ctx context.Context,grant workerproto
 	if err!=nil||!sameLandingDB(db,current)||scopeErr!=nil||!matches(r,s)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRefused}
 	currentID,err:=namingFile(ctx,src,f.RelativeName,f,links)
 	if err!=nil||identity!=currentID{return zero,ErrStageRecovery}
-	return newPublicationPlan{DB:db,PolicySHA256:hash,File:f,FileIdentity:identity,DestinationIdentity:destinations,Naming:req,Preview:preview,Job:job,Client:client,Media:&media},nil
+	return newPublicationPlan{DB:db,PolicySHA256:hash,File:f,FileIdentity:identity,DestinationIdentity:destinations,Naming:req,Preview:preview,Job:job,Client:client,Media:&media,Collection:collection},nil
 }
 
 // Bind the caller's read-only preview to the exact current plan at both
