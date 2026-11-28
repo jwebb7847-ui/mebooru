@@ -65,6 +65,29 @@ func PrepareTransferCommands(q workerproto.TransferPlanRequest,manifest []byte,c
 	if err:=writeExclusive(manifestPath,manifest);err!=nil{return TransferCommands{},ErrStrictTransferPlan}
 	if err:=writeExclusive(probePath,[]byte(probeManifest));err!=nil{return TransferCommands{},ErrStrictTransferPlan}
 	if err:=os.Mkdir(dest,0700);err!=nil{return TransferCommands{},ErrStrictTransferPlan}
+	return compileTransferCommands(q,manifest,options,root),nil
+}
+
+// ObservePreparedTransferCommands reconstructs the exact locally
+// compiled commands without creating or modifying any workspace file.
+// Custody must supply the owner-authorized allocation and canonical root.
+func ObservePreparedTransferCommands(q workerproto.TransferPlanRequest,config MetadataConfig,root string)(TransferCommands,error){
+	if !workerproto.ValidTransferPlan(q)||config.Source!=q.Metadata.Source||!filepath.IsAbs(root)||filepath.Clean(root)!=root{return TransferCommands{},ErrStrictTransferPlan}
+	actual,err:=filepath.EvalSymlinks(root);if err!=nil||actual!=root{return TransferCommands{},ErrStrictTransferPlan}
+	options,err:=config.args();if err!=nil{return TransferCommands{},err}
+	path:=filepath.Join(root,"strict-blacklist.json")
+	info,err:=os.Lstat(path);if err!=nil||!info.Mode().IsRegular()||info.Size()<1||info.Size()>workerproto.MaxMetadataOutputBytes{return TransferCommands{},ErrStrictTransferPlan}
+	manifest,err:=os.ReadFile(path);if err!=nil||int64(len(manifest))!=info.Size(){return TransferCommands{},ErrStrictTransferPlan}
+	if _,err:=NewStrictManifestVerifier(q,manifest);err!=nil{return TransferCommands{},err}
+	c:=compileTransferCommands(q,manifest,options,root)
+	if !c.VerifyFiles(){return TransferCommands{},ErrStrictTransferPlan}
+	media,err:=os.Lstat(filepath.Join(root,"media"));if err!=nil||!media.IsDir(){return TransferCommands{},ErrStrictTransferPlan}
+	return c,nil
+}
+func compileTransferCommands(q workerproto.TransferPlanRequest,manifest []byte,options []string,root string)TransferCommands{
+	manifestPath:=filepath.Join(root,"strict-blacklist.json")
+	probePath:=filepath.Join(root,"strict-blacklist-probe.json")
+	dest:=filepath.Join(root,"media")
 	gate:=StrictGateExpression(manifestPath)
 	probe:=func(filter string)[]string{
 		return []string{"--config-ignore","-j","-o",`keywords-global={"id":1,"tags":["probe"]}`,"--filter",filter,"--","https://example.invalid/meloader-filter-probe.jpg"}
@@ -75,7 +98,7 @@ func PrepareTransferCommands(q workerproto.TransferPlanRequest,manifest []byte,c
 		"-o",`postprocessors=[{"name":"metadata","mode":"json","event":"file"}]`,"-o","filename={id}.{extension}",
 		"--post-range",strconv.FormatUint(uint64(q.Metadata.First),10)+"-"+strconv.FormatUint(uint64(q.Metadata.Last),10),"--",q.Metadata.URL)
 	return TransferCommands{Version:[]string{"--config-ignore","--version"},Negative:probe(gate),Positive:probe(StrictGateExpression(probePath)),Transfer:args,
-		manifestPath:manifestPath,probePath:probePath,manifest:bytes.Clone(manifest),request:q,mediaRoot:dest},nil
+		manifestPath:manifestPath,probePath:probePath,manifest:bytes.Clone(manifest),request:q,mediaRoot:dest}
 }
 const probeManifest = `{"1":{"category":"directlink","tags":["probe"]}}`
 
