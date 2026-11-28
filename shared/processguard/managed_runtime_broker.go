@@ -232,11 +232,70 @@ func ServeManagedRuntimeBroker(ctx context.Context,r io.ReadCloser,w io.WriteClo
 	lifetime,revoke:=context.WithCancel(ctx);defer revoke()
 	m,err:=newManagedRuntimeSession(lifetime,revoke,grant)
 	if err!=nil{r.Close();w.Close();return err}
-	b:=&probeBroker{set:set,managed:m,streams:map[uint64]*streamProbe{},leases:map[uint64]*OperationLease{},revoke:revoke}
+	b:=&probeBroker{set:set,managed:m,managedOnly:true,streams:map[uint64]*streamProbe{},leases:map[uint64]*OperationLease{},revoke:revoke}
 	h:=func(c context.Context,op workerproto.Operation,body json.RawMessage)(json.RawMessage,*workerproto.Fault){
 		switch op{
 		case workerproto.OperationMetadataStart,workerproto.OperationStrictTransferStart:return b.startManagedRuntime(c,op,body)
 		case workerproto.OperationStreamRead,workerproto.OperationStreamFinish,workerproto.OperationStreamStop:return b.handleStream(c,op,body)
+		default:return streamFault("unsupported")
+		}
+	}
+	session,err:=workerproto.OpenSession(lifetime,r,w,workerproto.OperationCustodian,h)
+	if err==nil{<-session.Done();session.Close()}
+	cleanup,cancel:=context.WithTimeout(context.WithoutCancel(ctx),probeCleanupTimeout);defer cancel()
+	return set.SealAndStop(cleanup)
+}
+
+
+// ManagedWindowResolver is custodian-owned. It consumes an independently
+// issued exact job-window grant; no requester-supplied path/config/runtime.
+// A closed grant is never reusable, including across worker restarts.
+// Settle must independently reconcile the owner outcome (or explicit
+// no-transfer/abandonment), before allowing another window.
+type ManagedWindowResolver interface{
+	Claim(context.Context,workerproto.MetadataPlanRequest)(ManagedRuntimeGrant,error)
+	Settle(context.Context,workerproto.MetadataPlanRequest,int,bool)error
+}
+
+// ServeManagedRuntimeWindows supports sequential authorized jobs on a
+// single private custody session. There is one active window at a time,
+// never a general command runner. All stream IDs remain monotonically
+// unique for this session. Ambiguous cleanup seals the entire custodian.
+func ServeManagedRuntimeWindows(ctx context.Context,r io.ReadCloser,w io.WriteCloser,set *OperationSet,resolver ManagedWindowResolver)error{
+	if set==nil||resolver==nil{r.Close();w.Close();return ErrOperationUnconfirmed}
+	lifetime,revoke:=context.WithCancel(ctx);defer revoke()
+	b:=&probeBroker{set:set,managedOnly:true,streams:map[uint64]*streamProbe{},leases:map[uint64]*OperationLease{},revoke:revoke}
+	h:=func(c context.Context,op workerproto.Operation,body json.RawMessage)(json.RawMessage,*workerproto.Fault){
+		switch op{
+		case workerproto.OperationWindowOpen,workerproto.OperationWindowClose:
+			q,err:=workerproto.DecodeManagedMetadataStart(body)
+			if err!=nil||q.Kind!=workerproto.MetadataStrictResolve{return streamFault("invalid")}
+			b.mu.Lock();defer b.mu.Unlock()
+			if b.sealed||c.Err()!=nil||len(b.streams)!=0{return streamFault("busy")}
+			switch op{
+			case workerproto.OperationWindowOpen:
+				if b.managed!=nil{return streamFault("busy")}
+				g,err:=resolver.Claim(c,q)
+				if err!=nil||g.Metadata!=q||g.Current==nil||!g.Current(c){return streamFault("refused")}
+				m,err:=newManagedRuntimeSession(lifetime,revoke,g)
+				if err!=nil{b.sealed=true;revoke();return streamFault("refused")}
+				b.managed=m
+			case workerproto.OperationWindowClose:
+				if b.managed==nil||b.managed.grant.Metadata!=q{return streamFault("refused")}
+				m:=b.managed
+				m.mu.Lock()
+				phase,failed,active:=m.phase,m.failed,m.active
+				m.mu.Unlock()
+				if active{return streamFault("busy")}
+				if err:=resolver.Settle(c,q,phase,failed);err!=nil{return streamFault("reconcile")}
+				b.managed=nil
+			}
+			out,_:=json.Marshal(workerproto.ManagedMetadataStart{Request:q})
+			return out,nil
+		case workerproto.OperationMetadataStart,workerproto.OperationStrictTransferStart:
+			return b.startManagedRuntime(c,op,body)
+		case workerproto.OperationStreamRead,workerproto.OperationStreamFinish,workerproto.OperationStreamStop:
+			return b.handleStream(c,op,body)
 		default:return streamFault("unsupported")
 		}
 	}

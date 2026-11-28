@@ -92,6 +92,8 @@ const (
 	OperationMetadataStart Operation = "custody.metadata_start"
 	// Reserved until a trusted transfer dispatcher exists.
 	OperationStrictTransferStart Operation = "custody.strict_transfer_start"
+	OperationWindowOpen Operation = "custody.window_open"
+	OperationWindowClose Operation = "custody.window_close"
 
 	Health Operation = "worker.health"
 	SetOffline Operation = "worker.set_offline"
@@ -179,6 +181,8 @@ var rules = map[Operation]Rule{
 	OperationStreamStop: {OperationRequester, Local},
 	OperationMetadataStart: {OperationRequester, Online},
 	OperationStrictTransferStart: {OperationRequester, Online},
+	OperationWindowOpen: {OperationRequester, Online},
+	OperationWindowClose: {OperationRequester, Local},
 	Health: {Library, Local},
 	SetOffline: {Library, Local},
 	Shutdown: {Library, Local},

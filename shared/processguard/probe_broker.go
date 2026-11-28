@@ -28,6 +28,7 @@ type VersionProbeStarter func(context.Context)(VersionProbeChild,error)
 // receipt proof. No path, argv, environment, output or network API.
 type probeBroker struct{
 	managed *managedRuntimeSession
+	managedOnly bool
 	mu sync.Mutex
 	set *OperationSet
 	start ProbeStarter

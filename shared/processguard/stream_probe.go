@@ -39,8 +39,8 @@ func(b *probeBroker)streamStop(ctx context.Context,id uint64,s *streamProbe)erro
 	return nil
 }
 func(b *probeBroker)handleStream(ctx context.Context,op workerproto.Operation,body json.RawMessage)(json.RawMessage,*workerproto.Fault){
-	if b.stream==nil&&b.managed==nil{return streamFault("unsupported")}
-	if b.managed!=nil&&op==workerproto.OperationStreamStart{return streamFault("unsupported")}
+	if b.stream==nil&&!b.managedOnly{return streamFault("unsupported")}
+	if b.managedOnly&&op==workerproto.OperationStreamStart{return streamFault("unsupported")}
 	if op==workerproto.OperationStreamStart{
 		if len(body)!=0{return streamFault("invalid")}
 		b.mu.Lock()

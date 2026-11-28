@@ -48,3 +48,16 @@ func(c *StreamProbeClient) startManaged(ctx context.Context,op Operation,body js
 	if err!=nil{c.session.Close()}
 	return v,err
 }
+
+
+// Window transitions require an exact owner-bound resolve request. Close
+// is local reconciliation, not permission for another network operation.
+func(c *StreamProbeClient) ManagedWindow(ctx context.Context,op Operation,q MetadataPlanRequest)error{
+	if (op!=OperationWindowOpen&&op!=OperationWindowClose)||!ValidMetadataPlan(q)||q.Kind!=MetadataStrictResolve{return ErrMessage}
+	body,err:=json.Marshal(ManagedMetadataStart{Request:q});if err!=nil{return err}
+	e,err:=c.session.Call(ctx,op,body)
+	if err!=nil||e.Error!=nil{c.session.Close();if err!=nil{return err};return ErrProbeBrokerRefused}
+	got,err:=DecodeManagedMetadataStart(e.Payload)
+	if err!=nil||got!=q{c.session.Close();return ErrMessage}
+	return nil
+}

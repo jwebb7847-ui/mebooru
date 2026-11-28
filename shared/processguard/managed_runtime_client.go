@@ -99,3 +99,14 @@ func(c *remoteRuntimeChild) Stop(ctx context.Context)error{
 	c.stopped=true
 	return nil
 }
+
+
+func(c *ManagedRuntimeClient) OpenWindow(ctx context.Context,q workerproto.MetadataPlanRequest)error{
+	if c==nil||c.client==nil{return ErrOperationUnconfirmed}
+	return c.client.ManagedWindow(ctx,workerproto.OperationWindowOpen,q)
+}
+func(c *ManagedRuntimeClient) CloseWindow(ctx context.Context,q workerproto.MetadataPlanRequest)error{
+	if c==nil||c.client==nil{return ErrOperationUnconfirmed}
+	if err:=c.client.ManagedWindow(ctx,workerproto.OperationWindowClose,q);err!=nil{return ErrOperationUnconfirmed}
+	return nil
+}
