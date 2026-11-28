@@ -105,6 +105,9 @@ func(a *Allocator)beginLandingPlanLocked(ctx context.Context,grant workerproto.S
 	plan,hash,err:=readPublicationAttempt(p,grant)
 	if err!=nil||hash!=planHash||(plan!=nil&&(!newOnly||restore||!sameLandingDB(attempt,plan.DB))){return ErrStageRefused}
 	attempt.PlanSHA256=hash
+	if plan==nil&&(newOnly||restore){
+		for _,f:=range e.Files{if filepath.Ext(f.RelativeName)!=".png"{return ErrStageRefused}}
+	}
 	places,err:=inspectPlacements(ctx,grant,e,p,src,dst)
 	if err!=nil{return err}
 	for _,v:=range places{if v.State!="placed"{return ErrStageRecovery}}
