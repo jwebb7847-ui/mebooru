@@ -54,7 +54,7 @@ func newOnlyRowsMode(e SealedEvidence,snapshot acquisitionplan.ApprovedPolicySna
 	urls:=map[string]bool{}
 	for i,r:=range rows{
 		if r.SourceLabel==models.TagSourceMonbooru||r.Provenance==nil||r.Provenance.ParentURL!=""||(!allowCollection&&(r.Provenance.Collection!=""||r.Provenance.CollectionOrder!=0))||
-			filepath.Ext(e.Files[i].RelativeName)!=".png"||seen[e.Files[i].SHA256]||urls[r.PostURL]{return nil,ErrStageRefused}
+			guardedImageFormat(e.Files[i].RelativeName)==""||seen[e.Files[i].SHA256]||urls[r.PostURL]{return nil,ErrStageRefused}
 		seen[e.Files[i].SHA256]=true;urls[r.PostURL]=true
 	}
 	return rows,nil
@@ -142,14 +142,17 @@ func(a *Allocator)landNewPreparedLocked(ctx context.Context,grant workerproto.St
 		if guard!=nil{if err:=guard();err!=nil{return err}}
 		path:=filepath.Join(r.GalleryRoot,name)
 		res,err:=g.LandInPlace(ctx,path,library.LandSpec{Origin:newReceiptOrigin,MaxBytes:f.Size,Check:func(path,_ string)error{
-			f,err:=os.Open(path)
+			file,err:=os.Open(path)
 			if err!=nil{return err}
-			defer f.Close()
-			cfg,format,err:=image.DecodeConfig(f)
-			if err!=nil||format!="png"||cfg.Width<=0||cfg.Height<=0{return ErrStageRefused}
+			defer file.Close()
+			cfg,format,err:=image.DecodeConfig(file)
+			if err!=nil||format!=guardedImageFormat(f.RelativeName)||cfg.Width<=0||cfg.Height<=0{return ErrStageRefused}
 			return nil
 		}})
 		if err!=nil||res.Image==nil||res.Duplicate||res.Dropped||res.Image.CanonicalPath!=path{return ErrStageRecovery}
+		plan,_,err:=readPublicationAttempt(p,grant)
+		if err!=nil{return err}
+		if plan!=nil{if err:=verifyPlannedImageRow(ctx,g,res.Image.ID,f,plan.Media);err!=nil{return err}}
 	}
 	observed,err:=a.observeLandingLocked(ctx,grant,g)
 	if err!=nil||len(observed)!=len(e.Files){return ErrStageRecovery}
