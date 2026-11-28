@@ -2,8 +2,10 @@ package acquisitionstage
 
 import(
 	"context"
+	"time"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monbooru/internal/acquisitionpolicy"
 	"github.com/monbooru/monbooru/internal/library"
@@ -66,11 +68,16 @@ func(a *Allocator) CompleteTransferredForOwner(c context.Context,lease *acquisit
 		if err:=current(c,g);err!=nil{return err}
 		return run.Batch.Current(c,g)
 	}
+	start:=time.Now()
 	out,err:=a.CommitBatchForOwner(c,grant,set,owner)
 	if err!=nil{return out,err}
+	job:=grant.Request.Transfer.Metadata.JobID
+	logx.Infof("managed acquisition job=%d stage=publication duration=%s",job,time.Since(start).Round(time.Millisecond))
+	start=time.Now()
 	err=a.ReclaimBatch(c,grant,set,func(c context.Context,g workerproto.StageAllocation,v BatchOutcome)error{
 		if err:=current(c,g);err!=nil{return err}
 		return run.Reclaim(c,g,v)
 	},false)
+	if err==nil{logx.Infof("managed acquisition job=%d stage=reclamation duration=%s",job,time.Since(start).Round(time.Millisecond))}
 	return out,err
 }

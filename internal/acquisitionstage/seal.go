@@ -178,43 +178,55 @@ func(a *Allocator)sealedLocked(ctx context.Context,g workerproto.StageAllocation
 	return a.sealedModeLocked(ctx,g,false)
 }
 func(a *Allocator)sealedModeLocked(ctx context.Context,g workerproto.StageAllocation,retired bool)(SealedEvidence,error){
-	var zero SealedEvidence
-	if !workerproto.ValidStageAllocation(g){return zero,ErrStageRefused}
-	s,err:=a.scope(ctx,g.Request)
-	if err!=nil{return zero,err}
-	r,err:=a.load(g.Request.OperationID)
-	if err!=nil||r.Allocation!=g||!matches(r,s){return zero,ErrStageRefused}
+	return a.observeSealedLocked(ctx,g,retired,nil)
+}
+
+func(a *Allocator)observeSealedLocked(ctx context.Context,g workerproto.StageAllocation,retired bool,policy *acquisitionplan.ApprovedPolicySnapshot)(SealedEvidence,error){
+	if !workerproto.ValidStageAllocation(g){return SealedEvidence{},ErrStageRefused}
 	operation,err:=openDir(a.root,g.Request.OperationID)
-	if err!=nil{return zero,err}
+	if err!=nil{return SealedEvidence{},err}
 	defer operation.Close()
-	if _,err:=operation.Lstat("abandoned");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRefused}
-	e,err:=readSeal(operation,g)
-	if err!=nil{return zero,err}
+	_,e,err:=a.observeSealedOperationLocked(ctx,g,retired,policy,operation)
+	return e,err
+}
+
+// Observe the seal and publication structure on the same held operation
+// directory. Callers of this helper validate the grant before opening it.
+func(a *Allocator)observeSealedOperationLocked(ctx context.Context,g workerproto.StageAllocation,retired bool,policy *acquisitionplan.ApprovedPolicySnapshot,operation *os.Root)(record,SealedEvidence,error){
+	var zero,e SealedEvidence
+	s,err:=a.scope(ctx,g.Request)
+	if err!=nil{return record{},zero,err}
+	r,err:=a.loadOperation(operation,g.Request.OperationID,&e)
+	if err!=nil||r.Allocation!=g||!matches(r,s){return record{},zero,ErrStageRefused}
+	if _,err:=operation.Lstat("abandoned");!errors.Is(err,os.ErrNotExist){return record{},zero,ErrStageRefused}
+	if !validSeal(e,g){return record{},zero,ErrStageRecovery}
 	sealed,err:=openDir(operation,"sealed")
-	if err!=nil{return zero,err}
+	if err!=nil{return record{},zero,err}
 	defer sealed.Close()
 	manifest,err:=boundedRegularBytes(sealed,"manifest.json",workerproto.MaxMetadataOutputBytes)
-	if err!=nil{return zero,err}
+	if err!=nil{return record{},zero,err}
 	verifier,err:=acquisitionplan.NewStrictManifestVerifier(g.Request.Transfer,manifest)
-	if err!=nil{return zero,ErrStageRecovery}
+	if err!=nil{return record{},zero,ErrStageRecovery}
 	if _,err:=sealed.Lstat("policy");err==nil{
-		if _,err:=verifyBoundPolicy(sealed,e,manifest);err!=nil{return zero,err}
-	}else if !errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
+		snapshot,err:=verifyBoundPolicy(sealed,e,manifest)
+		if err!=nil{return record{},zero,err}
+		if policy!=nil{*policy=snapshot}
+	}else if policy!=nil||!errors.Is(err,os.ErrNotExist){return record{},zero,ErrStageRecovery}
 	media,err:=openDir(sealed,"media")
-	if err!=nil{return zero,err}
+	if err!=nil{return record{},zero,err}
 	defer media.Close()
 	for _,f:=range e.Files{
 		var meta bytes.Buffer
-		if err:=readChecked(ctx,media,f.RelativeName+".json",f.SidecarSize,f.SidecarSHA256,&meta);err!=nil{return zero,err}
-		if err:=verifier.VerifySidecar(f.ID,meta.Bytes());err!=nil{return zero,ErrStageRecovery}
+		if err:=readChecked(ctx,media,f.RelativeName+".json",f.SidecarSize,f.SidecarSHA256,&meta);err!=nil{return record{},zero,err}
+		if err:=verifier.VerifySidecar(f.ID,meta.Bytes());err!=nil{return record{},zero,ErrStageRecovery}
 		if retired{
-			if _,err:=media.Lstat(f.RelativeName);!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
-		}else if err:=readChecked(ctx,media,f.RelativeName,f.Size,f.SHA256,io.Discard);err!=nil{return zero,err}
+			if _,err:=media.Lstat(f.RelativeName);!errors.Is(err,os.ErrNotExist){return record{},zero,ErrStageRecovery}
+		}else if err:=readChecked(ctx,media,f.RelativeName,f.Size,f.SHA256,io.Discard);err!=nil{return record{},zero,err}
 	}
 	current,err:=a.scope(ctx,g.Request)
-	if err!=nil||!matches(r,current){return zero,ErrStageRefused}
+	if err!=nil||!matches(r,current){return record{},zero,ErrStageRefused}
 	if retired{
-		if err:=checkRetiredSeal(operation,media,r,e);err!=nil{return zero,err}
-	}else if !exactInventory(media,e.Files){return zero,ErrStageRecovery}
-	return e,nil
+		if err:=checkRetiredSeal(operation,media,r,e);err!=nil{return record{},zero,err}
+	}else if !exactInventory(media,e.Files){return record{},zero,ErrStageRecovery}
+	return r,e,nil
 }

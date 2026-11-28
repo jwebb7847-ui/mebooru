@@ -376,16 +376,12 @@ func(a *Allocator)publicationRootsMode(ctx context.Context,g workerproto.StageAl
 	var r record
 	var e SealedEvidence
 	fail:=func(err error)(record,SealedEvidence,*os.Root,*os.Root,*os.Root,error){return r,e,nil,nil,nil,err}
-	e,err:=a.sealedModeLocked(ctx,g,retired)
-	if err!=nil{return fail(err)}
-	s,err:=a.scope(ctx,g.Request)
-	if err!=nil{return fail(err)}
-	r,err=a.load(g.Request.OperationID)
-	if err!=nil||!matches(r,s)||r.Allocation!=g{return fail(ErrStageRefused)}
+	if !workerproto.ValidStageAllocation(g){return fail(ErrStageRefused)}
 	op,err:=openDir(a.root,g.Request.OperationID)
 	if err!=nil{return fail(err)}
 	defer op.Close()
-	if _,err:=readPublication(op,r,e);err!=nil{return fail(err)}
+	r,e,err=a.observeSealedOperationLocked(ctx,g,retired,nil,op)
+	if err!=nil{return fail(err)}
 	p,err:=openDir(op,"publication")
 	if err!=nil{return fail(err)}
 	src,err:=openDir(p,"media")

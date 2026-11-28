@@ -8,6 +8,7 @@ import(
 	"time"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/processguard"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 	"github.com/monbooru/monloader/internal/mapping"
@@ -85,12 +86,16 @@ func(p *ManagedJobProcessor) ProcessManaged(ctx context.Context,j *queue.Job)(re
 	}
 	metadata,err:=processguard.NewMetadataOperation(proxies,p.Gate,q,r.Identity.Runtime,r.Config,observe,r.Client.MetadataStarter(q))
 	if err!=nil{return err,nil}
+	start:=time.Now()
 	completion,err:=metadata.RunCompletion(ctx,q)
 	if err!=nil{return err,nil}
+	logx.Infof("managed acquisition job=%d stage=metadata duration=%s",job.ID,time.Since(start).Round(time.Millisecond))
+	start=time.Now()
 	preflight,err:=NewManagedPreflightFromCompletion(ctx,completion,q,r.Identity,r.Config,p.Gate,r.Scope,r.Mapper,r.Transport,r.PolicyGeneration,r.Observe)
 	if err!=nil{return err,nil}
 	verdict,err:=preflight.Run(ctx,q)
 	if err!=nil{return err,nil}
+	logx.Infof("managed acquisition job=%d stage=policy duration=%s",job.ID,time.Since(start).Round(time.Millisecond))
 	blocked:=map[string]bool{}
 	for _,id:=range verdict.BlockedIDs{blocked[id]=true}
 	items:=make([]queue.Item,len(verdict.ListedIDs))
@@ -120,8 +125,10 @@ func(p *ManagedJobProcessor) ProcessManaged(ctx context.Context,j *queue.Job)(re
 	grant,root,err:=p.Owner.Allocate(ctx,plan,body,hash)
 	if err!=nil||!workerproto.ValidStageAllocation(grant)||grant.Request.Transfer!=plan{return errors.Join(errManagedJob,err),nil}
 	if err:=j.BindManagedWindow(grant,hash);err!=nil{return err,nil}
+	start=time.Now()
 	files,err:=approval.RunAllocatedTransfer(ctx,grant,proxies,root,r.Client.TransferStarter(grant))
 	if err!=nil{return err,nil}
+	logx.Infof("managed acquisition job=%d stage=transfer duration=%s",job.ID,time.Since(start).Round(time.Millisecond))
 	if _,again,err:=approval.policyEvidence(ctx,plan);err!=nil||again!=hash{return errManagedJob,nil}
 	observed,commitErr:=p.Owner.Commit(ctx,grant,hash)
 	if !workerproto.ValidWindowOutcome(observed,grant,hash){return errors.Join(errManagedJob,commitErr),nil}

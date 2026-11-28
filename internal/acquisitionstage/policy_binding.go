@@ -128,22 +128,7 @@ func(a *Allocator)boundPolicyLocked(ctx context.Context,g workerproto.StageAlloc
 	return a.boundPolicyModeLocked(ctx,g,false)
 }
 func(a *Allocator)boundPolicyModeLocked(ctx context.Context,g workerproto.StageAllocation,retired bool)(acquisitionplan.ApprovedPolicySnapshot,error){
-	var zero acquisitionplan.ApprovedPolicySnapshot
-	e,err:=a.sealedModeLocked(ctx,g,retired)
-	if err!=nil{return zero,err}
-	s,err:=a.scope(ctx,g.Request)
-	if err!=nil{return zero,err}
-	r,err:=a.load(g.Request.OperationID)
-	if err!=nil||r.Allocation!=g||!matches(r,s){return zero,ErrStageRefused}
-	op,err:=openDir(a.root,g.Request.OperationID)
-	if err!=nil{return zero,err};defer op.Close()
-	sealed,err:=openDir(op,"sealed")
-	if err!=nil{return zero,err};defer sealed.Close()
-	manifest,err:=boundedRegularBytes(sealed,"manifest.json",workerproto.MaxMetadataOutputBytes)
-	if err!=nil{return zero,err}
-	snapshot,err:=verifyBoundPolicy(sealed,e,manifest)
-	if err!=nil{return zero,err}
-	s,err=a.scope(ctx,g.Request)
-	if err!=nil||!matches(r,s){return zero,ErrStageRefused}
+	var snapshot acquisitionplan.ApprovedPolicySnapshot
+	if _,err:=a.observeSealedLocked(ctx,g,retired,&snapshot);err!=nil{return acquisitionplan.ApprovedPolicySnapshot{},err}
 	return snapshot,nil
 }

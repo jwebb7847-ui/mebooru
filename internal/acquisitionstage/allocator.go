@@ -226,6 +226,11 @@ func(a *Allocator)load(id string)(record,error){
 	dir,err:=openDir(a.root,id)
 	if err!=nil{return zero,err}
 	defer dir.Close()
+	return a.loadOperation(dir,id,nil)
+}
+
+func(a *Allocator)loadOperation(dir *os.Root,id string,seal *SealedEvidence)(record,error){
+	var zero record
 	r,err:=readRecord(dir)
 	if err!=nil||r.Allocation.Request.OperationID!=id||r.StageRoot!=a.path{return zero,ErrStageRecovery}
 	entries,err:=list(dir,4)
@@ -237,6 +242,7 @@ func(a *Allocator)load(id string)(record,error){
 	if len(entries)>=3{
 		e,err:=readSeal(dir,r.Allocation)
 		if err!=nil{return zero,ErrStageRecovery}
+		if seal!=nil{*seal=e}
 		if len(entries)==4{
 			if _,err:=dir.Lstat("batch");err==nil{
 				if _,err:=readBatchPlan(dir,r,e);err!=nil{return zero,ErrStageRecovery}

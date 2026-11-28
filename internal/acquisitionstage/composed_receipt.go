@@ -88,7 +88,12 @@ func(a *Allocator)composedReceiptModeLocked(ctx context.Context,grant workerprot
 	s,err:=a.scope(ctx,grant.Request)
 	current,dbErr:=observedDB(r,g)
 	if err!=nil||!matches(r,s)||dbErr!=nil||!sameLandingDB(current,l)||g.WatcherRunning()||!a.livePublicationRoots(grant,r,p,src,dst){return zero,ErrStageRefused}
-	if !write{return readComposedReceipt(p,r,e,l,m,result)}
+	if !write{
+		stored,err:=boundedRegularBytes(p,"composed-receipt.json",maxComposedReceipt)
+		body,encodeErr:=json.Marshal(want)
+		if err!=nil||encodeErr!=nil||!bytes.Equal(stored,body){return zero,ErrStageRecovery}
+		return want,nil
+	}
 	if _,err:=p.Lstat("composed-receipt.json");!errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery}
 	body,err:=json.Marshal(want)
 	if err!=nil||len(body)>maxComposedReceipt{return zero,ErrStageLimit}
