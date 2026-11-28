@@ -51,6 +51,7 @@ func(p *ManagedPreflight) current(ctx context.Context)bool{
 type ManagedPreflightResult struct{
 	// BlockedIDs are only local outcome evidence, never a wire grant.
 	BlockedIDs []string
+	ListedIDs []string
 	Approval *ManagedTransferApproval
 }
 
@@ -94,6 +95,7 @@ func(p *ManagedPreflight) Run(caller context.Context,q workerproto.MetadataPlanR
 	projectionBytes:=0
 	for i,row:=range rows{
 		if !p.current(ctx)||caller.Err()!=nil||row.Item.ID!=w.posts[i].ID{return ManagedPreflightResult{},ErrManagedPreflight}
+		result.ListedIDs=append(result.ListedIDs,row.Item.ID)
 		note,err:=strictListingVerdict(row.Item,rules)
 		if err!=nil{return ManagedPreflightResult{},ErrManagedPreflight}
 		if note==""{

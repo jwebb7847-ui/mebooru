@@ -29,8 +29,15 @@ type managedQueueState struct{
 // no legacy Processor to fall back to. Attach Store before Start.
 func NewManaged(parent context.Context,proc ManagedProcessor,workers,maxFinished int)(*Queue,error){
 	if parent==nil||proc==nil||parent.Err()!=nil{return nil,errors.New("managed queue unavailable")}
+	return NewManagedWithGate(workerproto.NewDrainGate(parent),proc,workers,maxFinished)
+}
+
+// NewManagedWithGate permits the actual contained processor and PTR
+// client to share the exact same worker-side admission gate.
+func NewManagedWithGate(gate *workerproto.DrainGate,proc ManagedProcessor,workers,maxFinished int)(*Queue,error){
+	if gate==nil||proc==nil||gate.CurrentGeneration()!=(workerproto.DrainGeneration{}){return nil,errors.New("managed queue requires a fresh closed gate")}
 	q:=New(nil,workers,maxFinished)
-	q.managed=&managedQueueState{gate:workerproto.NewDrainGate(parent),proc:proc}
+	q.managed=&managedQueueState{gate:gate,proc:proc}
 	q.managedOffline=true
 	return q,nil
 }
