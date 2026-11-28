@@ -71,8 +71,14 @@ func runManagedWindowWorker(args []string)error{
 				options,id=live.Identity(md.Source)
 			}
 			if !workerproto.ValidMetadataPlan(md)||j.URL!=md.URL||j.Gallery!=md.Gallery||(liveErr!=nil&&j.MaxItems!=setup.Count){return nil,managedqa.ErrFixture}
-			if err:=owner.RegisterWindow(c,md,j.ManagedIntentID);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
-			if err:=client.OpenWindow(c,md);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
+			if err:=c.Err();err!=nil{return nil,err}
+			// Registration and claim are local handshakes. Finish them if
+			// cancellation arrives mid-request so the processor can close
+			// the exact claimed window. Runtime work still uses c.
+			handshake,stop:=context.WithTimeout(context.WithoutCancel(c),5*time.Second)
+			defer stop()
+			if err:=owner.RegisterWindow(handshake,md,j.ManagedIntentID);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
+			if err:=client.OpenWindow(handshake,md);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
 			epoch:=gate.CurrentGeneration()
 			current:=func(c context.Context)bool{return c.Err()==nil&&epoch!=(workerproto.DrainGeneration{})&&gate.CurrentGeneration()==epoch&&broker.Err()==nil}
 			runtime:=&pipeline.ManagedWindowRuntime{
