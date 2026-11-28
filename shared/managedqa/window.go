@@ -70,14 +70,14 @@ func ReadJSON(dir,name string,v any,limit int)error{
 func Load(dir string)(Setup,error){
 	var s Setup
 	if err:=ReadJSON(dir,SetupName,&s,8192);err!=nil{return s,err}
-	if (s.Count!=3&&s.Count!=200)||(s.Windows!=1&&s.Windows!=2)||s.Windows==2&&s.Count!=3||s.Port<1||s.Port>65535||!filepath.IsAbs(s.Python)||s.ScriptSHA256!=Digest([]byte(PythonFixture)){return Setup{},ErrFixture}
+	if (s.Count!=3&&s.Count!=200)||(s.Windows<1||s.Windows>3)||s.Windows>1&&s.Count!=3||s.Port<1||s.Port>65535||!filepath.IsAbs(s.Python)||s.ScriptSHA256!=Digest([]byte(PythonFixture)){return Setup{},ErrFixture}
 	b,err:=Read(dir,ScriptName,1<<20);if err!=nil||Digest(b)!=s.ScriptSHA256{return Setup{},ErrFixture}
 	return s,nil
 }
 func(s Setup) Metadata()workerproto.MetadataPlanRequest{return s.MetadataFor(1)}
 func(s Setup) MetadataFor(job int64)workerproto.MetadataPlanRequest{
 	if job<1||job>int64(s.Windows){return workerproto.MetadataPlanRequest{}}
-	url:=Search;if job==2{url+="2"}
+	url:=Search;if job>1{url+=strconv.FormatInt(job,10)}
 	return workerproto.MetadataPlanRequest{JobID:job,Gallery:Gallery,Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:url,First:1,Last:uint32(s.Count)}
 }
 func JobFile(name string,job int64)string{return strconv.FormatInt(job,10)+"-"+name}
@@ -90,8 +90,10 @@ func(s Setup) Identity()(acquisitionplan.RuntimeIdentity,acquisitionplan.Metadat
 	return r,c,acquisitionplan.MetadataIdentity{Runtime:r,Config:id}
 }
 func(s Setup) MediaURL(id string)string{return fmt.Sprintf("http://127.0.0.1:%d/%s.png",s.Port,id)}
+func(s Setup) AllBlocked(job int64)bool{return s.Windows==3&&job==2}
 func(s Setup) ExpectedIDs(job int64)[]string{
 	out:=make([]string,0,s.Count-1)
+	if s.AllBlocked(job){return out}
 	for i:=2;i<=s.Count;i++{out=append(out,strconv.Itoa(s.Offset(job)+i))}
 	return out
 }
@@ -119,6 +121,7 @@ from gallery_dl import main
 from gallery_dl.extractor import philomena
 port = int(os.environ["MEBOORU_WINDOW_PORT"])
 count = int(os.environ["MEBOORU_WINDOW_COUNT"])
+windows = int(os.environ["MEBOORU_WINDOW_WINDOWS"])
 base = "http://127.0.0.1:" + str(port)
 for name in list(os.environ):
     if name.lower().endswith("_proxy"):
@@ -140,10 +143,12 @@ def checked_lookup(host, service, *a, **k):
     return getaddrinfo(host, service, *a, **k)
 socket.socket.connect, socket.socket.connect_ex, socket.getaddrinfo = checked_connect, checked_connect_ex, checked_lookup
 def posts(self):
-    offset = count if sys.argv[-1].endswith("q=fixture2") else 0
+    job = 3 if sys.argv[-1].endswith("q=fixture3") else 2 if sys.argv[-1].endswith("q=fixture2") else 1
+    offset = (job - 1) * count
     for ident in range(offset + 1, offset + count + 1):
-        tags = ["safe", "violence"] if ident == offset + 1 else ["safe", "fixture"]
-        ids = [1, 3] if ident == offset + 1 else [1, 4]
+        blocked = ident == offset + 1 or (windows == 3 and job == 2)
+        tags = ["safe", "violence"] if blocked else ["safe", "fixture"]
+        ids = [1, 3] if blocked else [1, 4]
         yield {"id": ident, "tags": tags, "tag_ids": ids,
                "created_at": "2020-01-01T00:00:00Z", "format": "png",
                "representations": {"full": base + "/" + str(ident) + ".png"}}

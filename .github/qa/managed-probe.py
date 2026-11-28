@@ -100,6 +100,13 @@ def verify_pinned_runtime(library, directory):
             print(reuse.stdout, reuse.stderr, sep="")
             assert reuse.returncode == 0, reuse.returncode
             assert "PASS: two successive managed executable windows on one worker session, exact durable settlement" in reuse.stdout
+            blocked_middle = subprocess.run(
+                [str(library), "internal-managed-window-probe-v1", "3x3"],
+                stdin=subprocess.DEVNULL, capture_output=True,
+                cwd=directory, env=metadata_env, timeout=180, text=True)
+            print(blocked_middle.stdout, blocked_middle.stderr, sep="")
+            assert blocked_middle.returncode == 0, blocked_middle.returncode
+            assert "PASS: three successive windows, middle fully blocked with independent no-transfer settlement, four committed" in blocked_middle.stdout
             marker.write_text("0" * 64 + "\n", encoding="ascii", newline="\n")
             refused = subprocess.run([str(library), "internal-managed-runtime-version-probe-v1"],
                                      stdin=subprocess.DEVNULL, capture_output=True,

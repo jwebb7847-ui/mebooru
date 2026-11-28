@@ -76,21 +76,26 @@ func(o *windowFixtureOwner) scope(c context.Context,q workerproto.StageAllocateR
 // actual native metadata observed by the custodian after cleanup. The
 // known synthetic source has exactly one blocked item and otherwise
 // safe fixture-tagged images. Refuse any widened or different claims.
-func(o *windowFixtureOwner) authorizeProjection(c context.Context,p workerproto.WindowAllocateProposal)([]byte,error){
-	if !o.current(c)||p.Transfer.Metadata!=o.window.Request||p.Transfer.Subcategory!="search"||p.Transfer.PolicyGeneration!=1{return nil,managedqa.ErrFixture}
+func(o *windowFixtureOwner) fixtureListing(c context.Context)([]workerproto.MetadataPost,error){
+	if !o.current(c){return nil,managedqa.ErrFixture}
 	raw,err:=managedqa.Read(o.dir,managedqa.JobFile(managedqa.MetadataName,o.window.Request.JobID),workerproto.MaxMetadataOutputBytes);if err!=nil{return nil,err}
 	posts,err:=workerproto.DecodeMetadataEvidence(raw,o.window.Request,"search")
 	if err!=nil||len(posts)!=o.setup.Count{return nil,managedqa.ErrFixture}
-	ids:=o.setup.ExpectedIDs(o.window.Request.JobID)
 	for i,post:=range posts{
 		id:=strconv.Itoa(o.setup.Offset(o.window.Request.JobID)+i+1)
 		if post.ID!=id||post.MediaURL!=o.setup.MediaURL(id){return nil,managedqa.ErrFixture}
 		var native struct{Tags []string `json:"tags"`;TagIDs []int `json:"tag_ids"`}
 		if json.Unmarshal(post.Native,&native)!=nil{return nil,managedqa.ErrFixture}
 		tags:=[]string{"safe","fixture"};tagIDs:=[]int{1,4}
-		if i==0{tags=[]string{"safe","violence"};tagIDs=[]int{1,3}}
+		if i==0||o.setup.AllBlocked(o.window.Request.JobID){tags=[]string{"safe","violence"};tagIDs=[]int{1,3}}
 		if !slices.Equal(native.Tags,tags)||!slices.Equal(native.TagIDs,tagIDs){return nil,managedqa.ErrFixture}
 	}
+	return posts,nil
+}
+func(o *windowFixtureOwner) authorizeProjection(c context.Context,p workerproto.WindowAllocateProposal)([]byte,error){
+	if !o.current(c)||p.Transfer.Metadata!=o.window.Request||p.Transfer.Subcategory!="search"||p.Transfer.PolicyGeneration!=1{return nil,managedqa.ErrFixture}
+	posts,err:=o.fixtureListing(c);if err!=nil{return nil,err}
+	ids:=o.setup.ExpectedIDs(o.window.Request.JobID);if len(ids)==0{return nil,managedqa.ErrFixture}
 	_,cfg,identity:=o.setup.Identity()
 	plan,err:=acquisitionplan.NewStrictTransferPlan(o.window.Request,"search",posts,ids,1,identity,cfg)
 	if err!=nil||plan.Request()!=p.Transfer{return nil,managedqa.ErrFixture}
@@ -120,6 +125,13 @@ func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,ra
 	}
 	if !o.registry.Current(o.window){return fault(managedqa.ErrFixture)}
 	switch op{
+	case workerproto.WindowNoTransfer:
+		p,err:=workerproto.DecodeWindowNoTransfer(raw)
+		if err!=nil||p.Request!=o.window.Request||o.grant!=(workerproto.StageAllocation{})||!o.setup.AllBlocked(p.Request.JobID){return fault(managedqa.ErrFixture)}
+		posts,err:=o.fixtureListing(c);if err!=nil||len(posts)!=len(p.ListedIDs){return fault(managedqa.ErrFixture)}
+		for i,v:=range posts{if v.ID!=p.ListedIDs[i]{return fault(managedqa.ErrFixture)}}
+		if err:=o.registry.RecordOutcome(c,windowregistry.Outcome{Grant:o.window,Kind:"no_transfer"});err!=nil{return fault(err)}
+		body,_:=json.Marshal(workerproto.ManagedMetadataStart{Request:p.Request});return body,nil
 	case workerproto.StageAllocate:
 		if o.grant!=(workerproto.StageAllocation{}){return fault(managedqa.ErrFixture)}
 		p,err:=workerproto.DecodeWindowAllocateProposal(raw);if err!=nil{return fault(err)}
@@ -190,7 +202,7 @@ func(o *windowFixtureOwner) commit(c context.Context)error{
 
 func runManagedWindowProbe(countArg string)(result error){
 	windows:=1
-	if countArg=="3x2"{windows=2;countArg="3"}
+	if countArg=="3x2"{windows=2;countArg="3"}else if countArg=="3x3"{windows=3;countArg="3"}
 	count,err:=strconv.Atoi(countArg);if err!=nil||count!=3&&count!=200{return managedqa.ErrFixture}
 	python:=os.Getenv("MEBOORU_METADATA_TEST_PYTHON")
 	if !filepath.IsAbs(python){return managedqa.ErrFixture}
@@ -255,6 +267,7 @@ func runManagedWindowProbe(countArg string)(result error){
 		ManagedWindow *struct{State string `json:"state"`} `json:"managed_window"`
 	}
 	var lease *acquisitionpolicy.OnlineLease
+	totalCommitted:=0
 	for job:=int64(1);job<=int64(windows);job++{
 		md:=setup.MetadataFor(job)
 		if _,err:=call(workerproto.QueuePause,nil);err!=nil{return err}
@@ -295,7 +308,16 @@ func runManagedWindowProbe(countArg string)(result error){
 			select{case <-ctx.Done():return ctx.Err();case <-time.After(200*time.Millisecond):}
 		}
 		settled,err:=registry.ObserveSettlement(o.window)
-		if err!=nil||settled.Kind!="committed"||v.ManagedWindow==nil||v.ManagedWindow.State!="complete"||len(v.Items)!=count{return managedqa.ErrFixture}
+		if err!=nil||len(v.Items)!=count{return managedqa.ErrFixture}
+		if setup.AllBlocked(job){
+			if settled.Kind!="no_transfer"||v.ManagedWindow!=nil{return managedqa.ErrFixture}
+			for i,it:=range v.Items{if it.PostID!=strconv.Itoa(setup.Offset(job)+i+1)||it.Outcome!=string(contract.OutcomeSkippedBlacklist)||it.ImageID!=0||it.Receipt!=""{return managedqa.ErrFixture}}
+			requestMu.Lock();exact:=len(requests)==totalCommitted;requestMu.Unlock()
+			if !exact{return managedqa.ErrFixture}
+			continue
+		}
+		if settled.Kind!="committed"||v.ManagedWindow==nil||v.ManagedWindow.State!="complete"{return managedqa.ErrFixture}
+		totalCommitted+=count-1
 		offset:=setup.Offset(job)
 		if v.Items[0].PostID!=strconv.Itoa(offset+1)||v.Items[0].Outcome!=string(contract.OutcomeSkippedBlacklist){return managedqa.ErrFixture}
 		for i,it:=range v.Items[1:]{
@@ -305,7 +327,7 @@ func runManagedWindowProbe(countArg string)(result error){
 		if len(observed.Items)!=count-1||settled.PolicySHA256!=observed.PolicySHA256||settled.PlanSHA256!=observed.PlanSHA256{return managedqa.ErrFixture}
 		g:=set.Get(cfg.Name)
 		var n int
-		if err:=g.DB.Read.QueryRowContext(ctx,"SELECT COUNT(*) FROM images WHERE is_missing=0").Scan(&n);err!=nil||n!=int(job)*(count-1){return fmt.Errorf("library rows %d: %v",n,err)}
+		if err:=g.DB.Read.QueryRowContext(ctx,"SELECT COUNT(*) FROM images WHERE is_missing=0").Scan(&n);err!=nil||n!=totalCommitted{return fmt.Errorf("library rows %d: %v",n,err)}
 		for _,it:=range observed.Items{
 			id,err:=strconv.Atoi(it.PostID);if err!=nil||it.State!="committed"||it.SHA256!=managedqa.Digest(imageBytes[id]){return managedqa.ErrFixture}
 			var path string
@@ -313,7 +335,7 @@ func runManagedWindowProbe(countArg string)(result error){
 			got,err:=os.ReadFile(path);if err!=nil||!bytes.Equal(got,imageBytes[id]){return managedqa.ErrFixture}
 		}
 		requestMu.Lock()
-		exact:=len(requests)==int(job)*(count-1)&&requests[offset+1]==0
+		exact:=len(requests)==totalCommitted&&requests[offset+1]==0
 		for i:=offset+2;i<=offset+count;i++{exact=exact&&requests[i]==1}
 		requestMu.Unlock()
 		if !exact{return managedqa.ErrFixture}
@@ -326,6 +348,6 @@ func runManagedWindowProbe(countArg string)(result error){
 	if err:=manager.Shutdown(ctx);err!=nil{return err}
 	if offline,err:=store.Load();err!=nil||!offline{return managedqa.ErrFixture}
 	safe=true
-	if windows==1{fmt.Printf("PASS: disposable managed executable window %d listed, %d committed, one blocked, exact receipts and cleanup\n",count,count-1)}else{fmt.Println("PASS: two successive managed executable windows on one worker session, exact durable settlement")}
+	if windows==1{fmt.Printf("PASS: disposable managed executable window %d listed, %d committed, one blocked, exact receipts and cleanup\n",count,count-1)}else if windows==2{fmt.Println("PASS: two successive managed executable windows on one worker session, exact durable settlement")}else{fmt.Println("PASS: three successive windows, middle fully blocked with independent no-transfer settlement, four committed")}
 	return nil
 }

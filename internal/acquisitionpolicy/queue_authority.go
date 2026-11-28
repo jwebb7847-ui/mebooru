@@ -68,7 +68,7 @@ func VerifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.Metad
 	j:=stored.Job
 	if status!="running"||j.Status!=status||j.ID!=q.JobID||j.URL!=q.URL||j.Gallery!=q.Gallery||j.Site!=q.Source||
 		j.MaxItems!=int(q.Last-q.First+1)||stored.Offset<0||uint64(stored.Offset)+1!=uint64(q.First)||
-		j.Kind!=""||j.Force||j.Root!=0||j.Folder!=""||j.PageURL!=""||len(j.Tags)!=0||j.Commentary!=""||
+		j.Kind!=""||j.Force||j.Root!=j.ID||j.Folder!=""||j.PageURL!=""||len(j.Tags)!=0||j.Commentary!=""||
 		j.Source!=""||j.Via!=""||j.ImageID!=0||j.Backend!=""||j.MD5!=""||j.SHA256!=""||
 		len(j.ManagedWindow)!=0||stored.Auto||stored.Priority||stored.Background||stored.Budgeted||stored.Watch!=0||
 		stored.ForceTo!=0||len(stored.ContribIDs)!=0||stored.ContribBacklog{return windowregistry.ErrWindow}

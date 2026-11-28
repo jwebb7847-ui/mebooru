@@ -95,7 +95,7 @@ func runManagedWindowRuntimeLeaf(dir,encoded string)error{
 	if !validWindowFixtureArgs(dir,setup,args){return managedqa.ErrFixture}
 	cmd:=exec.Command(setup.Python,append([]string{filepath.Join(dir,managedqa.ScriptName)},args...)...)
 	cmd.Dir=dir
-	cmd.Env=append(os.Environ(),"MEBOORU_WINDOW_PORT="+strconv.Itoa(setup.Port),"MEBOORU_WINDOW_COUNT="+strconv.Itoa(setup.Count))
+	cmd.Env=append(os.Environ(),"MEBOORU_WINDOW_PORT="+strconv.Itoa(setup.Port),"MEBOORU_WINDOW_COUNT="+strconv.Itoa(setup.Count),"MEBOORU_WINDOW_WINDOWS="+strconv.Itoa(setup.Windows))
 	cmd.Stdout=os.Stdout
 	var stderr probeOutput
 	cmd.Stderr=&stderr
