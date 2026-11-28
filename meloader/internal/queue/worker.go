@@ -70,11 +70,11 @@ func (q *Queue) closing() bool {
 func (q *Queue) worker() {
 	defer q.wg.Done()
 	for {
-		j, ctx, ok := q.nextJob()
+		j, ctx, finish, ok := q.nextJob()
 		if !ok {
 			return
 		}
-		q.runJob(j, ctx)
+		q.runJob(j, ctx, finish)
 		// A large pool's item rows and a run's captured output sit in the
 		// heap; without this, memory stays at its peak between jobs.
 		debug.FreeOSMemory()
@@ -82,32 +82,44 @@ func (q *Queue) worker() {
 }
 
 // The caller must finish the job it returns.
-func (q *Queue) nextJob() (*Job, context.Context, bool) {
+func (q *Queue) nextJob() (*Job, context.Context, func(error), bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for (len(q.pending) == 0 || q.paused || q.held || q.managedOffline || q.managedRetiring || q.managedStoreFault) && !q.closed {
-		q.cond.Wait()
+	for{
+		for (len(q.pending) == 0 || q.paused || q.held || q.managedOffline || q.managedRetiring || q.managedStoreFault) && !q.closed {
+			q.cond.Wait()
+		}
+		if q.closed { return nil,nil,nil,false }
+		ctx,cancel:=context.WithCancel(context.Background())
+		var finish func(error)
+		if q.managed!=nil{
+			// Admission and removal from pending share the same lock
+			// as the offline transition. A denied job stays queued.
+			admitted,done,err:=q.managed.gate.Admit(ctx)
+			if err!=nil{
+				cancel()
+				q.managedOffline=true
+				continue
+			}
+			ctx,finish=admitted,done
+		}
+		j:=q.pending[0]
+		q.pending[0]=nil
+		q.pending=q.pending[1:]
+		q.running[j.ID]=j
+		q.cancels[j.ID]=cancel
+		return j,ctx,finish,true
 	}
-	if q.closed {
-		return nil, nil, false
-	}
-	j := q.pending[0]
-	// Nil the slot: head slots are never reused, so the backing array
-	// would pin the jobs already run.
-	q.pending[0] = nil
-	q.pending = q.pending[1:]
-	ctx, cancel := context.WithCancel(context.Background())
-	q.running[j.ID] = j
-	q.cancels[j.ID] = cancel
-	return j, ctx, true
 }
 
-func (q *Queue) runJob(j *Job, ctx context.Context) {
-	var finish func(error)
+func (q *Queue) runJob(j *Job, ctx context.Context, finish func(error)) {
 	var cleanupErr error
 	// Keep the managed lease until settlement and actual cleanup finish.
 	defer func(){ if finish!=nil { finish(cleanupErr) } }()
-	defer q.finish(j)
+	defer func(){
+		if q.managed!=nil&&cleanupErr!=nil{q.mu.Lock();q.managedOffline=true;q.mu.Unlock()}
+		q.finish(j)
+	}()
 	defer func() {
 		if r := recover(); r != nil {
 			if q.managed!=nil { cleanupErr=errManagedCleanup }
@@ -116,11 +128,6 @@ func (q *Queue) runJob(j *Job, ctx context.Context) {
 		}
 	}()
 
-	if q.managed!=nil {
-		var err error
-		ctx,finish,err=q.managed.gate.Admit(ctx)
-		if err!=nil { j.interrupt(q.now());return }
-	}
 	if err := j.start(q.now()); err != nil {
 		logx.Warnf("queue: job %d not startable: %v", j.ID, err)
 		j.cancel(q.now())

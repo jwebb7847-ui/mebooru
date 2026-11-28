@@ -62,3 +62,29 @@ func TestManagedQueuePersistedOfflineDrain(t *testing.T){
 	if id:=q2.Enqueue("https://example.invalid/late",Options{});id!=0{t.Fatal("accepted after reservation")}
 	if err:=q2.SetManagedOffline(ctx,false);err==nil{t.Fatal("reopened retired queue")}
 }
+
+
+// A poisoned gate must not consume an unstarted queued job. The worker
+// has no right to mark it interrupted unless it actually acquired a lease.
+func TestManagedQueueDeniedAdmissionKeepsPending(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel()
+	st,err:=OpenStore(t.TempDir());if err!=nil{t.Fatal(err)};defer st.Close()
+	gate:=workerproto.NewDrainGate(ctx)
+	q,err:=NewManagedWithGate(gate,managedFixtureProc(func(context.Context,*Job)(error,error){t.Error("unauthorized job executed");return nil,nil}),1,20)
+	if err!=nil{t.Fatal(err)}
+	q.UseStore(st)
+	id,err:=q.EnqueueManaged("https://derpibooru.org/images/1",Options{Gallery:"A",MaxItems:1})
+	if err!=nil{t.Fatal(err)}
+	if err:=q.SetManagedOffline(ctx,false);err!=nil{t.Fatal(err)}
+	_,finish,err:=gate.Admit(ctx);if err!=nil{t.Fatal(err)}
+	finish(workerproto.ErrDrainUnconfirmed)
+	q.Start();defer q.Close()
+	deadline:=time.NewTimer(time.Second);defer deadline.Stop()
+	for{
+		q.mu.Lock();parked:=q.managedOffline;q.mu.Unlock()
+		if parked{break}
+		select{case <-deadline.C:t.Fatal("queue did not hold");case <-time.After(time.Millisecond):}
+	}
+	j,err:=q.Get(id);if err!=nil||j.Status!=JobQueued{t.Fatal("unstarted job consumed",j,err)}
+	jobs,err:=st.LoadJobs();if err!=nil||len(jobs)!=1||jobs[0].Status!=JobQueued{t.Fatal("durable pending state",jobs,err)}
+}
