@@ -170,16 +170,26 @@ func (s *Server) desktopHook() desktop.Hook {
 }
 
 func (s *Server) desktopIntegration() desktop.Integration {
+	if s.explicitDesktopProfile {
+		return desktop.Integration{}
+	}
 	return s.desktopHook().Integration(s.TrayEnabled())
 }
 
 func (s *Server) TrayEnabled() bool {
+	if s.explicitDesktopProfile {
+		return false
+	}
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
 	return s.cfg.Desktop.Tray
 }
 
 func (s *Server) settingsDesktopPost(w http.ResponseWriter, r *http.Request) {
+	if s.explicitDesktopProfile {
+		http.NotFound(w, r)
+		return
+	}
 	if !parseFormOK(w, r) {
 		return
 	}

@@ -92,7 +92,7 @@ func TestMetadataSequenceIdentityAndRevocation(t *testing.T) {
 func TestMetadataBindingRejectsIncompleteIdentity(t *testing.T) {
 	_,q,_,id:=sequenceFixture(t)
 	cfg:=MetadataConfig{Generation:2,Source:q.Source}
-	for _,r:=range []RuntimeIdentity{{},{Generation:1,Version:StrictQualifiedVersion,ArtifactSHA256:id.Runtime.ArtifactSHA256},{Generation:1,Version:"1.32.21",ArtifactSHA256:id.Runtime.ArtifactSHA256,ManifestSHA256:id.Runtime.ManifestSHA256}}{
+	for _,r:=range []RuntimeIdentity{{},{Generation:1,Version:StrictQualifiedVersion,ArtifactSHA256:id.Runtime.ArtifactSHA256},{Generation:1,Version:"1.32.22",ArtifactSHA256:id.Runtime.ArtifactSHA256,ManifestSHA256:id.Runtime.ManifestSHA256}}{
 		if s,err:=NewMetadataSequence(q,r,cfg);s!=nil||err==nil{t.Fatal("unqualified runtime accepted")}
 	}
 	if s,err:=NewMetadataSequence(q,id.Runtime,MetadataConfig{Generation:2,Source:"e621"});s!=nil||err==nil{t.Fatal("wrong config source")}

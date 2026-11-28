@@ -99,7 +99,8 @@ type Server struct {
 	restart      atomic.Bool
 	// A field so a test drives the menu and start-at-login entries under its
 	// own name: the HKCU Run value cannot be redirected like HOME.
-	desktopApp string
+	desktopApp             string
+	explicitDesktopProfile bool
 
 	set *library.Set
 
@@ -119,8 +120,9 @@ type Server struct {
 // Desktop.LogDir is not derived from the config: the command opens the
 // log before the config loads, and data_path may point elsewhere.
 type Desktop struct {
-	Active bool
-	LogDir string
+	Active          bool
+	LogDir          string
+	ExplicitProfile bool
 }
 
 func NewServer(cfg *config.Config, configPath string, jobManager *jobs.Manager, dk Desktop) (*Server, error) {
@@ -149,22 +151,23 @@ func NewServer(cfg *config.Config, configPath string, jobManager *jobs.Manager, 
 	}
 
 	s := &Server{
-		cfg:          cfg,
-		configPath:   configPath,
-		jobs:         jobManager,
-		pairs:        peer.NewStore(),
-		sessions:     sessions,
-		loginRL:      session.NewBackoff(),
-		tmpl:         tmpl,
-		staticFS:     staticFS,
-		lightFS:      lightFS,
-		done:         make(chan struct{}),
-		desktop:      dk.Active,
-		folderOpener: desktop.OpenFolder,
-		desktopApp:   "monbooru",
-		logDir:       dk.LogDir,
-		quit:         make(chan struct{}),
-		themeWarn:    &themeWarnings{},
+		cfg:                    cfg,
+		configPath:             configPath,
+		jobs:                   jobManager,
+		pairs:                  peer.NewStore(),
+		sessions:               sessions,
+		loginRL:                session.NewBackoff(),
+		tmpl:                   tmpl,
+		staticFS:               staticFS,
+		lightFS:                lightFS,
+		done:                   make(chan struct{}),
+		desktop:                dk.Active,
+		explicitDesktopProfile: dk.ExplicitProfile,
+		folderOpener:           desktop.OpenFolder,
+		desktopApp:             "monbooru",
+		logDir:                 dk.LogDir,
+		quit:                   make(chan struct{}),
+		themeWarn:              &themeWarnings{},
 	}
 	s.peers = plugins.NewPeers(s.pluginCallbackURL, s.done)
 	s.ml = monloader.NewLink(s.monloaderLink, jobManager)
@@ -529,6 +532,7 @@ func (s *Server) registerRoutes(rt *routes) {
 	rt.free("POST /internal/open-folder", s.localOnly(s.openFolder))
 	rt.free("POST /settings/desktop", s.localOnly(s.settingsDesktopPost))
 	rt.free("POST /settings/acquisition", s.saveAcquisitionSettings)
+	rt.free("POST /settings/acquisition/runtime", s.acquisitionRuntime)
 	rt.free("POST /settings/quit", s.settingsQuit)
 	rt.free("POST /settings/restart", s.localOnly(s.settingsRestart))
 	rt.free("GET /internal/desktop-power", s.localOnly(s.desktopPowerFragment))

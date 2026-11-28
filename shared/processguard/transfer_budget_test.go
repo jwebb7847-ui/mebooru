@@ -42,7 +42,7 @@ func TestAllocatedStrictTransferCancelsOverBudget(t *testing.T){
 			}
 		}
 		return f,nil
-	})
+	},acquisitionplan.StrictQualifiedVersion)
 	if err==nil||out!=nil||ctx.Err()!=nil||child==nil||!child.stopped.Load(){t.Fatal("over-budget child not cancelled and cleaned",err)}
 	if err:=gate.Drain(ctx);err!=nil{t.Fatal(err)}
 	if err:=set.SealAndStop(ctx);err!=nil{t.Fatal(err)}

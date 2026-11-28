@@ -36,6 +36,7 @@ func (a *managedApplication) ReadAcquisitionSettings() (web.AcquisitionSettings,
 	settings.Blacklist = strings.Join(conf.Tags.Blacklist, "\n")
 	runtime, _ := liveRuntimePath(settings.Runtime)
 	settings.NeedsRestart = runtime != a.owner.live.Runtime || settings.SleepRequest != a.owner.live.SleepRequest || settings.MaxItems != a.owner.live.MaxItems
+	a.readRuntimeStatus(&settings)
 	return settings, nil
 }
 

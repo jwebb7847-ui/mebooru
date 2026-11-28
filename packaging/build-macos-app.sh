@@ -22,7 +22,11 @@ bundle="$stage/Mebooru.app/Contents"
 mkdir -p "$bundle/MacOS" "$bundle/Resources"
 
 export GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 GOWORK=off
-go build -trimpath -ldflags="$LDFLAGS -X 'main.defaultDesktop=true' -X 'main.useBundledMeloader=true' -X '$MOD.Package=macos-app'" \
+managed_default=false
+if [ "$arch" = arm64 ] || [ -n "${MEBOORU_GALLERY_DL:-}" ]; then
+  managed_default=true
+fi
+go build -trimpath -ldflags="$LDFLAGS -X 'main.defaultDesktop=true' -X 'main.useBundledMeloader=true' -X 'main.defaultManagedAcquisition=$managed_default' -X '$MOD.Package=macos-app'" \
   -o "$bundle/MacOS/monbooru" ./cmd/monbooru
 (
   cd "$loader_src"
@@ -45,8 +49,18 @@ if [ -n "${MEBOORU_GALLERY_DL:-}" ]; then
   install -m 0644 "$runtime_license" "$bundle/Resources/LICENSE-gallery-dl"
   printf 'gallery-dl %s source: https://codeberg.org/mikf/gallery-dl/releases/tag/v%s\n' +    "$GDL_VERSION" "$GDL_VERSION" > "$bundle/Resources/gallery-dl-source.txt"
   codesign --force --sign - "$bundle/MacOS/gallery-dl"
-  test "$("$bundle/MacOS/gallery-dl" --version)" = "$GDL_VERSION" ||
+  gallery_dl="$bundle/MacOS/gallery-dl"
+elif [ "$arch" = arm64 ]; then
+  sh packaging/build-macos-runtime.sh "$bundle" "$stage"
+  gallery_dl="$bundle/Resources/runtime/gallery-dl"
+fi
+if [ "$managed_default" = true ]; then
+  . "$loader_src/packaging/pins.env"
+  test "$(MEBOORU_RUNTIME_WHEEL= "$gallery_dl" --config-ignore --version)" = "$GDL_VERSION" ||
     { echo "The bundled gallery-dl must run as version $GDL_VERSION." >&2; exit 1; }
+fi
+if [ "$arch" = arm64 ]; then
+  sh packaging/build-macos-media.sh "$bundle" "$stage"
 fi
 
 iconset="$stage/Mebooru.iconset"
@@ -72,6 +86,7 @@ cat > "$bundle/Info.plist" <<EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION#v}</string>
   <key>CFBundleVersion</key><string>${VERSION#v}</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
 </dict>
 </plist>

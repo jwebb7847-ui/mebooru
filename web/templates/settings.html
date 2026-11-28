@@ -1360,6 +1360,21 @@
       {{else if .AcquisitionSaved}}<div class="flash flash-ok">Acquisition settings saved.</div>{{end}}
     </div>
     {{if not .AcquisitionError}}
+    <div class="settings-sub">
+      <h4>Acquisition runtime</h4>
+      <p>{{.Acquisition.RuntimeSource}}{{if .Acquisition.RuntimeVersion}} · gallery-dl {{.Acquisition.RuntimeVersion}}{{end}} · {{if .Acquisition.RuntimeReady}}Ready{{else}}Unavailable{{end}}</p>
+      {{if .Acquisition.RuntimeUpdateDamaged}}<p role="status">The installed update could not be verified. Mebooru is using the bundled runtime.</p>{{end}}
+      {{if .RuntimeMessage}}<div class="flash" role="status">{{.RuntimeMessage}}</div>{{end}}
+      {{if .Acquisition.RuntimeUpdates}}
+      <form method="post" action="/settings/acquisition/runtime" class="settings-actions">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <button type="submit" name="action" value="check" {{if .AcquisitionOffline}}disabled{{end}}>Check for updates</button>
+        <button type="submit" name="action" value="install" {{if .AcquisitionOffline}}disabled{{end}}>Install qualified update</button>
+        {{if .Acquisition.RuntimeRollback}}<button type="submit" name="action" value="rollback">Use bundled version</button>{{end}}
+      </form>
+      {{if .AcquisitionOffline}}<p class="field-hint">Go online to check for or install updates.</p>{{end}}
+      {{end}}
+    </div>
     <form method="post" action="/settings/acquisition" hx-post="/settings/acquisition" hx-target="#flash-acquisition">
       <input type="hidden" name="_csrf" value="{{$csrf}}">
       <div class="settings-cols">

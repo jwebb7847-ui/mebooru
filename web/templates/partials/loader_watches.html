@@ -4,42 +4,55 @@
   {{if .Watches.Message}}
   <p role="status">{{.Watches.Message}}</p>
   {{else}}
-  <p>Checks import into the default gallery, <strong>{{.Watches.DefaultGallery}}</strong>. Scheduled checks run while Mebooru is open and acquisition is online.</p>
+  <p>Scheduled checks run while Mebooru is open and acquisition is online.</p>
   <form class="loader-import" method="post" action="/loader/watches">
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
     <input type="hidden" name="action" value="add">
     <label>Source URL <input type="url" name="url" required></label>
+    <label>Destination <select name="destination" required>
+      {{range .Destinations}}<option value="{{.}}"{{if eq . $.Watches.DefaultGallery}} selected{{end}}>{{.}}</option>{{end}}
+    </select></label>
     <label>Maximum posts <input type="number" name="max_items" min="1" {{if .Limit}}max="{{.Limit}}"{{end}} value="1" required></label>
     <label>Check interval <select name="interval">
       {{range .Watches.Intervals}}<option value="{{.}}">{{if eq . 0}}Manual{{else}}Every {{.}} hours{{end}}</option>{{end}}
     </select></label>
-    <button type="submit">Add watch</button>
+    <button type="submit"{{if not .Destinations}} disabled{{end}}>Add watch</button>
   </form>
   {{if .Watches.Entries}}
   <div class="table-scroll"><table class="data-table loader-jobs">
-    <thead><tr><th>Source</th><th>Limit</th><th>Schedule</th><th>Last check</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Source</th><th>Destination</th><th>Limit</th><th>Schedule</th><th>Last check</th><th>Actions</th></tr></thead>
     <tbody>
     {{range .Watches.Entries}}
     {{$watch := .}}
     <tr>
-      <td>{{.URL}}</td><td>{{.MaxItems}}</td>
+      <td>{{.URL}}</td>
+      <td>{{if .Gallery}}{{.Gallery}}{{else}}Default gallery ({{$.Watches.DefaultGallery}}){{end}}</td>
+      <td>{{.MaxItems}}</td>
       <td>
         <form method="post" action="/loader/watches">
           <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
           <input type="hidden" name="action" value="schedule">
           <input type="hidden" name="watch_id" value="{{.ID}}">
           <select name="interval" aria-label="Check interval">
-            {{range $.Watches.Intervals}}<option value="{{.}}"{{if eq . $watch.IntervalHours}} selected{{end}}>{{if eq . 0}}Manual{{else}}Every {{.}} hours{{end}}</option>{{end}}
+            {{range $.Watches.Intervals}}<option value="{{.}}"{{if eq . $watch.IntervalHours}} selected{{end}}>{{if eq . 0}}Manual (schedule paused){{else}}Every {{.}} hours{{end}}</option>{{end}}
           </select>
           <button type="submit">Save</button>
         </form>
       </td>
-      <td>{{if .Live}}Queued or running{{else if not .Last.CheckedAt.IsZero}}{{.Last.Status}} · <a href="/loader">Job #{{.Last.JobID}}</a>{{else}}Never checked{{end}}</td>
+      <td>
+        {{if .Live}}Queued or running · <a href="/loader#loader-job-{{.LiveJob}}">Job #{{.LiveJob}}</a>
+        {{else if not .Last.CheckedAt.IsZero}}{{.Last.Status}}{{if or .Last.Created (ne .Last.Status "succeeded")}} · <a href="/loader#loader-job-{{.Last.JobID}}">Job #{{.Last.JobID}}</a>{{end}}
+        <div class="field-hint">{{.Last.Created}} new · {{.Last.Duplicate}} duplicate · {{.Last.Blacklisted}} blacklisted</div>
+        {{if and (ne .Last.Status "succeeded") (not .Last.LastSuccess.IsZero)}}<div class="field-hint">Last successful check {{.Last.LastSuccess.Local.Format "2006-01-02 15:04"}}</div>{{end}}
+        {{else}}Never checked{{end}}
+        {{if .Unavailable}}<div role="status">Destination or post limit unavailable</div>{{end}}
+      </td>
       <td>
         <form method="post" action="/loader/watches">
           <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
           <input type="hidden" name="watch_id" value="{{.ID}}">
-          <button name="action" value="check"{{if .Live}} disabled{{end}}>Check now</button>
+          {{if .Live}}<button name="action" value="cancel">Cancel check</button>
+          {{else}}<button name="action" value="check"{{if .Unavailable}} disabled{{end}}>Check now</button>{{end}}
           <button name="action" value="remove">Remove</button>
         </form>
       </td>

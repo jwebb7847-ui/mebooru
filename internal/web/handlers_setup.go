@@ -85,12 +85,13 @@ func (s *Server) setupPage(w http.ResponseWriter, r *http.Request) {
 		galleryPath = g.GalleryPath
 	}
 	bind := s.cfg.Server.BindAddress
+	managed := s.cfg.Desktop.ManagedAcquisition
 	s.cfgMu.RUnlock()
 	s.renderSetup(w, r, setupData{
 		GalleryPath: galleryPath,
 		LAN:         !desktop.IsLoopbackAddr(bind),
 		Menu:        true,
-		Autostart:   true,
+		Autostart:   !managed,
 	})
 }
 
@@ -158,8 +159,10 @@ func (s *Server) setupPost(w http.ResponseWriter, r *http.Request) {
 		s.renderSetup(w, r, form)
 		return
 	}
-	for _, f := range s.desktopHook().Apply(form.Menu, form.Autostart) {
-		logx.Warnf("setup: could not write %s", f)
+	if !s.explicitDesktopProfile {
+		for _, f := range s.desktopHook().Apply(form.Menu, form.Autostart) {
+			logx.Warnf("setup: could not write %s", f)
+		}
 	}
 	logx.Infof("setup: done, reachable from %s", map[bool]string{true: "the network", false: "this computer"}[!desktop.IsLoopbackAddr(bind)])
 	http.Redirect(w, r, "/", http.StatusSeeOther)

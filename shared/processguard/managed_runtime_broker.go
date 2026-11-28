@@ -155,7 +155,7 @@ func(c *managedRuntimeChild) Result(ctx context.Context)(int,[]byte,error){
 	case 1:
 		if _,err:=workerproto.DecodeMetadataEvidence(out,c.request,s.subcategory);err!=nil{return exit,stderr,err}
 	case 2:
-		if strings.TrimSpace(string(out))!=acquisitionplan.StrictQualifiedVersion{return exit,stderr,ErrStrictTransferOperation}
+		if strings.TrimSpace(string(out))!=s.identity.Runtime.Version{return exit,stderr,ErrStrictTransferOperation}
 	case 3,4:
 		if !acquisitionplan.ValidatePredicateProbe(out,c.phase==4){return exit,stderr,ErrStrictTransferOperation}
 	case 5:

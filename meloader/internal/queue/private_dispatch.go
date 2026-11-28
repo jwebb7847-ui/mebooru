@@ -25,7 +25,7 @@ func(q *Queue) EnqueueManaged(url string,opts Options)(int64,error){
 	if q.managed==nil||q.store==nil||q.closed||q.managedRetiring||q.managedStoreFault{return 0,errStopping}
 	if opts.Watch>0 {
 		w:=q.findWatchLocked(opts.Watch)
-		if w==nil||w.URL!=url||w.MaxItems!=opts.MaxItems||!workerproto.ValidQueueIntentID(opts.ManagedIntentID){return 0,ErrNotFound}
+		if w==nil||w.URL!=url||w.MaxItems!=opts.MaxItems||w.Gallery!=""&&w.Gallery!=opts.Gallery||!workerproto.ValidQueueIntentID(opts.ManagedIntentID){return 0,ErrNotFound}
 		if q.watchLiveLocked(w.ID){return 0,ErrWatchLive}
 	}
 	if opts.ManagedIntentID!=""{
@@ -107,10 +107,7 @@ func(q *Queue) PrivateDispatch(authorize CommandAuthority,wake func())workerprot
 		case workerproto.WatchList:
 			return respond(struct{Watches []Watch `json:"watches"`}{q.Watches()})
 		case workerproto.WatchAdd:
-			// Watches retain the existing default-gallery model. The
-			// owner must explicitly authorize that model at submission
-			// and again when the due job is resolved.
-			id,err:=q.AddWatch(cmd.URL,cmd.IntervalHours,cmd.MaxItems,nil)
+			id,err:=q.addWatch(cmd.URL,cmd.Gallery,cmd.IntervalHours,cmd.MaxItems,nil)
 			if err!=nil||id<1||q.ManagedStoreError()!=nil{return fault("queue_refused")}
 			return respond(struct{WatchID int64 `json:"watch_id"`}{id})
 		case workerproto.WatchSetInterval:

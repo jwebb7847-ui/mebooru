@@ -19,21 +19,28 @@ const appName = "monbooru"
 
 // Stamped "true" at link time (-X) by the desktop artifacts.
 var defaultDesktop string
+var defaultManagedAcquisition string
+
+const bundledPolicyConfig = "monloader.toml"
 
 const bindWait = 45 * time.Second
 
 // A portable install keeps the config package's relative paths: OS-native
 // ones would pin the folder to the machine it was first run on.
-func desktopSeed(l desktop.Layout) func(*config.Config) {
+func desktopSeed(l desktop.Layout, explicitProfile bool) func(*config.Config) {
 	return func(cfg *config.Config) {
 		if !l.Portable {
 			cfg.Paths.DataPath = l.DataDir
 			cfg.Paths.ModelPath = filepath.Join(l.DataDir, "models")
-			cfg.Galleries[0].GalleryPath = seedGalleryDir(l)
+			cfg.Galleries[0].GalleryPath = seedGalleryDir(l, explicitProfile)
 		}
 		cfg.Schedule.Mode = config.ScheduleAtTimeCatchup
 		// A desktop bug report carries only the log, which warn leaves empty.
 		cfg.Log.Level = "info"
+		if defaultManagedAcquisition == "true" {
+			cfg.Desktop.ManagedAcquisition = true
+			cfg.Desktop.MeloaderConfig = bundledPolicyConfig
+		}
 	}
 }
 
@@ -54,9 +61,11 @@ func portableGallery(l desktop.Layout, cfg *config.Config) {
 }
 
 // Created, not only named: a missing gallery folder boots into degraded mode.
-func seedGalleryDir(l desktop.Layout) string {
-	base := cmp.Or(desktop.PicturesDir(), l.DataDir)
-	dir := filepath.Join(base, appName)
+func seedGalleryDir(l desktop.Layout, explicitProfile bool) string {
+	dir := filepath.Join(l.DataDir, "gallery")
+	if !explicitProfile {
+		dir = filepath.Join(cmp.Or(desktop.PicturesDir(), l.DataDir), appName)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		dir = filepath.Join(l.DataDir, "gallery")
 		if err := os.MkdirAll(dir, 0o755); err != nil {

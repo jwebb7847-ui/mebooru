@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -11,22 +12,30 @@ import (
 type LoaderWatch struct {
 	ID            int64
 	URL           string
+	Gallery       string
 	IntervalHours int
 	MaxItems      int
 	Live          bool
+	LiveJob       int64
+	Unavailable   bool
 	Last          struct {
-		CheckedAt time.Time `json:"checked_at"`
-		JobID     int64     `json:"job_id"`
-		Status    string    `json:"status"`
+		CheckedAt   time.Time `json:"checked_at"`
+		LastSuccess time.Time `json:"last_success"`
+		JobID       int64     `json:"job_id"`
+		Status      string    `json:"status"`
+		Created     int       `json:"created"`
+		Duplicate   int       `json:"duplicate"`
+		Blacklisted int       `json:"blacklisted"`
 	}
 }
 
 type managedWatches interface {
 	ListWatches(context.Context) ([]LoaderWatch, error)
-	AddWatch(context.Context, string, int, int) error
+	AddWatch(context.Context, string, string, int, int) error
 	RemoveWatch(context.Context, int64) error
 	ScheduleWatch(context.Context, int64, int) error
 	CheckWatch(context.Context, int64) error
+	CancelWatch(context.Context, int64) error
 }
 
 type loaderWatches struct {
@@ -54,6 +63,17 @@ func (s *Server) loaderWatches(r *http.Request) loaderWatches {
 	return view
 }
 
+func (v *loaderWatches) markUnavailable(destinations []string, limit int) {
+	for i := range v.Entries {
+		watch := &v.Entries[i]
+		destination := watch.Gallery
+		if destination == "" {
+			destination = v.DefaultGallery
+		}
+		watch.Unavailable = !slices.Contains(destinations, destination) || watch.MaxItems > limit
+	}
+}
+
 func (s *Server) loaderWatchAction(w http.ResponseWriter, r *http.Request) {
 	if s.refuseUnavailableAcquisition(w, r) {
 		return
@@ -74,11 +94,13 @@ func (s *Server) loaderWatchAction(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch action := r.FormValue("action"); {
 	case action == "add" && hoursErr == nil && limitErr == nil:
-		err = service.AddWatch(ctx, strings.TrimSpace(r.FormValue("url")), hours, limit)
+		err = service.AddWatch(ctx, strings.TrimSpace(r.FormValue("url")), r.FormValue("destination"), hours, limit)
 	case action == "schedule" && id > 0 && hoursErr == nil:
 		err = service.ScheduleWatch(ctx, id, hours)
 	case action == "check" && id > 0:
 		err = service.CheckWatch(ctx, id)
+	case action == "cancel" && id > 0:
+		err = service.CancelWatch(ctx, id)
 	case action == "remove" && id > 0:
 		err = service.RemoveWatch(ctx, id)
 	default:

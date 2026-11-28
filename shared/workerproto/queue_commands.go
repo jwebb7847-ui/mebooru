@@ -62,7 +62,7 @@ func DecodeQueueCommand(op Operation,body []byte)(QueueCommand,error){
 	case QueuePause,QueueResume,QueueClear,QueueClearSucceeded,QueueCancelPending,WatchList:
 		if len(body)!=0{return bad()}
 	case WatchAdd:
-		if decodeObject(body,&q,"url","interval_hours","max_items")!=nil||StrictQueueSource(q.URL)==""||!validWatchInterval(q.IntervalHours)||q.MaxItems<1||q.MaxItems>MaxMetadataWindow{return bad()}
+		if decodeObject(body,&q,"url","gallery","interval_hours","max_items")!=nil||StrictQueueSource(q.URL)==""||q.Gallery!=""&&!validCatalogName(q.Gallery)||!validWatchInterval(q.IntervalHours)||q.MaxItems<1||q.MaxItems>MaxMetadataWindow{return bad()}
 	case WatchSetInterval:
 		if decodeObject(body,&q,"watch_id","interval_hours")!=nil||q.WatchID<1||!validWatchInterval(q.IntervalHours){return bad()}
 	case WatchSetItems:

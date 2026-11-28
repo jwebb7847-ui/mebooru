@@ -142,13 +142,19 @@ func runLiveRuntimeLeaf(dir, encoded string, cfg windowregistry.LiveConfig) erro
 	if err != nil || digest != cfg.RuntimeSHA256 {
 		return errors.New("configured gallery-dl changed, restart Mebooru")
 	}
-	env := append(os.Environ(), "XDG_CACHE_HOME="+dir, "XDG_CONFIG_HOME="+dir)
+	if cfg.RuntimeWheel != "" {
+		hash, err := windowregistry.RuntimeDigest(cfg.RuntimeWheel)
+		if err != nil || hash != cfg.RuntimeWheelSHA256 {
+			return errors.New("installed gallery-dl changed, restart Mebooru")
+		}
+	}
+	env := append(os.Environ(), "XDG_CACHE_HOME="+dir, "XDG_CONFIG_HOME="+dir, "MEBOORU_RUNTIME_WHEEL="+cfg.RuntimeWheel)
 	if slices.Contains(request.Args, "-E") {
 		version := exec.Command(cfg.Runtime, "--config-ignore", "--version")
 		version.Dir, version.Env = dir, env
 		got, err := version.Output()
-		if err != nil || strings.TrimSpace(string(got)) != acquisitionplan.StrictQualifiedVersion {
-			return fmt.Errorf("managed acquisition requires gallery-dl %s", acquisitionplan.StrictQualifiedVersion)
+		if err != nil || strings.TrimSpace(string(got)) != cfg.Version() {
+			return fmt.Errorf("managed acquisition requires gallery-dl %s", cfg.Version())
 		}
 	}
 	cmd := exec.Command(cfg.Runtime, cfg.RuntimeArgs(request.Args)...)

@@ -14,12 +14,13 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/monbooru/monbooru/internal/gallery"
 	"github.com/monbooru/monbooru/internal/library"
+	"github.com/monbooru/monbooru/internal/models"
 )
 
-// Only formats with the same native DecodeConfig implementation used by
-// gallery ingestion. This witnesses header facts and exact file bytes;
-// it does not prove that every frame or pixel can be decoded.
+// Use the same still-header decoder and video probe as gallery ingestion.
+// The media facts witness dimensions and exact bytes.
 type plannedImageFacts struct {
 	Format string
 	Width int
@@ -32,6 +33,8 @@ func guardedImageFormat(name string)string{
 	case ".jpg",".jpeg":return "jpeg"
 	case ".gif":return "gif"
 	case ".webp":return "webp"
+	case ".mp4":return models.FileTypeMP4
+	case ".webm":return models.FileTypeWEBM
 	}
 	return ""
 }
@@ -46,12 +49,20 @@ func inspectPlannedImage(ctx context.Context,root *os.Root,f acquisitionplan.Ver
 	if guardedImageFormat(f.RelativeName)==""{return zero,ErrStageRefused}
 	file,err:=root.Open(f.RelativeName)
 	if err!=nil{return zero,ErrStageRecovery}
-	cfg,format,decodeErr:=image.DecodeConfig(file)
+	format:=guardedImageFormat(f.RelativeName)
+	width,height,valid:=plannedMediaDimensions(ctx,file,format)
 	closeErr:=file.Close()
-	if decodeErr!=nil||closeErr!=nil||format!=guardedImageFormat(f.RelativeName)||cfg.Width<=0||cfg.Height<=0{return zero,ErrStageRefused}
+	if !valid||closeErr!=nil{return zero,ErrStageRefused}
 	h:=md5.New()
 	if err:=readCheckedLinks(ctx,root,f.RelativeName,f.Size,f.SHA256,h,links);err!=nil{return zero,err}
-	return plannedImageFacts{Format:format,Width:cfg.Width,Height:cfg.Height,MD5:hex.EncodeToString(h.Sum(nil))},nil
+	return plannedImageFacts{Format:format,Width:width,Height:height,MD5:hex.EncodeToString(h.Sum(nil))},nil
+}
+func plannedMediaDimensions(ctx context.Context, file *os.File, format string) (int, int, bool) {
+	if gallery.IsVideoType(format) {
+		return gallery.ProbeAcquiredVideo(ctx, file.Name(), format)
+	}
+	cfg, actual, err := image.DecodeConfig(file)
+	return cfg.Width, cfg.Height, err == nil && actual == format && cfg.Width > 0 && cfg.Height > 0
 }
 func verifyPlannedImageRow(ctx context.Context,g *library.Gallery,id int64,f acquisitionplan.VerifiedTransferFile,m *plannedImageFacts)error{
 	if m==nil{return nil} // historical PNG-only guarded plan

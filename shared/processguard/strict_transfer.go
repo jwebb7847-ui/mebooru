@@ -36,7 +36,7 @@ type StrictTransferStarter func(context.Context,StrictTransferStage,[]string)(St
 // launch/revocation remain required before production integration.
 func RunStrictTransfer(caller context.Context,set *OperationSet,q workerproto.TransferPlanRequest,
 	config acquisitionplan.MetadataConfig,root string,admit StrictTransferAdmission,current StrictTransferCurrent,start StrictTransferStarter)([]acquisitionplan.VerifiedTransferFile,error){
-	return runStrictTransfer(caller,set,q,config,root,admit,current,start,nil)
+	return runStrictTransfer(caller,set,q,config,root,admit,current,start,nil,acquisitionplan.StrictQualifiedVersion)
 }
 
 // RunAllocatedStrictTransfer applies the owner-issued allocation's
@@ -44,13 +44,13 @@ func RunStrictTransfer(caller context.Context,set *OperationSet,q workerproto.Tr
 // The caller still owns workspace/custody admission; this is a local
 // seam, not a wire grant or a hard kernel filesystem quota.
 func RunAllocatedStrictTransfer(caller context.Context,set *OperationSet,grant workerproto.StageAllocation,
-	config acquisitionplan.MetadataConfig,root string,admit StrictTransferAdmission,current StrictTransferCurrent,start StrictTransferStarter)([]acquisitionplan.VerifiedTransferFile,error){
-	if !workerproto.ValidStageAllocation(grant){return nil,ErrStrictTransferOperation}
-	return runStrictTransfer(caller,set,grant.Request.Transfer,config,root,admit,current,start,&grant)
+	config acquisitionplan.MetadataConfig,root string,admit StrictTransferAdmission,current StrictTransferCurrent,start StrictTransferStarter,version string)([]acquisitionplan.VerifiedTransferFile,error){
+	if !workerproto.ValidStageAllocation(grant)||!acquisitionplan.StrictRuntimeQualified(version){return nil,ErrStrictTransferOperation}
+	return runStrictTransfer(caller,set,grant.Request.Transfer,config,root,admit,current,start,&grant,version)
 }
 
 func runStrictTransfer(caller context.Context,set *OperationSet,q workerproto.TransferPlanRequest,
-	config acquisitionplan.MetadataConfig,root string,admit StrictTransferAdmission,current StrictTransferCurrent,start StrictTransferStarter,grant *workerproto.StageAllocation)([]acquisitionplan.VerifiedTransferFile,error){
+	config acquisitionplan.MetadataConfig,root string,admit StrictTransferAdmission,current StrictTransferCurrent,start StrictTransferStarter,grant *workerproto.StageAllocation,version string)([]acquisitionplan.VerifiedTransferFile,error){
 	if set==nil||admit==nil||current==nil||start==nil||!workerproto.ValidTransferPlan(q){return nil,ErrStrictTransferOperation}
 	ctx,manifest,finish,err:=admit(caller,q)
 	if err!=nil{return nil,err}
@@ -93,7 +93,7 @@ func runStrictTransfer(caller context.Context,set *OperationSet,q workerproto.Tr
 		if err!=nil||!allowed()||!commands.VerifyFiles()||!withinBudget(){return nil,ErrStrictTransferOperation}
 		switch step.stage{
 		case TransferVersion:
-			if strings.TrimSpace(string(out))!=acquisitionplan.StrictQualifiedVersion{return nil,ErrStrictTransferOperation}
+			if strings.TrimSpace(string(out))!=version{return nil,ErrStrictTransferOperation}
 		case TransferNegative:
 			if !acquisitionplan.ValidatePredicateProbe(out,false){return nil,ErrStrictTransferOperation}
 		case TransferPositive:

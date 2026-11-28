@@ -68,6 +68,21 @@ func readLiveConfig(path string) (windowregistry.LiveConfig, error) {
 	return conf.bind(path)
 }
 
+func seedBundledPolicy(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString("[tags]\nstrict_blacklist = true\nblacklist = [\"violence\"]\n")
+	return errors.Join(err, f.Close())
+}
+
 func (conf *liveSettings) bind(path string) (windowregistry.LiveConfig, error) {
 	var out windowregistry.LiveConfig
 	if strings.TrimSpace(conf.GalleryDL.Raw) != "" || conf.Downloader.Folder != "" {
@@ -97,13 +112,29 @@ func liveRuntimePath(configured string) (string, error) {
 	if configured == "" || configured == "gallery-dl" {
 		configured = desktop.BundledTool("gallery-dl")
 		if configured == "" {
-			return "", errors.New("no bundled gallery-dl executable; set an absolute executable path in acquisition settings")
+			configured = macRuntimeLauncher()
+			if configured == "" {
+				return "", errors.New("no bundled gallery-dl executable; set an absolute executable path in acquisition settings")
+			}
 		}
 	}
 	if !filepath.IsAbs(configured) {
 		return "", errors.New("the gallery-dl executable path must be absolute")
 	}
 	return filepath.EvalSymlinks(configured)
+}
+
+func macRuntimeLauncher() string {
+	dir := desktop.ExeDir()
+	if filepath.Base(dir) != "MacOS" || filepath.Base(filepath.Dir(dir)) != "Contents" {
+		return ""
+	}
+	p := filepath.Join(dir, "..", "Resources", "runtime", "gallery-dl")
+	fi, err := os.Stat(p)
+	if err != nil || !fi.Mode().IsRegular() || fi.Mode().Perm()&0o111 == 0 {
+		return ""
+	}
+	return p
 }
 
 func prepareLiveDirectory(configPath string) (string, error) {

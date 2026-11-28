@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS counters (
 CREATE TABLE IF NOT EXISTS watches (
     id             INTEGER PRIMARY KEY,
     url            TEXT NOT NULL UNIQUE,
+    gallery        TEXT NOT NULL DEFAULT '',
     interval_hours INTEGER NOT NULL,
     max_items      INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL,
@@ -78,8 +79,12 @@ func OpenStore(dir string) (*Store, error) {
 		return nil, fmt.Errorf("creating queue store schema: %w", err)
 	}
 	// A database created before the write-order guard or the watch cap lacks the column.
-	for _, c := range []struct{ table, column string }{{"jobs", "seq"}, {"watches", "max_items"}} {
-		if err := addColumn(db, c.table, c.column, "INTEGER NOT NULL DEFAULT 0"); err != nil {
+	for _, c := range []struct{ table, column, definition string }{
+		{"jobs", "seq", "INTEGER NOT NULL DEFAULT 0"},
+		{"watches", "max_items", "INTEGER NOT NULL DEFAULT 0"},
+		{"watches", "gallery", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := addColumn(db, c.table, c.column, c.definition); err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("migrating queue store schema: %w", err)
 		}
@@ -101,7 +106,7 @@ func (s *Store) Close() error { return s.db.Close() }
 // storedJob carries the jobState fields tagged json:"-": the API drops
 // them but a reloaded job needs them.
 type storedJob struct {
-	ManagedIntentID string `json:"managed_intent_id,omitempty"`
+	ManagedIntentID string    `json:"managed_intent_id,omitempty"`
 	Job             jobState  `json:"job"`
 	Subcategory     string    `json:"subcategory,omitempty"`
 	Offset          int       `json:"offset,omitempty"`
@@ -130,7 +135,7 @@ func (s *Store) HighestJobID() (int64, error) {
 
 func (s *Store) SaveJob(j *Job) error {
 	rec := storedJob{
-		ManagedIntentID:j.ManagedIntentID,
+		ManagedIntentID: j.ManagedIntentID,
 		Job:             j.jobState,
 		Subcategory:     j.Subcategory,
 		Offset:          j.Offset,
@@ -152,7 +157,10 @@ func (s *Store) SaveJob(j *Job) error {
 	}
 	// The workers and the API goroutines snapshot in one order but can Exec
 	// in another; the seq guard keeps a stale snapshot from regressing the row.
-	tx,err:=s.db.Begin();if err!=nil{return err}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
 	defer tx.Rollback()
 	_, err = tx.Exec(
 		`INSERT INTO jobs (id, status, data, seq) VALUES (?, ?, ?, ?)
@@ -163,13 +171,21 @@ func (s *Store) SaveJob(j *Job) error {
 	if err != nil {
 		return err
 	}
-	if j.ManagedIntentID!=""{
-		if !workerproto.ValidQueueIntentID(j.ManagedIntentID){return fmt.Errorf("invalid managed submission")}
-		if _,err=tx.Exec("INSERT INTO managed_submissions(intent_id,job_id) VALUES(?,?) ON CONFLICT(intent_id) DO NOTHING",j.ManagedIntentID,j.ID);err!=nil{return err}
+	if j.ManagedIntentID != "" {
+		if !workerproto.ValidQueueIntentID(j.ManagedIntentID) {
+			return fmt.Errorf("invalid managed submission")
+		}
+		if _, err = tx.Exec("INSERT INTO managed_submissions(intent_id,job_id) VALUES(?,?) ON CONFLICT(intent_id) DO NOTHING", j.ManagedIntentID, j.ID); err != nil {
+			return err
+		}
 		var assigned int64
-		if err=tx.QueryRow("SELECT job_id FROM managed_submissions WHERE intent_id=?",j.ManagedIntentID).Scan(&assigned);err!=nil||assigned!=j.ID{return fmt.Errorf("managed submission already assigned")}
+		if err = tx.QueryRow("SELECT job_id FROM managed_submissions WHERE intent_id=?", j.ManagedIntentID).Scan(&assigned); err != nil || assigned != j.ID {
+			return fmt.Errorf("managed submission already assigned")
+		}
 	}
-	if _,err=tx.Exec(bumpHighWater,jobIDHighWater,j.ID);err!=nil{return err}
+	if _, err = tx.Exec(bumpHighWater, jobIDHighWater, j.ID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -232,7 +248,7 @@ func (s *Store) LoadJobs() ([]*Job, error) {
 			continue
 		}
 		st := rec.Job
-		st.ManagedIntentID=rec.ManagedIntentID
+		st.ManagedIntentID = rec.ManagedIntentID
 		st.Subcategory = rec.Subcategory
 		st.Offset = rec.Offset
 		st.Auto = rec.Auto
@@ -287,7 +303,7 @@ func (s *Store) MarkBookBlacklisted(url string, meta map[string]any) error {
 	return err
 }
 
-func (s *Store) InsertWatch(url string, intervalHours, maxItems int, createdAt time.Time, last WatchCheck) (int64, error) {
+func (s *Store) InsertWatch(url, gallery string, intervalHours, maxItems int, createdAt time.Time, last WatchCheck) (int64, error) {
 	data, err := json.Marshal(last)
 	if err != nil {
 		return 0, err
@@ -295,10 +311,10 @@ func (s *Store) InsertWatch(url string, intervalHours, maxItems int, createdAt t
 	// Past every id ever issued, not only the live ones: a removed watch's
 	// check may still be queued under its id.
 	res, err := s.db.Exec(
-		`INSERT INTO watches (id, url, interval_hours, max_items, created_at, last)
+		`INSERT INTO watches (id, url, gallery, interval_hours, max_items, created_at, last)
 		 VALUES (max(coalesce((SELECT max(id) FROM watches), 0),
-		             coalesce((SELECT n FROM counters WHERE name = ?), 0)) + 1, ?, ?, ?, ?, ?)`,
-		watchIDHighWater, url, intervalHours, maxItems, createdAt.UTC().Format(time.RFC3339Nano), string(data))
+		             coalesce((SELECT n FROM counters WHERE name = ?), 0)) + 1, ?, ?, ?, ?, ?, ?)`,
+		watchIDHighWater, url, gallery, intervalHours, maxItems, createdAt.UTC().Format(time.RFC3339Nano), string(data))
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return 0, ErrWatchExists
@@ -345,7 +361,7 @@ func (s *Store) DeleteWatch(id int64) error {
 }
 
 func (s *Store) LoadWatches() ([]Watch, error) {
-	rows, err := s.db.Query(`SELECT id, url, interval_hours, max_items, created_at, last FROM watches ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, url, gallery, interval_hours, max_items, created_at, last FROM watches ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +370,7 @@ func (s *Store) LoadWatches() ([]Watch, error) {
 	for rows.Next() {
 		var w Watch
 		var created, last string
-		if err := rows.Scan(&w.ID, &w.URL, &w.IntervalHours, &w.MaxItems, &created, &last); err != nil {
+		if err := rows.Scan(&w.ID, &w.URL, &w.Gallery, &w.IntervalHours, &w.MaxItems, &created, &last); err != nil {
 			// The table is a watch's only copy: one bad row must not cost
 			// the others.
 			logx.Warnf("queue: skipping an unreadable watch: %v", err)
@@ -371,13 +387,16 @@ func (s *Store) LoadWatches() ([]Watch, error) {
 	return out, rows.Err()
 }
 
-
 // ManagedSubmissionJob remains available after history eviction; job
 // IDs are never recycled and a lost acknowledgement cannot enqueue again.
-func(s *Store) ManagedSubmissionJob(intent string)(int64,error){
-	if !workerproto.ValidQueueIntentID(intent){return 0,fmt.Errorf("invalid managed submission")}
+func (s *Store) ManagedSubmissionJob(intent string) (int64, error) {
+	if !workerproto.ValidQueueIntentID(intent) {
+		return 0, fmt.Errorf("invalid managed submission")
+	}
 	var id int64
-	err:=s.db.QueryRow("SELECT job_id FROM managed_submissions WHERE intent_id=?",intent).Scan(&id)
-	if errors.Is(err,sql.ErrNoRows){return 0,nil}
-	return id,err
+	err := s.db.QueryRow("SELECT job_id FROM managed_submissions WHERE intent_id=?", intent).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return id, err
 }

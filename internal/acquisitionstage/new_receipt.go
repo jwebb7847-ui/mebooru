@@ -6,7 +6,6 @@ import(
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"image"
 	"io"
 	_ "image/png"
 	"os"
@@ -145,8 +144,7 @@ func(a *Allocator)landNewPreparedLocked(ctx context.Context,grant workerproto.St
 			file,err:=os.Open(path)
 			if err!=nil{return err}
 			defer file.Close()
-			cfg,format,err:=image.DecodeConfig(file)
-			if err!=nil||format!=guardedImageFormat(f.RelativeName)||cfg.Width<=0||cfg.Height<=0{return ErrStageRefused}
+			if _,_,valid:=plannedMediaDimensions(ctx,file,guardedImageFormat(f.RelativeName));!valid{return ErrStageRefused}
 			return nil
 		}})
 		if err!=nil||res.Image==nil||res.Duplicate||res.Dropped||res.Image.CanonicalPath!=path{return ErrStageRecovery}

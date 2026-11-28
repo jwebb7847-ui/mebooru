@@ -62,7 +62,11 @@ func lookPath(name string, fallbackDirs ...string) string {
 const ffmpegTimeout = 60 * time.Second
 
 func runFFmpeg(combinedOutput bool, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), ffmpegTimeout)
+	return runFFmpegContext(context.Background(), combinedOutput, name, args...)
+}
+
+func runFFmpegContext(parent context.Context, combinedOutput bool, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(parent, ffmpegTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	desktop.HideConsole(cmd)
@@ -274,6 +278,15 @@ func ProbeVideoDimensions(srcPath string) (int, int, bool) {
 	return p.width, p.height, p.width > 0
 }
 
+func ProbeAcquiredVideo(ctx context.Context, srcPath, format string) (int, int, bool) {
+	magic, err := MagicFileType(srcPath)
+	if err != nil || magic != format || !IsVideoType(magic) {
+		return 0, 0, false
+	}
+	p := probeVideoContext(ctx, srcPath)
+	return p.width, p.height, p.width > 0 && p.height > 0
+}
+
 type videoProbe struct {
 	width, height int
 	duration      float64
@@ -283,12 +296,17 @@ type videoProbe struct {
 // The size is the display size: the thumbnail and the player apply a
 // phone video's rotation, so a quarter turn swaps the coded width and height.
 func probeVideo(srcPath string) videoProbe {
+	return probeVideoContext(context.Background(), srcPath)
+}
+
+func probeVideoContext(ctx context.Context, srcPath string) videoProbe {
 	var p videoProbe
 	if !ffprobeAvailable() {
 		return p
 	}
-	out, err := runFFmpeg(false, ffprobePath,
+	out, err := runFFmpegContext(ctx, false, ffprobePath,
 		"-v", "quiet",
+		"-protocol_whitelist", "file",
 		"-select_streams", "v:0",
 		"-show_entries", "format=duration:format_tags=prompt,workflow:stream=width,height:stream_side_data=rotation:stream_tags=rotate",
 		"-print_format", "json",

@@ -24,6 +24,7 @@ const watchTick = time.Minute
 
 type WatchCheck struct {
 	CheckedAt   time.Time `json:"checked_at"`
+	LastSuccess time.Time `json:"last_success,omitzero"`
 	JobID       int64     `json:"job_id,omitempty"`
 	Site        string    `json:"site,omitempty"`
 	Subcategory string    `json:"subcategory,omitempty"`
@@ -53,6 +54,7 @@ func (c WatchCheck) needsBypass() bool {
 type Watch struct {
 	ID            int64
 	URL           string
+	Gallery       string
 	IntervalHours int
 	// 0 takes the configured cap; ItemsAll chains windows until the check
 	// reaches posts it already has.
@@ -60,7 +62,8 @@ type Watch struct {
 	CreatedAt time.Time
 	Last      WatchCheck
 	// Set only on the copies Watches returns.
-	Live bool
+	Live    bool
+	LiveJob int64
 }
 
 func (w Watch) Next() time.Time {
@@ -78,7 +81,13 @@ func (q *Queue) Watches() []Watch {
 	out := make([]Watch, len(q.watches))
 	for i, w := range q.watches {
 		out[i] = *w
-		out[i].Live = q.watchLiveLocked(w.ID)
+		out[i].Live = q.liveLocked(func(j *Job) bool {
+			if j.Watch != w.ID {
+				return false
+			}
+			out[i].LiveJob = j.ID
+			return true
+		})
 	}
 	return out
 }
@@ -87,6 +96,10 @@ func (q *Queue) Watches() []Watch {
 // first check; nil leaves the watch due at once, owing what the url's last run
 // never pushed.
 func (q *Queue) AddWatch(url string, intervalHours, maxItems int, from *Job) (int64, error) {
+	return q.addWatch(url, "", intervalHours, maxItems, from)
+}
+
+func (q *Queue) addWatch(url, gallery string, intervalHours, maxItems int, from *Job) (int64, error) {
 	if q.store == nil {
 		return 0, ErrNoWatchStore
 	}
@@ -108,12 +121,12 @@ func (q *Queue) AddWatch(url string, intervalHours, maxItems int, from *Job) (in
 		q.mu.Unlock()
 	}
 	now := q.now()
-	id, err := q.store.InsertWatch(url, intervalHours, maxItems, now, last)
+	id, err := q.store.InsertWatch(url, gallery, intervalHours, maxItems, now, last)
 	if err != nil {
 		return 0, err
 	}
 	q.mu.Lock()
-	q.watches = append(q.watches, &Watch{ID: id, URL: url, IntervalHours: intervalHours, MaxItems: maxItems, CreatedAt: now, Last: last})
+	q.watches = append(q.watches, &Watch{ID: id, URL: url, Gallery: gallery, IntervalHours: intervalHours, MaxItems: maxItems, CreatedAt: now, Last: last})
 	q.mu.Unlock()
 	return id, nil
 }
@@ -172,7 +185,10 @@ func (q *Queue) RemoveWatch(id int64) error {
 // own work, as the schedule does.
 func (q *Queue) CheckWatch(id int64, background bool) (int64, error) {
 	q.mu.Lock()
-	if q.managedRetiring || q.managed!=nil&&(q.closed || background&&(q.managedOffline||!q.managedWatchesEnabled)||q.managedStoreFault) { q.mu.Unlock();return 0,errStopping }
+	if q.managedRetiring || q.managed != nil && (q.closed || background && (q.managedOffline || !q.managedWatchesEnabled) || q.managedStoreFault) {
+		q.mu.Unlock()
+		return 0, errStopping
+	}
 	w := q.findWatchLocked(id)
 	if w == nil {
 		q.mu.Unlock()
@@ -212,7 +228,10 @@ func (q *Queue) RunWatches(ctx context.Context, held func() bool) {
 func (q *Queue) queueDueWatches() {
 	now := q.now()
 	q.mu.Lock()
-	if q.managedOffline||q.managedRetiring||q.managedStoreFault||q.managed!=nil&&!q.managedWatchesEnabled { q.mu.Unlock();return }
+	if q.managedOffline || q.managedRetiring || q.managedStoreFault || q.managed != nil && !q.managedWatchesEnabled {
+		q.mu.Unlock()
+		return
+	}
 	var ids []int64
 	for _, w := range q.watches {
 		if w.IntervalHours > 0 && !now.Before(w.Next()) && !q.watchLiveLocked(w.ID) {
@@ -426,7 +445,15 @@ func (q *Queue) updateWatchCheck(id int64, update func(*WatchCheck)) {
 		q.mu.Unlock()
 		return
 	}
+	previousSuccess := w.Last.LastSuccess
+	if w.Last.Status == JobSucceeded && previousSuccess.IsZero() {
+		previousSuccess = w.Last.CheckedAt
+	}
 	update(&w.Last)
+	w.Last.LastSuccess = previousSuccess
+	if w.Last.Status == JobSucceeded {
+		w.Last.LastSuccess = w.Last.CheckedAt
+	}
 	last := w.Last
 	q.mu.Unlock()
 	if q.store == nil {
@@ -470,16 +497,24 @@ func (j *Job) quietWatchCheck() bool {
 // RunManagedWatches is the managed service's clock/wake loop. The
 // existing due-check path enforces explicit watch enablement, offline
 // and retirement under the queue lock. Wake coalesces policy transitions.
-func(q *Queue) RunManagedWatches(ctx context.Context,wake <-chan struct{}){
-	if q.managed==nil{return}
-	t:=time.NewTicker(watchTick);defer t.Stop()
-	for{
+func (q *Queue) RunManagedWatches(ctx context.Context, wake <-chan struct{}) {
+	if q.managed == nil {
+		return
+	}
+	t := time.NewTicker(watchTick)
+	defer t.Stop()
+	for {
 		q.queueDueWatches()
-		select{
-		case <-ctx.Done():return
-		case <-q.stopped:return
+		select {
+		case <-ctx.Done():
+			return
+		case <-q.stopped:
+			return
 		case <-t.C:
-		case _,ok:=<-wake:if !ok{wake=nil}
+		case _, ok := <-wake:
+			if !ok {
+				wake = nil
+			}
 		}
 	}
 }

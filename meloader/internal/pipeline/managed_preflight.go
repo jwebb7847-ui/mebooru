@@ -36,7 +36,7 @@ func newManagedPreflight(w *ManagedEvidenceWindow,identity acquisitionplan.Metad
 	config acquisitionplan.MetadataConfig,policyGeneration uint64,observe TransferObserver)(*ManagedPreflight,error){
 	if w==nil||w.mapper==nil||observe==nil||policyGeneration==0||config.Source!=w.grant.Source{return nil,ErrManagedPreflight}
 	cfg,err:=config.Identity()
-	if err!=nil||cfg!=identity.Config||identity.Runtime.Generation==0||identity.Runtime.Version!=acquisitionplan.StrictQualifiedVersion{return nil,ErrManagedPreflight}
+	if err!=nil||cfg!=identity.Config||identity.Runtime.Generation==0||!acquisitionplan.StrictRuntimeQualified(identity.Runtime.Version){return nil,ErrManagedPreflight}
 	return &ManagedPreflight{window:w,identity:identity,config:config,policyGeneration:policyGeneration,
 		stamp:w.mapper.CaptureStrictPolicy(),observe:observe},nil
 }
@@ -180,5 +180,5 @@ func NewManagedPreflightFromCompletion(ctx context.Context,completion *processgu
 func(a *ManagedTransferApproval) RunAllocatedTransfer(caller context.Context,grant workerproto.StageAllocation,set *processguard.OperationSet,root string,start processguard.StrictTransferStarter)([]acquisitionplan.VerifiedTransferFile,error){
 	if a==nil||a.preflight==nil||a.plan==nil||grant.Request.Transfer!=a.Request(){return nil,ErrManagedPreflight}
 	p:=a.preflight
-	return processguard.RunAllocatedStrictTransfer(caller,set,grant,p.config,root,a.admit,p.current,start)
+	return processguard.RunAllocatedStrictTransfer(caller,set,grant,p.config,root,a.admit,p.current,start,p.identity.Runtime.Version)
 }

@@ -2,6 +2,7 @@ package windowregistry
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -25,6 +26,7 @@ const MaxLivePolicy = 12 << 20
 // existing Meloader config, which the contained policy process reads.
 type LiveConfig struct {
 	Runtime, RuntimeSHA256, PolicyConfig string
+	RuntimeWheel, RuntimeWheelSHA256     string
 	SleepRequest                         float64
 	MaxItems                             int
 }
@@ -39,7 +41,17 @@ func LoadLive(dir string) (LiveConfig, error) {
 		cfg.SleepRequest < 0 || math.IsInf(cfg.SleepRequest, 0) || math.IsNaN(cfg.SleepRequest) || cfg.MaxItems < 1 || cfg.MaxItems > workerproto.MaxMetadataWindow {
 		return LiveConfig{}, ErrWindow
 	}
+	if cfg.RuntimeWheel != "" && (!filepath.IsAbs(cfg.RuntimeWheel) || !validHex(cfg.RuntimeWheelSHA256, 32)) {
+		return LiveConfig{}, ErrWindow
+	}
 	return cfg, nil
+}
+
+func (c LiveConfig) Version() string {
+	if c.RuntimeWheel != "" {
+		return acquisitionplan.StrictQualifiedUpdateVersion
+	}
+	return acquisitionplan.StrictQualifiedVersion
 }
 
 func (c LiveConfig) Identity(source string) (acquisitionplan.MetadataConfig, acquisitionplan.MetadataIdentity) {
@@ -47,7 +59,7 @@ func (c LiveConfig) Identity(source string) (acquisitionplan.MetadataConfig, acq
 	digest, _ := config.Identity()
 	return config, acquisitionplan.MetadataIdentity{
 		Config:  digest,
-		Runtime: acquisitionplan.RuntimeIdentity{Generation: 1, Version: acquisitionplan.StrictQualifiedVersion, ArtifactSHA256: c.RuntimeSHA256, ManifestSHA256: c.RuntimeSHA256},
+		Runtime: acquisitionplan.RuntimeIdentity{Generation: 1, Version: c.Version(), ArtifactSHA256: c.RuntimeSHA256, ManifestSHA256: cmp.Or(c.RuntimeWheelSHA256, c.RuntimeSHA256)},
 	}
 }
 

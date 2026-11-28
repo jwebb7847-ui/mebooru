@@ -13,6 +13,11 @@ import (
 // StrictQualifiedVersion is the existing strict predicate qualification,
 // not release authentication. Changing it requires source/transfer evidence.
 const StrictQualifiedVersion = "1.32.19"
+const StrictQualifiedUpdateVersion = "1.32.21"
+
+func StrictRuntimeQualified(version string) bool {
+	return version == StrictQualifiedVersion || version == StrictQualifiedUpdateVersion
+}
 
 // RuntimeIdentity is an independently established custody-side observation,
 // never a worker DTO. The artifact and dependency manifest digests must
@@ -32,7 +37,7 @@ func validDigest(s string) bool {
 }
 
 func (r RuntimeIdentity) valid() bool {
-	return r.Generation != 0 && r.Version == StrictQualifiedVersion &&
+	return r.Generation != 0 && StrictRuntimeQualified(r.Version) &&
 		validDigest(r.ArtifactSHA256) && validDigest(r.ManifestSHA256)
 }
 

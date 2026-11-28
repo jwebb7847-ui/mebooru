@@ -69,13 +69,16 @@ func disposableManagedConfig(dir string) (*config.Config, managedqa.Setup, error
 // managedApplication connects the library HTTP handlers to the same
 // private queue, custodian and gallery owner used by the executable probe.
 type managedApplication struct {
-	manager  *acquisitionpolicy.Manager
-	owner    *managedWindowOwner
-	store    *acquisitionpolicy.Store
-	cancel   context.CancelFunc
-	done     chan struct{}
-	wake     chan struct{}
-	policyMu sync.Mutex
+	manager        *acquisitionpolicy.Manager
+	owner          *managedWindowOwner
+	store          *acquisitionpolicy.Store
+	cancel         context.CancelFunc
+	done           chan struct{}
+	wake           chan struct{}
+	policyMu       sync.Mutex
+	runtimeMu      sync.Mutex
+	runtimeProbe   sync.Once
+	runtimeVersion string
 }
 
 func openManagedApplication(dir string, setup managedqa.Setup, live *windowregistry.LiveConfig, set *library.Set, naming config.GalleryConfig) (*managedApplication, error) {

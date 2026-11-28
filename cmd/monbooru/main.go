@@ -126,30 +126,35 @@ func main() {
 		}
 	} else if *desktopMode {
 		dialogOnFatal = true
-		resolved, err := desktop.Resolve(appName, explicitFlag("config", *configPath))
+		explicitProfile := explicitFlag("config", *configPath)
+		resolved, err := desktop.Resolve(appName, explicitProfile)
 		if err != nil {
 			fatalf("resolving the desktop paths: %v", err)
 		}
 		layout = resolved
+		if explicitProfile != "" {
+			layout.DataDir = filepath.Join(layout.ConfigDir, "data")
+			layout.LogDir = filepath.Join(layout.DataDir, "logs")
+		}
 		*configPath = layout.ConfigPath
 		// Claim before logging creates this directory. An old profile with
 		// its TOML removed is not fresh and must never regain trust.
-		if useBundledMeloader == "true" && !layout.Portable &&
-			explicitFlag("config", *configPath) == "" {
+		if useBundledMeloader == "true" && defaultManagedAcquisition != "true" && !layout.Portable &&
+			explicitProfile == "" {
 			var claimErr error
 			newBundleProfile, claimErr = claimNewProfileDir(layout.ConfigDir)
 			if claimErr != nil {
 				logx.Warnf("could not claim a fresh desktop profile")
 			}
 		}
-		profile = internalweb.Desktop{Active: true, LogDir: layout.LogDir}
+		profile = internalweb.Desktop{Active: true, LogDir: layout.LogDir, ExplicitProfile: explicitProfile != ""}
 		// Before config load, so every fatal below reaches the file too.
 		if f, err := desktop.OpenLog(layout.LogDir, appName); err != nil {
 			logx.Warnf("could not open a log file under %s: %v", layout.LogDir, err)
 		} else {
 			defer func() { _ = f.Close() }()
 		}
-		seed = desktopSeed(layout)
+		seed = desktopSeed(layout, explicitProfile != "")
 	} else if !inContainer() {
 		seed = hostSeed(*configPath)
 	}
@@ -164,6 +169,11 @@ func main() {
 		load = config.LoadPortable
 	}
 	if cfg == nil {
+		if *desktopMode && freshConfig && defaultManagedAcquisition == "true" && *meloaderConfig == "" {
+			if err := seedBundledPolicy(filepath.Join(filepath.Dir(*configPath), bundledPolicyConfig)); err != nil {
+				logx.Warnf("creating acquisition settings: %v", err)
+			}
+		}
 		cfg, err = load(*configPath, seed)
 		if err != nil {
 			fatalf("loading config: %v", err)
@@ -225,6 +235,7 @@ func main() {
 				if err != nil {
 					return fmt.Errorf("managed acquisition profile: %w", err)
 				}
+				selectRuntimeWheel(dir, &options)
 				live = &options
 			}
 			return srv.AttachManagedLoader(func(set *library.Set) (internalweb.ManagedLoader, error) {

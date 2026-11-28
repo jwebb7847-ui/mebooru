@@ -59,6 +59,7 @@ type settingsData struct {
 	AcquisitionError   bool
 	AcquisitionSaved   bool
 	AcquisitionMax     int
+	RuntimeMessage     string
 	AcqUnavailable     string
 	FFmpegAvailable    bool
 }
@@ -105,6 +106,7 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 	taggerRows := append(supportedRows, unsupportedRows...)
 	var acquisition AcquisitionSettings
 	var acquisitionErr error
+	var runtimeMessage string
 	var offline bool
 	var legacy loaderPanel
 	managed := s.usesManagedLoader()
@@ -113,6 +115,7 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		offline = s.managedLoader.Offline()
 		if editor, ok := s.managedLoader.(managedSettingsEditor); ok && local {
 			acquisition, acquisitionErr = editor.ReadAcquisitionSettings()
+			runtimeMessage = r.URL.Query().Get("runtime_message")
 		}
 	} else if !managed {
 		legacy = s.loaderPanel(r, base, "/settings")
@@ -140,6 +143,7 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		AcquisitionError:   acquisitionErr != nil,
 		AcquisitionSaved:   local && managed && r.URL.Query().Get("acquisition") == "saved",
 		AcquisitionMax:     workerproto.MaxMetadataWindow,
+		RuntimeMessage:     runtimeMessage,
 		AcqUnavailable:     s.acquisitionUnavailableMessage(),
 		Themes:             s.themeCluster(),
 		ThemesDir:          s.themesDir(),

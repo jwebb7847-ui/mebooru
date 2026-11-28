@@ -203,6 +203,7 @@ func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 		if provider, ok := s.managedLoader.(managedSettingsProvider); ok {
 			limit = provider.AcquisitionSettings().MaxItems
 		}
+		watches.markUnavailable(destinations, limit)
 	}
 	s.renderTemplate(w, "loader.html", struct {
 		baseData

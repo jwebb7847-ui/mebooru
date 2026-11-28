@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+runtime="${0%/*}"
+exec "$runtime/python/bin/python3" -IB "$runtime/gallery-dl.py" "$@"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -29,11 +30,13 @@ type managedRetry interface {
 }
 
 type AcquisitionSettings struct {
-	Runtime, PolicyFile string
-	Blacklist           string
-	SleepRequest        float64
-	MaxItems            int
-	NeedsRestart        bool
+	Runtime, PolicyFile                                                 string
+	Blacklist                                                           string
+	SleepRequest                                                        float64
+	MaxItems                                                            int
+	NeedsRestart                                                        bool
+	RuntimeVersion, RuntimeSource, RuntimeSelection                     string
+	RuntimeReady, RuntimeUpdates, RuntimeRollback, RuntimeUpdateDamaged bool
 }
 
 type managedSettingsProvider interface {
@@ -43,6 +46,10 @@ type managedSettingsProvider interface {
 type managedSettingsEditor interface {
 	ReadAcquisitionSettings() (AcquisitionSettings, error)
 	SaveAcquisitionSettings(context.Context, AcquisitionSettings) error
+}
+
+type managedRuntimeEditor interface {
+	RuntimeAction(context.Context, string) (string, error)
 }
 
 var ErrManagedImportUnsupported = errors.New("unsupported managed import")
@@ -104,6 +111,31 @@ func (s *Server) saveAcquisitionSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	hxRedirect(w, r, "/settings?acquisition=saved#meloader")
+}
+
+func (s *Server) acquisitionRuntime(w http.ResponseWriter, r *http.Request) {
+	if s.refuseUnavailableAcquisition(w, r) {
+		return
+	}
+	editor, ok := s.managedLoader.(managedRuntimeEditor)
+	if !ok || !desktop.LocalRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	if !parseFormOK(w, r) {
+		return
+	}
+	message, err := editor.RuntimeAction(r.Context(), r.FormValue("action"))
+	if err != nil {
+		message = "Could not change the acquisition runtime."
+		if errors.Is(err, workerproto.ErrOffline) {
+			message = "Go online to check for or install a runtime update."
+		} else if !errors.Is(err, ErrManagedImportUnsupported) {
+			message = err.Error()
+		}
+	}
+	hxRedirect(w, r, "/settings?runtime_message="+url.QueryEscape(message)+"#acquisition-runtime")
 }
 
 func (s *Server) loaderOffline(w http.ResponseWriter, r *http.Request) {
