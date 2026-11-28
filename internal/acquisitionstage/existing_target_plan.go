@@ -21,6 +21,8 @@ import (
 // A future version must bind actual owner duplicate policy, naming and
 // downstream writes; this callback is an isolated owner fixture only.
 const existingTargetPlanName = "existing-target-plan.json"
+const existingTargetAnchorName = "existing-target-anchor"
+const maxExistingTargetAnchorBytes = 64
 
 type existingDispositionAuthority func(context.Context, workerproto.StageAllocation) (string, error)
 
@@ -84,6 +86,8 @@ func readExistingTargetPlan(p *os.Root,r record,f acquisitionplan.VerifiedTransf
 	var m existingTargetPlan
 	raw,err:=boundedRegularBytes(p,existingTargetPlanName,maxPlannedAttemptBytes)
 	if err!=nil||json.Unmarshal(raw,&m)!=nil{return existingTargetPlan{},ErrStageRecovery}
+	anchor,err:=boundedRegularBytes(p,existingTargetAnchorName,maxExistingTargetAnchorBytes)
+	if err!=nil||string(anchor)!=digestBytes(raw){return existingTargetPlan{},ErrStageRecovery}
 	canonical,err:=encodeExistingTargetPlan(m,r,f)
 	if err!=nil||!bytes.Equal(raw,canonical){return existingTargetPlan{},ErrStageRecovery}
 	return m,nil
@@ -110,11 +114,21 @@ func(a *Allocator) recordExistingTargetPlan(ctx context.Context,grant workerprot
 	if err!=nil{return err}
 	defer p.Close();defer src.Close();defer dst.Close()
 	if len(e.Files)!=1{return ErrStageRefused}
-	if _,err:=p.Lstat(existingTargetPlanName);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
+	for _,name:=range []string{existingTargetPlanName,existingTargetAnchorName}{
+		if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
+	}
 	m:=existingTargetPlan{Version:1,Target:current}
 	raw,err:=encodeExistingTargetPlan(m,r,e.Files[0])
 	if err!=nil{return err}
 	scope,err:=a.scope(ctx,grant.Request)
+	if err!=nil||!matches(r,scope)||!a.livePublicationRoots(grant,r,p,src,dst){return ErrStageRefused}
+	// Record the independent digest anchor first. A crash between the
+	// two exclusive writes leaves a refused partial plan, never permission
+	// to proceed with an older publication path. Loss of either record
+	// alone is detectable; this is not a same-user tamper-proof ledger.
+	if err:=writeOwnerBytes(ctx,p,existingTargetAnchorName,[]byte(digestBytes(raw)));err!=nil{return err}
+	syncDirectory(p)
+	scope,err=a.scope(ctx,grant.Request)
 	if err!=nil||!matches(r,scope)||!a.livePublicationRoots(grant,r,p,src,dst){return ErrStageRefused}
 	if err:=writeOwnerBytes(ctx,p,existingTargetPlanName,raw);err!=nil{return err}
 	syncDirectory(p)

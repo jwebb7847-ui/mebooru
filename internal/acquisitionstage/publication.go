@@ -49,7 +49,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	for _,entry:=range entries{
 		name:=entry.Name()
 		switch name{
-		case "media","intent.json",existingTargetPlanName,"attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json","operation-closed.json":
+		case "media","intent.json",existingTargetPlanName,existingTargetAnchorName,"attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json","operation-closed.json":
 			names[name]=true
 		default:return zero,ErrStageRecovery
 		}
@@ -105,9 +105,10 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		delete(want,item.Name())
 	}
 	// Existing-target planning is mutually exclusive with all later markers.
-	// Its reservation uses the same bounded allowance as the publication attempt.
-	if names[existingTargetPlanName]{
-		if len(names)!=3||len(e.Files)!=1{return zero,ErrStageRecovery}
+	// Its reservation uses the same bounded allowance as the publication attempt,
+	// plus a small independent anchor. Partial records fail closed.
+	if names[existingTargetPlanName]||names[existingTargetAnchorName]{
+		if !names[existingTargetPlanName]||!names[existingTargetAnchorName]||len(names)!=4||len(e.Files)!=1{return zero,ErrStageRecovery}
 		if _,err:=readExistingTargetPlan(p,r,e.Files[0]);err!=nil{return zero,ErrStageRecovery}
 	}
 	var plan *newPublicationPlan
@@ -352,7 +353,9 @@ func(a *Allocator)publishPreparedLocked(ctx context.Context,g workerproto.StageA
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,g)
 	if err!=nil{return nil,err}
 	defer p.Close();defer src.Close();defer dst.Close()
-	if _,err:=p.Lstat(existingTargetPlanName);!errors.Is(err,os.ErrNotExist){return nil,ErrStageRefused}
+	for _,name:=range []string{existingTargetPlanName,existingTargetAnchorName}{
+		if _,err:=p.Lstat(name);!errors.Is(err,os.ErrNotExist){return nil,ErrStageRefused}
+	}
 	if _,err:=p.Lstat("attempt");!errors.Is(err,os.ErrNotExist){return nil,ErrStageRecovery}
 	if _,err:=inspectPlacements(ctx,g,e,p,src,dst);err!=nil{return nil,err}
 	sourcePath:=filepath.Join(a.path,g.Request.OperationID,"publication","media")

@@ -23,7 +23,7 @@ func TestExistingPublicationTarget(t *testing.T) {
 }
 
 func TestDurableExistingTargetPlan(t *testing.T){
-	testExistingPublicationTargetModes(t, []string{"plan held", "restore plan", "plan reopen", "plan forged", "plan stale", "plan wrong decision", "plan no decision", "plan revoke after marker", "plan changed after marker", "plan corrupt", "plan noncanonical", "plan changed record", "plan lost marker"})
+	testExistingPublicationTargetModes(t, []string{"plan held", "restore plan", "plan reopen", "plan forged", "plan stale", "plan wrong decision", "plan no decision", "plan revoke after marker", "plan changed after marker", "plan corrupt", "plan noncanonical", "plan changed record", "plan lost marker", "plan lost anchor", "plan partial anchor"})
 }
 
 func testExistingPublicationTargetModes(t *testing.T, modes []string){
@@ -151,11 +151,15 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 
 // No publication, landing, deletion or DB mutation is authorized by a
 // persisted existing-target decision. Changed or corrupt records refuse.
-func checkDurableExistingTargetPlan(t *testing.T,ctx context.Context,ap **Allocator,stage string,grant workerproto.StageAllocation,g *library.Gallery,got existingPublicationTarget,extras extrasAuthority,authority func(context.Context,workerproto.StageAllocateRequest)(Scope,error),mode string,count func()[2]int,before [2]int){
+func checkDurableExistingTargetPlan(t *testing.T,ctx context.Context,ap **Allocator,stage string,grant workerproto.StageAllocation,g *library.Gallery,got existingPublicationTarget,extras extrasAuthority,authority Authority,mode string,count func()[2]int,before [2]int){
 	t.Helper()
 	a:=*ap
 	dir:=filepath.Join(stage,grant.Request.OperationID,"publication")
 	path:=filepath.Join(dir,existingTargetPlanName)
+	anchor:=filepath.Join(dir,existingTargetAnchorName)
+	if mode=="plan partial anchor"{
+		if err:=os.WriteFile(anchor,[]byte(strings.Repeat("a",64)),0600);err!=nil{t.Fatal(err)}
+	}
 	injected:=false
 	decision:=existingDispositionAuthority(func(context.Context,workerproto.StageAllocation)(string,error){
 		if mode=="plan wrong decision"{return existingRestore,nil}
@@ -173,16 +177,21 @@ func checkDurableExistingTargetPlan(t *testing.T,ctx context.Context,ap **Alloca
 	if mode=="plan forged"{expected.ImageID++}
 	if mode=="plan stale"{if _,err:=g.DB.Write.Exec("UPDATE images SET note='changed' WHERE id=?",got.ImageID);err!=nil{t.Fatal(err)}}
 	err:=a.recordExistingTargetPlan(ctx,grant,g,expected,decision,extras)
-	pre:=mode=="plan forged"||mode=="plan stale"||mode=="plan wrong decision"||mode=="plan no decision"
+	pre:=mode=="plan forged"||mode=="plan stale"||mode=="plan wrong decision"||mode=="plan no decision"||mode=="plan partial anchor"
 	late:=mode=="plan revoke after marker"||mode=="plan changed after marker"
 	if (err!=nil)!=(pre||late){t.Fatal("record result",err)}
 	if count()!=before{t.Fatal("record changed gallery rows")}
 	if pre{
 		if _,err:=os.Stat(path);!os.IsNotExist(err){t.Fatal("premature plan",err)}
+		if mode=="plan partial anchor"{
+			if _,err:=a.publishPrepared(ctx,grant);err==nil{t.Fatal("partial anchor allowed publication")}
+			if _,err:=os.Stat(anchor);err!=nil{t.Fatal("partial anchor removed",err)}
+		}else if _,err:=os.Stat(anchor);!os.IsNotExist(err){t.Fatal("premature anchor",err)}
 		return
 	}
 	raw,err:=os.ReadFile(path)
 	if err!=nil||len(raw)==0{t.Fatal("missing durable plan",err)}
+	if b,err:=os.ReadFile(anchor);err!=nil||string(b)!=digestBytes(raw){t.Fatal("wrong plan anchor",err)}
 	// All older publication and landing entry points must remain blocked.
 	if _,err:=a.publishPrepared(ctx,grant);err==nil{t.Fatal("diagnostic publication consumed plan")}
 	if err:=a.beginLanding(ctx,grant,g);err==nil{t.Fatal("diagnostic landing consumed plan")}
@@ -221,9 +230,12 @@ func checkDurableExistingTargetPlan(t *testing.T,ctx context.Context,ap **Alloca
 		if err:=os.WriteFile(path,changed,0600);err!=nil{t.Fatal(err)}
 	case "plan lost marker":
 		if err:=os.Remove(path);err!=nil{t.Fatal(err)}
+	case "plan lost anchor":
+		if err:=os.Remove(anchor);err!=nil{t.Fatal(err)}
 	}
 	m,err:=a.observeExistingTargetPlan(ctx,grant,g,decision,extras)
 	want:=mode=="plan held"||mode=="restore plan"||mode=="plan reopen"
 	if (err==nil)!=want||want&&!sameExistingPublicationTarget(m.Target,got){t.Fatal("observation",m,err)}
+	if _,err:=a.publishPrepared(ctx,grant);err==nil{t.Fatal("damaged or valid plan allowed publication")}
 	if count()!=before{t.Fatal("observer changed gallery rows")}
 }
