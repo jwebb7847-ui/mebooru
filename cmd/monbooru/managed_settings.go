@@ -34,7 +34,7 @@ func (a *managedApplication) ReadAcquisitionSettings() (web.AcquisitionSettings,
 	settings.SleepRequest = conf.GalleryDL.Sleep
 	settings.MaxItems = conf.Downloader.Limit
 	settings.Blacklist = strings.Join(conf.Tags.Blacklist, "\n")
-	runtime, _ := filepath.EvalSymlinks(settings.Runtime)
+	runtime, _ := liveRuntimePath(settings.Runtime)
 	settings.NeedsRestart = runtime != a.owner.live.Runtime || settings.SleepRequest != a.owner.live.SleepRequest || settings.MaxItems != a.owner.live.MaxItems
 	return settings, nil
 }
@@ -70,7 +70,7 @@ func (a *managedApplication) SaveAcquisitionSettings(ctx context.Context, settin
 	conf.GalleryDL.Sleep = settings.SleepRequest
 	conf.Downloader.Limit = settings.MaxItems
 	if _, err := conf.bind(path); err != nil {
-		return errors.New("Use an installed gallery-dl path, a nonnegative request delay, and a supported maximum post count.")
+		return errors.New("Use the bundled gallery-dl or an absolute installed path, a nonnegative request delay, and a supported maximum post count.")
 	}
 	apply := func(section string, fields map[string]any) {
 		current, _ := document[section].(map[string]any)

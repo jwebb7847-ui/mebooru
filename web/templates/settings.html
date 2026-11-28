@@ -1370,7 +1370,7 @@
         </div>
         <div class="field">
           <label for="acquisition-runtime">gallery-dl executable</label>
-          <input id="acquisition-runtime" type="text" name="runtime" value="{{.Acquisition.Runtime}}" required>
+          <input id="acquisition-runtime" type="text" name="runtime" value="{{.Acquisition.Runtime}}" placeholder="Use bundled gallery-dl">
           <label for="acquisition-delay">Request delay (seconds)</label>
           <input id="acquisition-delay" type="number" name="sleep_request" min="0" step="any" value="{{.Acquisition.SleepRequest}}" required>
           <label for="acquisition-limit">Maximum posts per import</label>

@@ -13,6 +13,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/fsx"
 	"github.com/jwebb7847-ui/mebooru/shared/managedqa"
 	"github.com/jwebb7847-ui/mebooru/shared/windowregistry"
@@ -77,11 +78,11 @@ func (conf *liveSettings) bind(path string) (windowregistry.LiveConfig, error) {
 			return out, errors.New("managed acquisition does not yet support site credentials or custom extractor options")
 		}
 	}
-	if !filepath.IsAbs(conf.GalleryDL.Binary) || conf.GalleryDL.Sleep < 0 || math.IsInf(conf.GalleryDL.Sleep, 0) || math.IsNaN(conf.GalleryDL.Sleep) ||
+	if conf.GalleryDL.Sleep < 0 || math.IsInf(conf.GalleryDL.Sleep, 0) || math.IsNaN(conf.GalleryDL.Sleep) ||
 		conf.Downloader.Limit < 1 || conf.Downloader.Limit > workerproto.MaxMetadataWindow {
-		return out, errors.New("set an absolute gallery-dl binary_path and a bounded max_items_per_job in Meloader settings")
+		return out, errors.New("set a nonnegative gallery-dl sleep_request and a bounded max_items_per_job in acquisition settings")
 	}
-	runtime, err := filepath.EvalSymlinks(conf.GalleryDL.Binary)
+	runtime, err := liveRuntimePath(conf.GalleryDL.Binary)
 	if err != nil {
 		return out, err
 	}
@@ -90,6 +91,19 @@ func (conf *liveSettings) bind(path string) (windowregistry.LiveConfig, error) {
 		return out, fmt.Errorf("gallery-dl runtime: %w", err)
 	}
 	return windowregistry.LiveConfig{Runtime: runtime, RuntimeSHA256: hash, PolicyConfig: path, SleepRequest: conf.GalleryDL.Sleep, MaxItems: conf.Downloader.Limit}, nil
+}
+
+func liveRuntimePath(configured string) (string, error) {
+	if configured == "" || configured == "gallery-dl" {
+		configured = desktop.BundledTool("gallery-dl")
+		if configured == "" {
+			return "", errors.New("no bundled gallery-dl executable; set an absolute executable path in acquisition settings")
+		}
+	}
+	if !filepath.IsAbs(configured) {
+		return "", errors.New("the gallery-dl executable path must be absolute")
+	}
+	return filepath.EvalSymlinks(configured)
 }
 
 func prepareLiveDirectory(configPath string) (string, error) {

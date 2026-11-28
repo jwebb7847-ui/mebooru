@@ -21,6 +21,17 @@
 
 From a consolidated Mebooru checkout, run `sh packaging/build-macos-app.sh` to build `dist/Mebooru.app` with the nested acquisition worker. The bundled launcher supports trusted fresh-profile automatic pairing and manages companion lifetime. Use the exact accepted candidate revision and disposable profiles described in [MEBOORU.md](../MEBOORU.md#development-workflow). The bundle is ad-hoc signed, not a notarized public release. Inherited Windows/Linux packaging still needs installation acceptance; native and container compile checks are not a substitute. Retain persisted legacy identifiers until an approved migration.
 
+To qualify a Mac build with a bundled runtime, provide a trusted, self-contained gallery-dl executable built for the Mac's architecture, its SHA-256, and the pinned version's license file. The build checks the inputs and runtime version before signing the app.
+
+```sh
+MEBOORU_GALLERY_DL="$runtime" \
+MEBOORU_GALLERY_DL_SHA256="$trusted_sha256" \
+MEBOORU_GALLERY_DL_LICENSE="$runtime_license" \
+sh packaging/build-macos-app.sh meloader "$output_dir"
+```
+
+In the disposable managed profile, leave `[gallerydl].binary_path` empty to use the bundled executable. An absolute installed path remains available in **Settings → Acquisition**. The managed worker still verifies the runtime inside containment before acquisition. Public distribution, runtime update and rollback remain separate work.
+
 ## Consolidated build-path status
 
 - Active, verified: root `make build-all` and the individual Go modules; native CI builds/tests and smoke starts on Linux x64/ARM64, Windows x64 and Intel macOS; local Apple Silicon Finder bundle and paired lifecycle; Linux x64 tray variants; both CPU Docker **compile stages**. Full end-user Windows/Linux installer trials, complete Docker runtime images and network isolation are not established.

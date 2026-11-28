@@ -33,6 +33,22 @@ go build -trimpath -ldflags="$LDFLAGS -X 'main.defaultDesktop=true' -X 'main.use
 )
 cp LICENSE "$bundle/Resources/LICENSE-Mebooru"
 
+if [ -n "${MEBOORU_GALLERY_DL:-}" ]; then
+  . "$loader_src/packaging/pins.env"
+  runtime_sha=${MEBOORU_GALLERY_DL_SHA256:?Set the trusted SHA-256 of the gallery-dl executable}
+  runtime_license=${MEBOORU_GALLERY_DL_LICENSE:?Set the path to the pinned gallery-dl LICENSE}
+  test "$(shasum -a 256 < "$MEBOORU_GALLERY_DL" | cut -d ' ' -f 1)" = "$runtime_sha" ||
+    { echo 'gallery-dl executable checksum mismatch.' >&2; exit 1; }
+  test "$(shasum -a 256 < "$runtime_license" | cut -d ' ' -f 1)" = "$GDL_LICENSE_SHA256" ||
+    { echo 'gallery-dl license checksum mismatch.' >&2; exit 1; }
+  install -m 0755 "$MEBOORU_GALLERY_DL" "$bundle/MacOS/gallery-dl"
+  install -m 0644 "$runtime_license" "$bundle/Resources/LICENSE-gallery-dl"
+  printf 'gallery-dl %s source: https://codeberg.org/mikf/gallery-dl/releases/tag/v%s\n' +    "$GDL_VERSION" "$GDL_VERSION" > "$bundle/Resources/gallery-dl-source.txt"
+  codesign --force --sign - "$bundle/MacOS/gallery-dl"
+  test "$("$bundle/MacOS/gallery-dl" --version)" = "$GDL_VERSION" ||
+    { echo "The bundled gallery-dl must run as version $GDL_VERSION." >&2; exit 1; }
+fi
+
 iconset="$stage/Mebooru.iconset"
 mkdir "$iconset"
 sips --padToHeightWidth 1448 1448 branding/mebooru-mobius-master.png --out "$stage/icon.png" >/dev/null
