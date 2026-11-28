@@ -149,3 +149,37 @@ func runRuntimeTransferPlatformLeaf(digest,dir,port string)error{
 	go func(){<-done;os.Exit(3)}()
 	return runRuntimeTransferLeaf(digest,dir,port)
 }
+
+func startManagedWindowWorker(r,w,br,bw *os.File,dir string)(acquisitionpolicy.CustodyChild,error){
+	cmd,err:=operationProbeCommand("internal-managed-window-guard-v1");if err!=nil{return nil,err}
+	cmd.Args=append(cmd.Args,dir)
+	cmd.Stdin,cmd.Stdout,cmd.Stderr=r,w,os.Stderr
+	g,err:=processguard.StartDormantGuardWithBroker(cmd,br,bw)
+	if g==nil{return nil,err}
+	p:=&probeGuard{g:g};if err!=nil{return p,err};return p,g.Activate()
+}
+func runManagedWindowGuard(dir string)error{
+	path,err:=processguard.ProbeSibling("monbooru","monloader");if err!=nil{return err}
+	cmd:=exec.Command(path,"internal-managed-window-worker-v1",dir)
+	cmd.Stdin,cmd.Stdout,cmd.Stderr=os.Stdin,os.Stdout,os.Stderr
+	br,bw,err:=processguard.AdoptGuardBrokerPipes();if err!=nil{return err}
+	defer br.Close();defer bw.Close()
+	return processguard.RunDormantGuardWithBroker(os.NewFile(3,"custody-liveness"),cmd,br,bw)
+}
+func startManagedWindowRuntimePlatform(w,status *os.File,dir,args string)(processguard.OperationChild,error){
+	cmd,err:=operationProbeCommand("internal-managed-window-runtime-guard-v1");if err!=nil{return nil,err}
+	cmd.Args=append(cmd.Args,dir,args)
+	cmd.Stdout,cmd.Stderr=w,status
+	g,err:=processguard.StartDormantGuard(cmd);if g==nil{return nil,err};return g,err
+}
+func runManagedWindowRuntimeGuard(dir,args string)error{
+	cmd,err:=operationProbeCommand("internal-managed-window-runtime-leaf-v1");if err!=nil{return err}
+	cmd.Args=append(cmd.Args,dir,args)
+	cmd.Stdout,cmd.Stderr=os.Stdout,os.Stderr
+	return processguard.RunDormantGuard(os.NewFile(3,"custody-liveness"),cmd)
+}
+func runManagedWindowRuntimePlatformLeaf(dir,args string)error{
+	done,err:=processguard.WatchGuard(os.NewFile(3,"guard-liveness"));if err!=nil{return err}
+	go func(){<-done;os.Exit(3)}()
+	return runManagedWindowRuntimeLeaf(dir,args)
+}

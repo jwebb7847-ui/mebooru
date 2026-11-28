@@ -25,3 +25,9 @@ func runRuntimeStreamPlatformLeaf(string)error{return errRuntimeProbe}
 func startRuntimeTransferPlatform(string,string,string)(processguard.OperationChild,error){return nil,errRuntimeProbe}
 func runRuntimeTransferGuard(string,string,string)error{return errRuntimeProbe}
 func runRuntimeTransferPlatformLeaf(string,string,string)error{return errRuntimeProbe}
+
+func startManagedWindowWorker(*os.File,*os.File,*os.File,*os.File,string)(acquisitionpolicy.CustodyChild,error){return nil,errRuntimeProbe}
+func runManagedWindowGuard(string)error{return errRuntimeProbe}
+func startManagedWindowRuntimePlatform(*os.File,*os.File,string,string)(processguard.OperationChild,error){return nil,errRuntimeProbe}
+func runManagedWindowRuntimeGuard(string,string)error{return errRuntimeProbe}
+func runManagedWindowRuntimePlatformLeaf(string,string)error{return errRuntimeProbe}

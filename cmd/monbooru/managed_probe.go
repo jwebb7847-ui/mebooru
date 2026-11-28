@@ -23,6 +23,16 @@ func dispatchManagedProbe(args []string)bool{
 	if len(args)==0{return false}
 	var err error
 	switch args[0]{
+	case "internal-managed-window-probe-v1":
+		if len(args)!=2{err=errRuntimeProbe}else{err=runManagedWindowProbe(args[1])}
+	case "internal-managed-window-custody-v1":
+		if len(args)!=4{err=errRuntimeProbe}else{err=runManagedWindowCustody(args[1],args[2],args[3])}
+	case "internal-managed-window-guard-v1":
+		if len(args)!=2{err=errRuntimeProbe}else{err=runManagedWindowGuard(args[1])}
+	case "internal-managed-window-runtime-guard-v1":
+		if len(args)!=3{err=errRuntimeProbe}else{err=runManagedWindowRuntimeGuard(args[1],args[2])}
+	case "internal-managed-window-runtime-leaf-v1":
+		if len(args)!=3{err=errRuntimeProbe}else{err=runManagedWindowRuntimePlatformLeaf(args[1],args[2])}
 	case "internal-managed-runtime-drain-probe-v1":
 		if len(args)!=1{err=errRuntimeProbe}else{err=runRuntimeDrainProbe()}
 	case "internal-managed-runtime-transfer-cancel-probe-v1":
