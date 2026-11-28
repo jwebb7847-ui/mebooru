@@ -282,6 +282,7 @@ func(a *Allocator)preparePublication(ctx context.Context,g workerproto.StageAllo
 	op,err:=openDir(a.root,g.Request.OperationID)
 	if err!=nil{return err};defer op.Close()
 	if _,err:=op.Lstat("publication");!errors.Is(err,os.ErrNotExist){return ErrStageRecovery}
+	if _,err:=op.Lstat("batch");!errors.Is(err,os.ErrNotExist){return ErrStageRefused}
 	var total uint64
 	for _,f:=range e.Files{total+=uint64(f.Size)}
 	free,err:=a.freeBytes(a.path)

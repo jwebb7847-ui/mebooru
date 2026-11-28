@@ -231,7 +231,10 @@ func(a *Allocator)load(id string)(record,error){
 		e,err:=readSeal(dir,r.Allocation)
 		if err!=nil{return zero,ErrStageRecovery}
 		if len(entries)==4{
-			if _,err:=readPublication(dir,r,e);err!=nil{return zero,ErrStageRecovery}
+			if _,err:=dir.Lstat("batch");err==nil{
+				if _,err:=readBatchPlan(dir,r,e);err!=nil{return zero,ErrStageRecovery}
+			}else if !errors.Is(err,os.ErrNotExist){return zero,ErrStageRecovery
+			}else if _,err:=readPublication(dir,r,e);err!=nil{return zero,ErrStageRecovery}
 		}
 	}
 	workspace,err:=openDir(dir,r.Allocation.TransferID)

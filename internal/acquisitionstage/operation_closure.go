@@ -56,6 +56,15 @@ func(a *Allocator)closedCharge(ctx context.Context,r record)(bool,uint64,error){
 		if err!=nil{return false,0,err}
 		return true,m.RetainedReservation,nil
 	}else if !errors.Is(err,os.ErrNotExist){return false,0,ErrStageRecovery}
+	if _,err:=op.Lstat("batch");err==nil{
+		e,err:=readSeal(op,r.Allocation);if err!=nil{return false,0,err}
+		plan,err:=readBatchPlan(op,r,e);if err!=nil{return false,0,err}
+		b,err:=openDir(op,"batch");if err!=nil{return false,0,err};defer b.Close()
+		if _,err:=b.Lstat("result.json");errors.Is(err,os.ErrNotExist){return false,r.Allocation.MaxBytes,nil}else if err!=nil{return false,0,ErrStageRecovery}
+		if _,err:=readBatchResult(b,plan);err!=nil{return false,0,err}
+		// Parent retains original evidence and full byte reservation.
+		return true,r.Allocation.MaxBytes,nil
+	}else if !errors.Is(err,os.ErrNotExist){return false,0,ErrStageRecovery}
 	if _,err:=op.Lstat("publication");errors.Is(err,os.ErrNotExist){return false,r.Allocation.MaxBytes,nil}else if err!=nil{return false,0,ErrStageRecovery}
 	p,err:=openDir(op,"publication")
 	if err!=nil{return false,0,err};defer p.Close()
