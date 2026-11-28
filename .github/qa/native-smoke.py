@@ -28,6 +28,18 @@ def fetch(url):
         return response.read()
 
 
+def test_app_module(repo):
+    packages = ["./..."]
+    if (repo == workspace and os.name == "nt"
+            and os.environ.get("MEBOORU_WINDOWS_STAGING_SHARDED") == "1"):
+        # The workflow runs all staging tests in the independent Windows
+        # partitions and keeps this core smoke within its package budget.
+        packages = subprocess.check_output(["go", "list", "./..."], cwd=repo,
+                                          env=env, text=True).splitlines()
+        packages.remove("github.com/monbooru/monbooru/internal/acquisitionstage")
+    subprocess.run(["go", "test", *packages], cwd=repo, env=env, check=True)
+
+
 def verify_process(binary, app, legacy, page, api, directory):
     port = reserve_port()
     origin = f"http://127.0.0.1:{port}"
@@ -77,7 +89,7 @@ with tempfile.TemporaryDirectory() as scratch:
         directory = Path(scratch) / app
         directory.mkdir()
         binary = directory / (legacy + (".exe" if os.name == "nt" else ""))
-        subprocess.run(["go", "test", "./..."], cwd=repo, env=env, check=True)
+        test_app_module(repo)
         subprocess.run(["go", "build", "-o", str(binary), "./cmd/" + legacy], cwd=repo, env=env, check=True)
         assert subprocess.check_output([str(binary), "-version"], text=True).startswith(app + " ")
         verify_process(binary, app, legacy, page, api, directory)

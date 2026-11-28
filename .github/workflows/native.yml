@@ -130,10 +130,9 @@ jobs:
 
   worker-windows-staging-development:
     # Keep every isolated staging test, but run the slow independent
-    # reclamation fixtures concurrently rather than behind the runtime probe.
-    # All shards are required development evidence; full native acceptance
-    # still runs the complete modules and is not replaced by this gate.
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.pull_request.head.ref == 'worker/operation-migration'
+    # reclamation fixtures concurrently. The Windows native smoke runs the
+    # rest of the library module alongside these disjoint partitions.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (!github.event.pull_request.draft || github.event.pull_request.head.ref == 'worker/operation-migration'))
     name: Managed staging Windows (${{ matrix.group }})
     runs-on: windows-2025
     timeout-minutes: 20
@@ -210,6 +209,8 @@ jobs:
             meloader/go.sum
             shared/go.sum
       - name: Test, build and run both apps
+        env:
+          MEBOORU_WINDOWS_STAGING_SHARDED: ${{ runner.os == 'Windows' && '1' || '0' }}
         run: python .github/qa/native-smoke.py
       - name: Verify private executable probe (no acquisition)
         run: python .github/qa/managed-probe.py
