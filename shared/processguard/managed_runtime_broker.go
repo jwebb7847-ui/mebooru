@@ -25,6 +25,8 @@ type ManagedRuntimeGrant struct {
 	Current func(context.Context)bool
 	Transfer func(context.Context)(workerproto.StageAllocation,string,error)
 	Start func(context.Context,[]string)(StreamProbeChild,error)
+	// Resolve may do source policy evaluation inside the same containment.
+	StartResolve func(context.Context,[]string,string)(StreamProbeChild,error)
 	Complete func(context.Context,workerproto.StageAllocation,[]acquisitionplan.VerifiedTransferFile)error
 	// MetadataComplete observes exact native resolution only after actual Stop.
 	// It lets independent library authority validate the worker projection.
@@ -92,7 +94,12 @@ func(s *managedRuntimeSession) begin(ctx context.Context,op workerproto.Operatio
 		return nil,ErrOperationsSealed
 	}
 	s.active=true
-	child,err:=s.grant.Start(ctx,args)
+	var child StreamProbeChild
+	if phase==1&&s.grant.StartResolve!=nil{
+		child,err=s.grant.StartResolve(ctx,args,s.subcategory)
+	}else{
+		child,err=s.grant.Start(ctx,args)
+	}
 	if child==nil{
 		if budget!=nil{budget.Close()}
 		s.active=false;s.failed=true

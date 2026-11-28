@@ -344,9 +344,10 @@ type UIConfig struct {
 
 // Start-at-login and the menu entry live where the platform reads them.
 type DesktopConfig struct {
-	Tray           bool   `toml:"tray"`
-	MeloaderBinary string `toml:"meloader_binary,omitempty"`
-	MeloaderConfig string `toml:"meloader_config,omitempty"`
+	ManagedAcquisition bool   `toml:"managed_acquisition,omitempty"`
+	Tray               bool   `toml:"tray"`
+	MeloaderBinary     string `toml:"meloader_binary,omitempty"`
+	MeloaderConfig     string `toml:"meloader_config,omitempty"`
 }
 
 type LogConfig struct {

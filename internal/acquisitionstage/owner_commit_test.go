@@ -35,7 +35,7 @@ func(h ownerFixtureHost) Renamed(string,string,string,string)error{return ErrSta
 // Exercise the same single local owner entry point, with the real Set
 // fence and job reservation, rather than manually sequencing phases.
 func TestGuardedOwnerCommit(t *testing.T){
-	for _,mode:=range []string{"new png","held jpeg","restore webp","held gif","restore jpeg","same site refused","busy owner","revoked owner"}{
+	for _,mode:=range []string{"new png","held jpeg","restore webp","held gif","restore jpeg","same site repeat","same site refused","busy owner","revoked owner"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var b bytes.Buffer
@@ -64,18 +64,25 @@ func TestGuardedOwnerCommit(t *testing.T){
 			g:=set.Get(cfg.Name)
 			kind:=OwnerDispositionNew
 			old:=filepath.Join(s.GalleryRoot,"old."+ext)
-			if strings.HasPrefix(mode,"held")||strings.HasPrefix(mode,"restore")||mode=="same site refused"{
+			if strings.HasPrefix(mode,"held")||strings.HasPrefix(mode,"restore")||strings.HasPrefix(mode,"same site"){
 				kind=OwnerDispositionHeld
 				if err:=os.WriteFile(old,b.Bytes(),0600);err!=nil{t.Fatal(err)}
 				res,err:=g.LandInPlace(ctx,old,library.LandSpec{Origin:"fixture"})
 				if err!=nil||res.Image==nil||res.Duplicate{t.Fatal("fixture",err)}
-				site:="other";if mode=="same site refused"{site=row.SourceLabel}
-				if _,_,err:=gallery.MergeSource(g.DB,g.TagSvc,res.Image.ID,site,"7","https://example.invalid/7","","",gallery.PostFile{},[]string{"rating:explicit","prior"},gallery.Withheld{});err!=nil{t.Fatal(err)}
+				site,id,source:="other","7","https://example.invalid/7"
+				tags:=[]string{"rating:explicit","prior"}
+				if mode=="same site refused"{site=row.SourceLabel}
+				if mode=="same site repeat"{site,id,source,tags=row.SourceLabel,row.PostID,row.PostURL,row.Tags}
+				if _,_,err:=gallery.MergeSource(g.DB,g.TagSvc,res.Image.ID,site,id,source,"","",gallery.PostFile{},tags,gallery.Withheld{});err!=nil{t.Fatal(err)}
 				if strings.HasPrefix(mode,"restore"){
 					kind=OwnerDispositionRestore
 					if err:=os.Remove(old);err!=nil{t.Fatal(err)}
 					if _,err:=gallery.SetMissing(g.DB,res.Image.ID,true);err!=nil{t.Fatal(err)}
 				}
+			}
+			if mode=="same site repeat"{
+				got,err:=ResolveOwnerDisposition(ctx,set,g.Name,f,row)
+				if err!=nil||got!=OwnerDispositionHeld{t.Fatal("resolve repeat",got,err)}
 			}
 			auth:=OwnerCommit{
 				Current:func(context.Context,workerproto.StageAllocation)error{if mode=="revoked owner"{return ErrStageRefused};return nil},

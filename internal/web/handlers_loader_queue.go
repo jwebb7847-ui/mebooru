@@ -128,9 +128,13 @@ func (s *Server) loaderJobs(w http.ResponseWriter, r *http.Request) {
 		Message    string
 		Setup      bool
 		Managed    bool
+		Retry      bool
 		Prev, Next int
 		Latest     map[int64]int64
 	}{Managed: s.managedLoader != nil}
+	if retry, ok := s.managedLoader.(managedRetry); ok {
+		view.Retry = retry.CanRetry()
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	link := s.monloaderLink()
 	switch {
@@ -230,6 +234,13 @@ func (s *Server) loaderJobAction(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	action := r.PathValue("action")
 	if s.managedLoader != nil && err == nil && id > 0 {
+		if action == "retry" {
+			if retry, ok := s.managedLoader.(managedRetry); ok && retry.CanRetry() {
+				job, err := retry.RetryImport(r.Context(), id)
+				writeLoaderQueueResult(w, r, job, err)
+				return
+			}
+		}
 		if action != "cancel" {
 			externalErr(w, r, "This action is unavailable in the managed queue.", http.StatusConflict)
 			return

@@ -47,10 +47,11 @@ func(h windowHost)Removed(string)error{return managedqa.ErrFixture}
 func(h windowHost)Repointed(string,string)error{return managedqa.ErrFixture}
 func(h windowHost)Renamed(string,string,string,string)error{return managedqa.ErrFixture}
 
-type windowFixtureOwner struct{
+type managedWindowOwner struct{
 	mu sync.Mutex
 	dir string
 	setup managedqa.Setup
+	live *windowregistry.LiveConfig
 	set *library.Set
 	naming config.GalleryConfig
 	a *acquisitionstage.Allocator
@@ -61,13 +62,14 @@ type windowFixtureOwner struct{
 	generation string
 	allowed map[string]workerproto.StageAllocateRequest
 	grant workerproto.StageAllocation
+	cleaning bool
 	manifest,projection []byte
 	hash string
 	result workerproto.WindowOutcome
 }
 
-func(o *windowFixtureOwner) current(c context.Context)bool{return c.Err()==nil&&o.lease!=nil&&o.lease.Current()}
-func (o *windowFixtureOwner) galleryIdentity(name string) string {
+func(o *managedWindowOwner) current(c context.Context)bool{return c.Err()==nil&&o.lease!=nil&&o.lease.Current()}
+func (o *managedWindowOwner) galleryIdentity(name string) string {
 	g := o.set.Get(name)
 	if g == nil || g.Degraded || g.Closed() {
 		return ""
@@ -75,8 +77,8 @@ func (o *windowFixtureOwner) galleryIdentity(name string) string {
 	return managedqa.Digest([]byte(g.Name + "\x00" + g.DBPath + "\x00" + g.GalleryPath))
 }
 
-func(o *windowFixtureOwner) scope(c context.Context,q workerproto.StageAllocateRequest)(acquisitionstage.Scope,error){
-	if !o.current(c)||q.Transfer.Metadata!=o.window.Request||o.allowed[q.OperationID]!=q{return acquisitionstage.Scope{},managedqa.ErrFixture}
+func(o *managedWindowOwner) scope(c context.Context,q workerproto.StageAllocateRequest)(acquisitionstage.Scope,error){
+	if (!o.cleaning&&!o.current(c))||q.Transfer.Metadata!=o.window.Request||o.allowed[q.OperationID]!=q{return acquisitionstage.Scope{},managedqa.ErrFixture}
 	g := o.set.Get(q.Transfer.Metadata.Gallery)
 	if g == nil || o.galleryIdentity(g.Name) != o.window.GalleryIdentity {
 		return acquisitionstage.Scope{}, managedqa.ErrFixture
@@ -85,6 +87,14 @@ func(o *windowFixtureOwner) scope(c context.Context,q workerproto.StageAllocateR
 	roots := make([]string, 0, len(members))
 	for _, member := range members { roots = append(roots, member.GalleryPath) }
 	s:=acquisitionstage.Scope{GalleryIdentity:o.window.GalleryIdentity,GalleryRoot:g.GalleryPath,GalleryRoots:roots,MaxFiles:1,MaxBytes:128<<10}
+	if o.live!=nil{
+		s.MaxBytes=64<<20
+		if q.OperationID==managedqa.ParentID(q.Transfer.Metadata.JobID){
+			s.MaxFiles=q.Transfer.Metadata.Last-q.Transfer.Metadata.First+1
+			s.MaxBytes=min(uint64(s.MaxFiles)*64<<20,workerproto.MaxStageTotalBytes)
+		}
+		return s,nil
+	}
 	if q.OperationID==managedqa.ParentID(q.Transfer.Metadata.JobID){s.MaxFiles=uint32(o.setup.Count);s.MaxBytes=8<<20}
 	return s,nil
 }
@@ -93,7 +103,7 @@ func(o *windowFixtureOwner) scope(c context.Context,q workerproto.StageAllocateR
 // actual native metadata observed by the custodian after cleanup. The
 // known synthetic source has exactly one blocked item and otherwise
 // safe fixture-tagged images. Refuse any widened or different claims.
-func(o *windowFixtureOwner) fixtureListing(c context.Context)([]workerproto.MetadataPost,error){
+func(o *managedWindowOwner) fixtureListing(c context.Context)([]workerproto.MetadataPost,error){
 	if !o.current(c){return nil,managedqa.ErrFixture}
 	raw,err:=managedqa.Read(o.dir,managedqa.JobFile(managedqa.MetadataName,o.window.Request.JobID),workerproto.MaxMetadataOutputBytes);if err!=nil{return nil,err}
 	posts,err:=workerproto.DecodeMetadataEvidence(raw,o.window.Request,"search")
@@ -109,7 +119,8 @@ func(o *windowFixtureOwner) fixtureListing(c context.Context)([]workerproto.Meta
 	}
 	return posts,nil
 }
-func(o *windowFixtureOwner) authorizeProjection(c context.Context,p workerproto.WindowAllocateProposal)([]byte,error){
+func(o *managedWindowOwner) authorizeProjection(c context.Context,p workerproto.WindowAllocateProposal)([]byte,error){
+	if o.live!=nil{return o.authorizeLiveProjection(c,p)}
 	if !o.current(c)||p.Transfer.Metadata!=o.window.Request||p.Transfer.Subcategory!="search"||p.Transfer.PolicyGeneration!=1{return nil,managedqa.ErrFixture}
 	posts,err:=o.fixtureListing(c);if err!=nil{return nil,err}
 	ids:=o.setup.ExpectedIDs(o.window.Request.JobID);if len(ids)==0{return nil,managedqa.ErrFixture}
@@ -130,13 +141,13 @@ func(o *windowFixtureOwner) authorizeProjection(c context.Context,p workerproto.
 	}
 	return manifest,nil
 }
-func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,raw json.RawMessage)(json.RawMessage,*workerproto.Fault){
+func(o *managedWindowOwner) handle(c context.Context,op workerproto.Operation,raw json.RawMessage)(json.RawMessage,*workerproto.Fault){
 	o.mu.Lock();defer o.mu.Unlock()
-	fault:=func(err error)(json.RawMessage,*workerproto.Fault){fmt.Fprintln(os.Stderr,"disposable owner:",op,err);return nil,&workerproto.Fault{Code:"refused"}}
+	fault:=func(err error)(json.RawMessage,*workerproto.Fault){fmt.Fprintln(os.Stderr,"acquisition owner:",op,err);return nil,&workerproto.Fault{Code:"refused"}}
 	if o.registry==nil{return fault(managedqa.ErrFixture)}
 	if op==workerproto.WindowPrepare{
 		p,err:=workerproto.DecodeWindowPrepare(raw)
-		if err!=nil||p.Request!=o.setup.MetadataFor(p.Request.JobID){return fault(managedqa.ErrFixture)}
+		if err!=nil||o.live==nil&&p.Request!=o.setup.MetadataFor(p.Request.JobID){return fault(managedqa.ErrFixture)}
 		if o.window!=(windowregistry.Grant{}){
 			if _,err:=o.registry.ObserveSettlement(o.window);err!=nil{return fault(err)}
 		}
@@ -148,6 +159,7 @@ func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,ra
 			if err != nil { return fault(err) }
 		}
 		_,_,identity:=o.setup.Identity()
+		if o.live!=nil{_,identity=o.live.Identity(p.Request.Source)}
 		g:=windowregistry.Grant{Request:p.Request,OwnerGeneration:o.generation,PolicyGeneration:1,GalleryIdentity:sub.GalleryIdentity,Identity:identity,IntentID:p.IntentID}
 		if err:=acquisitionpolicy.RegisterRunningIntentWindow(c,filepath.Join(o.dir,"queue"),o.registry,g,func(c context.Context,v windowregistry.Grant)bool{return o.current(c)&&v==g});err!=nil{return fault(err)}
 		o.window=g
@@ -156,14 +168,33 @@ func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,ra
 		o.manifest,o.projection,o.hash=nil,nil,""
 		body,_:=workerproto.EncodeWindowPrepare(p);return body,nil
 	}
+	if op==workerproto.StageAbandon && o.live!=nil {
+		q,err:=workerproto.DecodeStageAbandonRequest(raw)
+		if err!=nil||q.OperationID!=o.grant.Request.OperationID||q.TransferID!=o.grant.TransferID{return fault(windowregistry.ErrWindow)}
+		out,err:=o.registry.ObserveSettlement(o.window)
+		if err!=nil||out.Kind!="abandoned"{return fault(windowregistry.ErrWindow)}
+		o.cleaning=true
+		defer func(){o.cleaning=false}()
+		if _,err:=o.a.AbandonPrepublication(c,q,func(_ context.Context,a workerproto.StageAllocation)error{
+			if a!=o.grant{return windowregistry.ErrWindow}
+			return nil
+		});err!=nil{return fault(err)}
+		return raw,nil
+	}
 	if !o.current(c)||!o.registry.Current(o.window){return fault(managedqa.ErrFixture)}
 	if op!=workerproto.FetchOutcome&&!o.registry.Admitting(o.window){return fault(managedqa.ErrFixture)}
 	switch op{
 	case workerproto.WindowNoTransfer:
 		p,err:=workerproto.DecodeWindowNoTransfer(raw)
-		if err!=nil||p.Request!=o.window.Request||o.grant!=(workerproto.StageAllocation{})||!o.setup.AllBlocked(p.Request.JobID){return fault(managedqa.ErrFixture)}
-		posts,err:=o.fixtureListing(c);if err!=nil||len(posts)!=len(p.ListedIDs){return fault(managedqa.ErrFixture)}
-		for i,v:=range posts{if v.ID!=p.ListedIDs[i]{return fault(managedqa.ErrFixture)}}
+		if err!=nil||p.Request!=o.window.Request||o.grant!=(workerproto.StageAllocation{}){return fault(managedqa.ErrFixture)}
+		if o.live!=nil{
+			pol,_,err:=o.livePolicy()
+			if err!=nil||len(pol.Proposal.Projection)!=0||!slices.Equal(pol.Listed,p.ListedIDs)||!slices.Equal(pol.Blocked,p.BlockedIDs){return fault(windowregistry.ErrWindow)}
+		}else{
+			if !o.setup.AllBlocked(p.Request.JobID){return fault(managedqa.ErrFixture)}
+			posts,err:=o.fixtureListing(c);if err!=nil||len(posts)!=len(p.ListedIDs){return fault(managedqa.ErrFixture)}
+			for i,v:=range posts{if v.ID!=p.ListedIDs[i]{return fault(managedqa.ErrFixture)}}
+		}
 		if err:=o.registry.RecordOutcome(c,windowregistry.Outcome{Grant:o.window,Kind:"no_transfer"});err!=nil{return fault(err)}
 		body,_:=json.Marshal(workerproto.ManagedMetadataStart{Request:p.Request});return body,nil
 	case workerproto.StageAllocate:
@@ -174,7 +205,12 @@ func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,ra
 		o.allowed[q.OperationID]=q
 		g,err:=o.a.Allocate(c,q);if err!=nil{return fault(err)}
 		o.grant,o.manifest,o.projection,o.hash=g,manifest,bytes.Clone(p.Projection),p.PolicySHA256
-		if err:=managedqa.WriteJSON(o.dir,managedqa.JobFile(managedqa.GrantName,o.window.Request.JobID),managedqa.Grant{Allocation:g,PolicySHA256:o.hash});err!=nil{return fault(err)}
+		if o.live!=nil{
+			err=windowregistry.WriteArtifact(o.dir,windowregistry.ArtifactName(o.window.Request.JobID,"stage"),windowregistry.TransferGrant{Allocation:g,PolicySHA256:o.hash},64<<10)
+		}else{
+			err=managedqa.WriteJSON(o.dir,managedqa.JobFile(managedqa.GrantName,o.window.Request.JobID),managedqa.Grant{Allocation:g,PolicySHA256:o.hash})
+		}
+		if err!=nil{return fault(err)}
 		body,err:=workerproto.EncodeStageAllocation(g,q);if err!=nil{return fault(err)};return body,nil
 	case workerproto.ImportMedia:
 		p,err:=workerproto.DecodeWindowCommitRequest(raw)
@@ -189,7 +225,12 @@ func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,ra
 	default:return fault(managedqa.ErrFixture)
 	}
 }
-func(o *windowFixtureOwner) commit(c context.Context)error{
+func(o *managedWindowOwner) commit(c context.Context)error{
+	if o.live!=nil{
+		resume,err:=o.set.PauseAcquisitionWatcher(o.window.Request.Gallery)
+		if err!=nil{return err}
+		defer resume()
+	}
 	current:=func(c context.Context,g workerproto.StageAllocation)error{
 		if !o.current(c)||o.allowed[g.Request.OperationID]!=g.Request{return managedqa.ErrFixture};return nil
 	}
@@ -198,7 +239,11 @@ func(o *windowFixtureOwner) commit(c context.Context)error{
 	filesByID := make(map[string]acquisitionplan.VerifiedTransferFile)
 	proof:=func(c context.Context,g workerproto.StageAllocation)([]byte,[]acquisitionplan.VerifiedTransferFile,error){
 		var p managedqa.Proof
-		if current(c,g)!=nil||g!=o.grant||managedqa.ReadJSON(o.dir,managedqa.JobFile(managedqa.ProofName,o.window.Request.JobID),&p,1<<20)!=nil||p.Allocation!=g||len(p.Files)!=len(o.setup.ExpectedIDs(o.window.Request.JobID)){return nil,nil,managedqa.ErrFixture}
+		if current(c,g)!=nil||g!=o.grant{return nil,nil,windowregistry.ErrWindow}
+		if o.live!=nil{
+			if err:=windowregistry.ReadArtifact(o.dir,windowregistry.ArtifactName(o.window.Request.JobID,"transfer"),&p,1<<20);err!=nil{return nil,nil,err}
+		}else if managedqa.ReadJSON(o.dir,managedqa.JobFile(managedqa.ProofName,o.window.Request.JobID),&p,1<<20)!=nil||len(p.Files)!=len(o.setup.ExpectedIDs(o.window.Request.JobID)){return nil,nil,managedqa.ErrFixture}
+		if p.Allocation!=g{return nil,nil,windowregistry.ErrWindow}
 		for _, file := range p.Files { filesByID[file.ID] = file }
 		return o.manifest,p.Files,nil
 	}
@@ -312,7 +357,7 @@ func runManagedWindowProbe(countArg string)(result error){
 	set,err:=library.OpenSet(windowHost{cfg},jobs.NewManager(),[]config.Gallery{cfg},cfg.Name);if err!=nil{return err}
 	defer set.Close()
 	registry,err:=windowregistry.Open(filepath.Join(dir,"windows"));if err!=nil{return err};defer registry.Close()
-	o:=&windowFixtureOwner{dir:dir,setup:setup,set:set,allowed:map[string]workerproto.StageAllocateRequest{},registry:registry,naming:config.GalleryConfig{DefaultUploadName:"{source}-{post_id}"}}
+	o:=&managedWindowOwner{dir:dir,setup:setup,set:set,allowed:map[string]workerproto.StageAllocateRequest{},registry:registry,naming:config.GalleryConfig{DefaultUploadName:"{source}-{post_id}"}}
 	a,err:=acquisitionstage.Open(filepath.Join(dir,"stage"),2,32<<20,o.scope);if err!=nil{return err}
 	o.a=a;defer a.Close()
 	lock,err:=acquisitionpolicy.LockProfile(dir);if err!=nil{return err};defer lock.Close()

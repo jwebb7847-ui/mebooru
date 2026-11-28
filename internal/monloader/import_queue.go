@@ -33,6 +33,7 @@ type ImportJob struct {
 	Status   string
 	Error    string
 	Capped   bool
+	MaxItems int `json:"max_items"`
 	Summary  struct {
 		Created, Duplicate, Skipped, Blacklisted, Failed, Total int
 	}

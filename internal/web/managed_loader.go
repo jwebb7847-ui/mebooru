@@ -18,6 +18,11 @@ type ManagedLoader interface {
 	SetOffline(context.Context, bool) error
 }
 
+type managedRetry interface {
+	CanRetry() bool
+	RetryImport(context.Context, int64) (int64, error)
+}
+
 var ErrManagedImportUnsupported = errors.New("unsupported managed import")
 
 func (s *Server) loaderOffline(w http.ResponseWriter, r *http.Request) {

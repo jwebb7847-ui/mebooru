@@ -58,4 +58,15 @@ func(o *SessionJobOwner) Commit(ctx context.Context,g workerproto.StageAllocatio
 	if e.Error!=nil{return zero,errManagedJob}
 	return workerproto.DecodeWindowOutcome(e.Payload,g,hash)
 }
+
+func(o *SessionJobOwner) Abandon(ctx context.Context,g workerproto.StageAllocation)error{
+	q:=workerproto.StageAbandonRequest{OperationID:g.Request.OperationID,TransferID:g.TransferID}
+	body,err:=workerproto.EncodeStageAbandonRequest(q)
+	if err!=nil{return err}
+	e,err:=o.call(ctx,workerproto.StageAbandon,body)
+	if err!=nil||e.Error!=nil{return errors.Join(errManagedJob,err)}
+	got,err:=workerproto.DecodeStageAbandonRequest(e.Payload)
+	if err!=nil||got!=q{return errManagedJob}
+	return nil
+}
 var _ ManagedJobOwner=(*SessionJobOwner)(nil)

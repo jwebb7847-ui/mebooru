@@ -11,12 +11,13 @@ import (
 	"path/filepath"
 
 	"github.com/jwebb7847-ui/mebooru/shared/fsx"
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
 )
 
 const (
-	policyFile = "acquisition-policy"
+	policyFile = workerproto.AcquisitionPolicyFile
 	offlineRecord = "mebooru-acquisition-policy-v1\noffline\n"
-	onlineRecord = "mebooru-acquisition-policy-v1\nonline\n"
+	onlineRecord = workerproto.AcquisitionOnlineRecord
 	maxRecordBytes = 128
 )
 

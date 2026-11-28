@@ -1,5 +1,10 @@
 package workerproto
 
+// Persisted consent is written only by the library owner. A contained
+// policy subprocess can independently verify the exact online record.
+const AcquisitionPolicyFile = "acquisition-policy"
+const AcquisitionOnlineRecord = "mebooru-acquisition-policy-v1\nonline\n"
+
 // OfflineAck is a typed control acknowledgement. Drained must be true
 // for offline: the real worker must wait for all online operations and
 // owned descendants before sending it. Decoding an ack is not proof that

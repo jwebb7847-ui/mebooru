@@ -2,6 +2,7 @@ package main
 
 import(
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import(
 	"github.com/jwebb7847-ui/mebooru/shared/managedqa"
 	"github.com/jwebb7847-ui/mebooru/shared/processguard"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/windowregistry"
 	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/mapping"
@@ -30,10 +32,14 @@ func runManagedWindowWorker(args []string)error{
 	dir:=args[0]
 	r,w,br,bw,err:=managedProbeChannels(args[1:]);if err!=nil{return err}
 	defer r.Close();defer w.Close();defer br.Close();defer bw.Close()
-	setup,err:=managedqa.Load(dir);if err!=nil{return err}
+	live,liveErr:=windowregistry.LoadLive(dir)
+	var setup managedqa.Setup
+	if errors.Is(liveErr,os.ErrNotExist){
+		setup,err=managedqa.Load(dir);if err!=nil{return err}
+	}else if liveErr!=nil{return liveErr}
 	var ctx context.Context
 	var cancel context.CancelFunc
-	if setup.Application {
+	if setup.Application||liveErr==nil {
 		ctx, cancel = context.WithCancel(context.Background())
 	} else {
 		ctx, cancel = context.WithTimeout(context.Background(), 12*time.Minute)
@@ -43,10 +49,13 @@ func runManagedWindowWorker(args []string)error{
 	defer broker.Close()
 	client,err:=processguard.NewManagedRuntimeClient(broker);if err!=nil{return err}
 	gate:=workerproto.NewDrainGate(ctx)
-	cfg:=config.Default()
-	cfg.Tags.StrictBlacklist=true
-	cfg.Tags.Blacklist=[]string{"violence"}
-	mapper,err:=mapping.New(config.NewProvider(cfg),"");if err!=nil{return err}
+	var mapper *mapping.Mapper
+	if liveErr!=nil {
+		cfg:=config.Default()
+		cfg.Tags.StrictBlacklist=true
+		cfg.Tags.Blacklist=[]string{"violence"}
+		mapper,err=mapping.New(config.NewProvider(cfg),"");if err!=nil{return err}
+	}
 	var session atomic.Pointer[workerproto.Session]
 	_,mc,identity:=setup.Identity()
 	var owner *pipeline.SessionJobOwner
@@ -54,15 +63,21 @@ func runManagedWindowWorker(args []string)error{
 		Session:session.Load,
 		PrepareWindow:func(c context.Context,j *queue.Job)(*pipeline.ManagedWindowRuntime,error){
 			md:=setup.MetadataFor(j.ID)
-			if !workerproto.ValidMetadataPlan(md)||j.URL!=md.URL||j.Gallery!=md.Gallery||j.MaxItems!=setup.Count{return nil,managedqa.ErrFixture}
+			options,id:=mc,identity
+			if liveErr==nil {
+				if j.MaxItems<1||j.MaxItems>live.MaxItems||j.Offset<0||j.Offset>workerproto.MaxMetadataPosition-j.MaxItems{return nil,windowregistry.ErrWindow}
+				md=workerproto.MetadataPlanRequest{JobID:j.ID,Gallery:j.Gallery,Kind:workerproto.MetadataStrictResolve,Source:workerproto.StrictQueueSource(j.URL),URL:j.URL,First:uint32(j.Offset+1),Last:uint32(j.Offset+j.MaxItems)}
+				options,id=live.Identity(md.Source)
+			}
+			if !workerproto.ValidMetadataPlan(md)||j.URL!=md.URL||j.Gallery!=md.Gallery||(liveErr!=nil&&j.MaxItems!=setup.Count){return nil,managedqa.ErrFixture}
 			if err:=owner.RegisterWindow(c,md,j.ManagedIntentID);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
 			if err:=client.OpenWindow(c,md);err!=nil{return nil,processguard.ErrOperationUnconfirmed}
 			epoch:=gate.CurrentGeneration()
 			current:=func(c context.Context)bool{return c.Err()==nil&&epoch!=(workerproto.DrainGeneration{})&&gate.CurrentGeneration()==epoch&&broker.Err()==nil}
-			return &pipeline.ManagedWindowRuntime{
-				Request:md,Identity:identity,Config:mc,PolicyGeneration:1,Mapper:mapper,Client:client,
+			runtime:=&pipeline.ManagedWindowRuntime{
+				Request:md,Identity:id,Config:options,PolicyGeneration:1,Mapper:mapper,Client:client,
 				Scope:func(c context.Context,q workerproto.MetadataPlanRequest)bool{return q==md&&current(c)},
-				Observe:func(c context.Context)(acquisitionplan.MetadataIdentity,uint64,error){if !current(c){return acquisitionplan.MetadataIdentity{},0,managedqa.ErrFixture};return identity,1,nil},
+				Observe:func(c context.Context)(acquisitionplan.MetadataIdentity,uint64,error){if !current(c){return acquisitionplan.MetadataIdentity{},0,managedqa.ErrFixture};return id,1,nil},
 				Transport:windowTaxonomy{},
 				Close:func(c context.Context)error{
 					// Each proxy's Finish/Stop already acknowledged actual
@@ -71,10 +86,25 @@ func runManagedWindowWorker(args []string)error{
 					if broker.Err()!=nil{return processguard.ErrOperationUnconfirmed}
 					return client.CloseWindow(c,md)
 				},
-			},nil
+			}
+			if liveErr==nil{
+				runtime.Abandon=owner.Abandon
+				runtime.Mapper,runtime.Transport=nil,nil
+				runtime.ContainedPolicy=func(c context.Context)(windowregistry.LivePolicy,error){
+					var p windowregistry.LivePolicy
+					if !current(c){return p,workerproto.ErrOffline}
+					err:=windowregistry.ReadArtifact(dir,windowregistry.ArtifactName(md.JobID,"policy"),&p,windowregistry.MaxLivePolicy)
+					return p,err
+				}
+			}
+			return runtime,nil
 		},
 		Workspace:func(_ context.Context,g workerproto.StageAllocation)(string,error){
 			var known managedqa.Grant
+			if liveErr==nil{
+				if err:=windowregistry.ReadArtifact(dir,windowregistry.ArtifactName(g.Request.Transfer.Metadata.JobID,"stage"),&known,64<<10);err!=nil||known.Allocation!=g{return "",windowregistry.ErrWindow}
+				return windowregistry.Workspace(dir,g)
+			}
 			if err:=managedqa.ReadJSON(dir,managedqa.JobFile(managedqa.GrantName,g.Request.Transfer.Metadata.JobID),&known,64<<10);err!=nil||known.Allocation!=g{return "",managedqa.ErrFixture}
 			return managedqa.Workspace(dir,g)
 		},
@@ -84,7 +114,7 @@ func runManagedWindowWorker(args []string)error{
 	st,err:=queue.OpenStore(filepath.Join(dir,"queue"));if err!=nil{return err}
 	defer st.Close()
 	q.UseStore(st)
-	if setup.Application { q.Pause() }
+	if setup.Application||liveErr==nil { q.Pause() }
 	q.Start()
 	wake:=make(chan struct{},1)
 	go q.RunManagedWatches(ctx,wake)
@@ -95,6 +125,7 @@ func runManagedWindowWorker(args []string)error{
 		switch op{
 		case workerproto.QueueEnqueue:
 			if !workerproto.ValidQueueIntentID(cmd.IntentID){return managedqa.ErrFixture}
+			if liveErr==nil&&workerproto.StrictQueueSource(cmd.URL)!=""&&cmd.MaxItems>=1&&cmd.MaxItems<=live.MaxItems{return nil}
 			for job:=int64(1);job<=int64(setup.Windows);job++{md:=setup.MetadataFor(job);if cmd.URL==md.URL&&cmd.Gallery==md.Gallery&&cmd.MaxItems==setup.Count{return nil}}
 		case workerproto.QueueGet,workerproto.QueueList,workerproto.QueuePause,workerproto.QueueResume,workerproto.QueueCancel:
 			return nil
@@ -118,6 +149,10 @@ func(windowTaxonomy)RoundTrip(req *http.Request)(*http.Response,error){
 }
 
 func dispatchManagedWindow(args []string)bool{
+	if len(args)!=0&&args[0]=="internal-managed-policy-v1"{
+		if err:=runManagedPolicy(args[1:]);err!=nil{fmt.Fprintln(os.Stderr,"managed source policy:",err);os.Exit(2)}
+		return true
+	}
 	if len(args)==0||args[0]!="internal-managed-window-worker-v1"{return false}
 	if err:=runManagedWindowWorker(args[1:]);err!=nil{fmt.Fprintln(os.Stderr,"managed window worker:",err);os.Exit(2)}
 	return true

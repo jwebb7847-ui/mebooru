@@ -140,7 +140,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [baseline, workspace, prepared, sealed, closure]
+        group: [baseline, prepublication, workspace, prepared, sealed, closure]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -162,6 +162,7 @@ jobs:
           $all = @($listed | Where-Object { $_ -match '^(Test|Fuzz|Example)\S*$' })
           if ($all.Count -eq 0) { throw 'No staging tests enumerated' }
           $groups = @{
+            prepublication = 'TestPlannedNewPublication'
             workspace = 'TestWorkspaceReclamationThroughActualReceipts'
             prepared = 'TestPreparedReleaseThroughActualReceipts'
             sealed = 'TestSealedRetirementThroughActualReceipts'

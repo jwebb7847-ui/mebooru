@@ -70,7 +70,7 @@ func disposableManagedConfig(dir string) (*config.Config, managedqa.Setup, error
 // private queue, custodian and gallery owner used by the executable probe.
 type managedApplication struct {
 	manager  *acquisitionpolicy.Manager
-	owner    *windowFixtureOwner
+	owner    *managedWindowOwner
 	store    *acquisitionpolicy.Store
 	cancel   context.CancelFunc
 	done     chan struct{}
@@ -78,7 +78,7 @@ type managedApplication struct {
 	policyMu sync.Mutex
 }
 
-func openManagedApplication(dir string, setup managedqa.Setup, set *library.Set, naming config.GalleryConfig) (*managedApplication, error) {
+func openManagedApplication(dir string, setup managedqa.Setup, live *windowregistry.LiveConfig, set *library.Set, naming config.GalleryConfig) (*managedApplication, error) {
 	self, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -86,6 +86,12 @@ func openManagedApplication(dir string, setup managedqa.Setup, set *library.Set,
 	lock, err := acquisitionpolicy.LockProfile(dir)
 	if err != nil {
 		return nil, err
+	}
+	if live != nil {
+		if err := saveLiveConfig(dir, *live); err != nil {
+			lock.Close()
+			return nil, err
+		}
 	}
 	store, err := acquisitionpolicy.Open(dir)
 	if err != nil {
@@ -103,8 +109,12 @@ func openManagedApplication(dir string, setup managedqa.Setup, set *library.Set,
 		closePolicy()
 		return nil, err
 	}
-	o := &windowFixtureOwner{dir: dir, setup: setup, set: set, allowed: make(map[string]workerproto.StageAllocateRequest), registry: registry, naming: naming}
-	o.a, err = acquisitionstage.Open(filepath.Join(dir, "stage"), 2, 32<<20, o.scope)
+	o := &managedWindowOwner{dir: dir, setup: setup, live: live, set: set, allowed: make(map[string]workerproto.StageAllocateRequest), registry: registry, naming: naming}
+	maxCount, maxBytes := 2, uint64(32<<20)
+	if live != nil {
+		maxCount, maxBytes = 16, 4<<30
+	}
+	o.a, err = acquisitionstage.Open(filepath.Join(dir, "stage"), maxCount, maxBytes, o.scope)
 	if err != nil {
 		registry.Close()
 		closePolicy()
@@ -227,13 +237,18 @@ func (a *managedApplication) ImportResults(ctx context.Context, id int64) (monlo
 
 func (a *managedApplication) SubmitImport(ctx context.Context, source, gallery string, limit int) (int64, error) {
 	setup := a.owner.setup
-	if limit == 0 {
+	if limit == 0 && a.owner.live != nil {
+		limit = a.owner.live.MaxItems
+	} else if limit == 0 {
 		limit = setup.Count
 	}
 	match := false
 	for id := 1; id <= setup.Windows; id++ {
 		plan := setup.MetadataFor(int64(id))
 		match = match || source == plan.URL && gallery == plan.Gallery && limit == setup.Count
+	}
+	if a.owner.live != nil {
+		match = workerproto.StrictQueueSource(source) != "" && limit > 0 && limit <= a.owner.live.MaxItems
 	}
 	if !match {
 		return 0, web.ErrManagedImportUnsupported
@@ -258,6 +273,23 @@ func (a *managedApplication) SubmitImport(ctx context.Context, source, gallery s
 
 func (a *managedApplication) Cancel(ctx context.Context, id int64) error {
 	return a.call(ctx, workerproto.QueueCancel, workerproto.QueueCommand{JobID: id}, nil)
+}
+
+func (a *managedApplication) CanRetry() bool { return a.owner.live != nil }
+
+func (a *managedApplication) RetryImport(ctx context.Context, id int64) (int64, error) {
+	j, err := a.ImportResults(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	switch j.Status {
+	case "failed", "partial", "interrupted", "canceled":
+		// Reuse the original URL, destination and bound. A new intent
+		// re-evaluates policy and leaves the previous attempt in history.
+		return a.SubmitImport(ctx, j.URL, j.Gallery, j.MaxItems)
+	default:
+		return 0, web.ErrManagedImportUnsupported
+	}
 }
 
 func (a *managedApplication) Offline() bool { return a.manager.ConfiguredOffline() }

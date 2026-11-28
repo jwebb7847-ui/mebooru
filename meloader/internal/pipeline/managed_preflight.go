@@ -43,9 +43,9 @@ func newManagedPreflight(w *ManagedEvidenceWindow,identity acquisitionplan.Metad
 
 func(p *ManagedPreflight) current(ctx context.Context)bool{
 	w:=p.window
-	if ctx.Err()!=nil||!w.scope(ctx,w.grant)||!w.mapper.StrictPolicyMatches(p.stamp){return false}
+	if ctx.Err()!=nil||!w.scope(ctx,w.grant)||(w.mapper!=nil&&!w.mapper.StrictPolicyMatches(p.stamp)){return false}
 	id,generation,err:=p.observe(ctx)
-	return err==nil&&ctx.Err()==nil&&id==p.identity&&generation==p.policyGeneration&&w.mapper.StrictPolicyMatches(p.stamp)
+	return err==nil&&ctx.Err()==nil&&id==p.identity&&generation==p.policyGeneration&&(w.mapper==nil||w.mapper.StrictPolicyMatches(p.stamp))
 }
 
 type ManagedPreflightResult struct{

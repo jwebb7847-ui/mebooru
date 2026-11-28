@@ -568,6 +568,34 @@ func (s *Set) quiesce(cx *Gallery) error {
 	return nil
 }
 
+// PauseAcquisitionWatcher drains the destination watcher for a batch.
+// Each publication step still takes its ordinary gallery and job fence.
+func (s *Set) PauseAcquisitionWatcher(name string) (func(), error) {
+	s.RLock()
+	g := s.Get(name)
+	if g == nil || g.Closed() || g.Degraded {
+		s.RUnlock()
+		return nil, fmt.Errorf("acquisition gallery unavailable")
+	}
+	g.bgMu.Lock()
+	wasRunning := g.WatcherRunning()
+	g.stopWatcher()
+	g.bgMu.Unlock()
+	s.RUnlock()
+	return func() {
+		if !wasRunning {
+			return
+		}
+		s.RLock()
+		defer s.RUnlock()
+		if s.Get(name) == g && !g.Closed() {
+			g.bgMu.Lock()
+			defer g.bgMu.Unlock()
+			g.startWatcher(s.background(name), s.jobs)
+		}
+	}, nil
+}
+
 // WithAcquisitionFence holds the actual set write lock and job lane.
 // A running watcher is refused, not stopped implicitly. Callers must
 // not reenter Set or wait for watcher ingests during the callback.

@@ -90,7 +90,13 @@ func observeExistingTarget(ctx context.Context, g *library.Gallery, r record, e 
 		return zero, ErrStageRecovery
 	}
 	// Refuse unsupported same-site merges before any managed link or landing.
-	if err := existingMetadataSourceEligible(ctx,g,id,row); err != nil { return zero,err }
+	repeat,err:=existingMetadataSourceEligible(ctx,g,id,row,kind==existingHeld)
+	if err!=nil{return zero,err}
+	if repeat{
+		rating,err:=readImageRating(ctx,g,id)
+		if err!=nil{return zero,err}
+		if _,err:=verifyExistingMappedRow(ctx,g,existingMetadataAttempt{Repeat:true,Target:metadataTarget{PostID:row.PostID,ImageID:id,PriorRating:rating}},row,nil);err!=nil{return zero,err}
+	}
 	if err := verifyPlannedImageRow(ctx, g, id, f, &media); err != nil {
 		return zero, err
 	}

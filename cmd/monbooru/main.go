@@ -3,6 +3,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -19,6 +20,7 @@ import (
 	"github.com/jwebb7847-ui/mebooru/shared/desktop"
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/managedqa"
+	"github.com/jwebb7847-ui/mebooru/shared/windowregistry"
 	"github.com/monbooru/monbooru/internal/config"
 	"github.com/monbooru/monbooru/internal/jobs"
 	"github.com/monbooru/monbooru/internal/library"
@@ -190,10 +192,30 @@ func main() {
 	}
 	defer srv.Close()
 	var managed *managedApplication
-	if *managedDisposable != "" {
+	if *managedDisposable != "" || cfg.Desktop.ManagedAcquisition {
+		dir := *managedDisposable
+		var live *windowregistry.LiveConfig
+		if dir == "" {
+			if *meloaderBinary != "" {
+				fatalf("managed acquisition uses the installed Meloader sibling")
+			}
+			settings := cmp.Or(*meloaderConfig, cfg.Desktop.MeloaderConfig)
+			if settings != "" && !filepath.IsAbs(settings) {
+				settings = filepath.Join(filepath.Dir(*configPath), settings)
+			}
+			options, err := readLiveConfig(settings)
+			if err != nil {
+				fatalf("managed acquisition settings: %v", err)
+			}
+			dir, err = prepareLiveDirectory(*configPath)
+			if err != nil {
+				fatalf("managed acquisition profile: %v", err)
+			}
+			live = &options
+		}
 		if err := srv.AttachManagedLoader(func(set *library.Set) (internalweb.ManagedLoader, error) {
 			var err error
-			managed, err = openManagedApplication(*managedDisposable, fixture, set, cfg.Gallery)
+			managed, err = openManagedApplication(dir, fixture, live, set, cfg.Gallery)
 			return managed, err
 		}); err != nil {
 			fatalf("starting managed acquisition: %v", err)
@@ -208,7 +230,7 @@ func main() {
 
 	bundledCompanion := false
 	bundledConfigCreated := false
-	if *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
+	if managed == nil && *desktopMode && *meloaderBinary == "" && *meloaderConfig == "" {
 		*meloaderBinary = cfg.Desktop.MeloaderBinary
 		*meloaderConfig = cfg.Desktop.MeloaderConfig
 		if *meloaderBinary == "" && *meloaderConfig == "" {
@@ -233,7 +255,7 @@ func main() {
 		}
 	}
 	stopMeloader := func() {}
-	if *meloaderBinary != "" || *meloaderConfig != "" {
+	if managed == nil && (*meloaderBinary != "" || *meloaderConfig != "") {
 		stop, err := launchMeloader(*meloaderBinary, *meloaderConfig, bundledCompanion, bootstrap)
 		if err != nil {
 			logx.Errorf("starting Meloader: %v", err)

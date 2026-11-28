@@ -26,6 +26,7 @@ const existingMetadataResultName="existing-metadata-result.json"
 const maxExistingMetadataAttemptBytes=64<<10
 
 type existingMetadataAttempt struct{
+	Repeat bool `json:",omitempty"`
 	Version int
 	LandingSHA256 string
 	PolicySHA256 string
@@ -92,16 +93,23 @@ func existingPreservedState(ctx context.Context,g *library.Gallery,id int64,sour
 	return digestBytes([]byte(operator+rest)),nil
 }
 
-func existingMetadataSourceEligible(ctx context.Context,g *library.Gallery,id int64,row acquisitionplan.ApprovedPolicyRow)error{
+func existingMetadataSourceEligible(ctx context.Context,g *library.Gallery,id int64,row acquisitionplan.ApprovedPolicyRow,allowRepeat bool)(bool,error){
+	if allowRepeat{
+		var exact int
+		if err:=g.DB.Read.QueryRowContext(ctx,`SELECT COUNT(*) FROM image_sources WHERE image_id=? AND site=? AND post_id=? AND url=?`,id,row.SourceLabel,row.PostID,row.PostURL).Scan(&exact);err!=nil{return false,err}
+		if exact==1{
+			return true,nil
+		}
+	}
 	for _,q:=range []struct{sql string;args []any}{
 		{`SELECT COUNT(*) FROM image_sources WHERE (image_id=? AND site=?) OR (site=? AND post_id=?) OR url=? OR parent_url=?`,[]any{id,row.SourceLabel,row.SourceLabel,row.PostID,row.PostURL,row.PostURL}},
 		{`SELECT COUNT(*) FROM image_tag_sources WHERE image_id=? AND source=?`,[]any{id,row.SourceLabel}},
 		{`SELECT COUNT(*) FROM image_annotations WHERE image_id=? AND site=? AND manual=0`,[]any{id,row.SourceLabel}},
 	}{
 		var n int
-		if err:=g.DB.Read.QueryRowContext(ctx,q.sql,q.args...).Scan(&n);err!=nil||n!=0{return ErrStageRefused}
+		if err:=g.DB.Read.QueryRowContext(ctx,q.sql,q.args...).Scan(&n);err!=nil||n!=0{return false,ErrStageRefused}
 	}
-	return nil
+	return false,nil
 }
 
 // For this new-site-only case require even omitted source claims to be
@@ -115,6 +123,10 @@ func verifyExistingMappedRow(ctx context.Context,g *library.Gallery,m existingMe
 	defer tx.Rollback()
 	in,md5,err:=normalizedMappedSource(row)
 	if err!=nil||verifySourceClaimsMode(ctx,tx,v.ImageID,in,md5,true)!=nil{return zero,ErrStageRecovery}
+	if m.Repeat{
+		if tx.Commit()!=nil||ctx.Err()!=nil{return zero,ErrStageRecovery}
+		return v,nil
+	}
 	for _,q:=range []struct{sql string;args []any;want int}{
 		{`SELECT COUNT(*) FROM image_sources WHERE image_id=? AND site=?`,[]any{v.ImageID,row.SourceLabel},1},
 		{`SELECT COUNT(*) FROM image_sources WHERE (site=? AND post_id=?) OR url=?`,[]any{row.SourceLabel,row.PostID,row.PostURL},1},
@@ -160,11 +172,13 @@ func(a *Allocator) existingMetadataEvidenceLocked(ctx context.Context,grant work
 	m.PreservedSHA256,err=existingPreservedState(ctx,g,id,row.SourceLabel)
 	if err!=nil{return zero,err}
 	if prior==nil{
-		if err:=existingMetadataSourceEligible(ctx,g,id,row);err!=nil{return zero,err}
+		m.Repeat,err=existingMetadataSourceEligible(ctx,g,id,row,plan.Target.Kind==existingHeld)
+		if err!=nil{return zero,err}
 		m.Target.PriorRating,err=readImageRating(ctx,g,id)
 		if err!=nil{return zero,err}
 	}else{
 		m.Target.PriorRating=prior.Target.PriorRating
+		m.Repeat=prior.Repeat
 		if !reflect.DeepEqual(m,*prior){return zero,ErrStageRecovery}
 		// No relationship write is necessary or authorized for this scope.
 		graph,err:=inspectRelationships(ctx,g,id,row.PostURL,"")
@@ -211,14 +225,16 @@ func(a *Allocator) applyExistingMetadata(ctx context.Context,grant workerproto.S
 	if err!=nil{return zero,err}
 	var sum gallery.MergeSummary
 	var warnings []string
-	err=g.Edit(func(d *db.DB)error{
+	if !stored.Repeat{
+		err=g.Edit(func(d *db.DB)error{
 		var err error
 		sum,warnings,err=gallery.MergeSource(d,g.TagSvc,stored.Target.ImageID,input.Source,input.PostID,input.URL,md5,input.ParentURL,input.PostFile,row.Tags,input.Withheld)
 		if err!=nil||len(warnings)!=0{return err}
 		_,err=gallery.ApplySourceProvenance(d,stored.Target.ImageID,input.Source,input.PostID,input.Commentary,input.Translated,input.Original,input.Notes)
 		return err
-	})
-	if err!=nil||len(warnings)!=0||!sum.SourceAdded||sum.TagsRetired!=0{return zero,ErrStageRecovery}
+		})
+		if err!=nil||len(warnings)!=0||!sum.SourceAdded||sum.TagsRetired!=0{return zero,ErrStageRecovery}
+	}
 	after,err:=a.existingMetadataEvidenceLocked(ctx,grant,g,disposition,extras,naming,&stored)
 	if err!=nil{return zero,err}
 	v,err:=verifyExistingMappedRow(ctx,g,stored,after.Row,sum.RejectedTags)

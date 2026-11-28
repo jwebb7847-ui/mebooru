@@ -30,13 +30,13 @@ func ResolveOwnerDisposition(ctx context.Context,set *library.Set,gallery string
 		case missing:decision=OwnerDispositionRestore
 		default:decision=OwnerDispositionHeld
 		}
-		// Existing source refresh/URL replacement is a distinct legacy
-		// merge operation. Refuse instead of silently losing old claims.
 		var n int
-		if err:=tx.QueryRowContext(ctx,"SELECT COUNT(*) FROM image_sources WHERE (site=? AND post_id=?) OR url=? OR parent_url=?",row.SourceLabel,row.PostID,row.PostURL,row.PostURL).Scan(&n);err!=nil||n!=0{return ErrStageRefused}
-		if id!=0{
-			if err:=tx.QueryRowContext(ctx,"SELECT COUNT(*) FROM image_sources WHERE image_id=? AND site=?",id,row.SourceLabel).Scan(&n);err!=nil||n!=0{return ErrStageRefused}
-		}
+		// A held image may already own this exact source. Different
+		// images, posts or URLs still require the replacement workflow.
+		if err:=tx.QueryRowContext(ctx,`SELECT COUNT(*) FROM image_sources
+			WHERE ((site=? AND (post_id=? OR image_id=?)) OR url=? OR parent_url=?)
+			  AND NOT (? AND image_id=? AND site=? AND post_id=? AND url=?)`,
+			row.SourceLabel,row.PostID,id,row.PostURL,row.PostURL,decision==OwnerDispositionHeld,id,row.SourceLabel,row.PostID,row.PostURL).Scan(&n);err!=nil||n!=0{return ErrStageRefused}
 		if tx.Commit()!=nil||fence()!=nil{return ErrStageRecovery}
 		return nil
 	})

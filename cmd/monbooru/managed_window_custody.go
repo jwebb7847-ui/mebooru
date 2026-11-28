@@ -23,14 +23,19 @@ import(
 // Disposable executable fixture. The independent custodian, not the
 // worker, compiles and starts the exact six runtime operations.
 func runManagedWindowCustody(dir,generation,token string)error{
-	setup,err:=managedqa.Load(dir);if err!=nil{return err}
+	live,liveErr:=windowregistry.LoadLive(dir)
+	var setup managedqa.Setup
+	if errors.Is(liveErr,os.ErrNotExist){
+		var err error
+		setup,err=managedqa.Load(dir);if err!=nil{return err}
+	}else if liveErr!=nil{return liveErr}
 	if _,err:=processguard.ProbeSibling("monbooru","monloader");err!=nil{return err}
 	r,w,err:=processguard.OpenInheritedPipes(token);if err!=nil{return err}
 	defer r.Close();defer w.Close()
 	store,err:=acquisitionpolicy.Open(dir);if err!=nil{return err};defer store.Close()
 	var ctx context.Context
 	var cancel context.CancelFunc
-	if setup.Application {
+	if setup.Application || liveErr==nil {
 		ctx, cancel = context.WithCancel(context.Background())
 	} else {
 		ctx, cancel = context.WithTimeout(context.Background(), 12*time.Minute)
@@ -43,7 +48,9 @@ func runManagedWindowCustody(dir,generation,token string)error{
 	}
 	registry,err:=windowregistry.Open(filepath.Join(dir,"windows"));if err!=nil{return err};defer registry.Close()
 	runtime,config,_:=setup.Identity()
-	makeGrant:=func(md workerproto.MetadataPlanRequest)processguard.ManagedRuntimeGrant{return processguard.ManagedRuntimeGrant{
+	makeGrant:=func(md workerproto.MetadataPlanRequest)processguard.ManagedRuntimeGrant{
+		if liveErr==nil{return liveRuntimeGrant(dir,generation,live,md,current)}
+		return processguard.ManagedRuntimeGrant{
 		Metadata:md,Runtime:runtime,Config:config,Current:current,
 		MetadataComplete:func(c context.Context,q workerproto.MetadataPlanRequest,sub string,b []byte)error{
 			if !current(c)||q!=md||sub!="search"{return managedqa.ErrFixture}
@@ -65,7 +72,7 @@ func runManagedWindowCustody(dir,generation,token string)error{
 			return managedqa.WriteJSON(dir,managedqa.JobFile(managedqa.ProofName,md.JobID),managedqa.Proof{Allocation:g,Files:files})
 		},
 	}}
-	resolver:=&fixtureWindowResolver{registry:registry,generation:generation,setup:setup,makeGrant:makeGrant}
+	resolver:=&managedWindowResolver{registry:registry,generation:generation,setup:setup,makeGrant:makeGrant,live:liveErr==nil,dir:dir}
 	return acquisitionpolicy.RunCustodianReady(ctx,dir,generation,os.Stdin,os.Stdout,func(start context.Context)(acquisitionpolicy.CustodyChild,error){
 		if err:=start.Err();err!=nil{return nil,err}
 		set:=processguard.NewOperationSet(1)
@@ -86,6 +93,11 @@ func runManagedWindowCustody(dir,generation,token string)error{
 func startManagedWindowRuntime(ctx context.Context,dir string,args []string)(processguard.StreamProbeChild,error){
 	if ctx.Err()!=nil||len(args)==0||len(args)>128||args[0]!="--config-ignore"{return nil,managedqa.ErrFixture}
 	raw,err:=json.Marshal(args);if err!=nil||len(raw)>12<<10{return nil,managedqa.ErrFixture}
+	return startWindowRuntimeCommand(dir,raw)
+}
+
+func startWindowRuntimeCommand(dir string,raw []byte)(processguard.StreamProbeChild,error){
+	if len(raw)>48<<10{return nil,windowregistry.ErrWindow}
 	encoded:=base64.RawURLEncoding.EncodeToString(raw)
 	r,w,err:=os.Pipe();if err!=nil{return nil,err};defer w.Close()
 	s,t,err:=os.Pipe();if err!=nil{r.Close();return nil,err};defer t.Close()
@@ -95,6 +107,9 @@ func startManagedWindowRuntime(ctx context.Context,dir string,args []string)(pro
 }
 
 func runManagedWindowRuntimeLeaf(dir,encoded string)error{
+	if cfg,err:=windowregistry.LoadLive(dir);err==nil{
+		return runLiveRuntimeLeaf(dir,encoded,cfg)
+	}else if !errors.Is(err,os.ErrNotExist){return err}
 	setup,err:=managedqa.Load(dir);if err!=nil{return err}
 	raw,err:=base64.RawURLEncoding.DecodeString(encoded);if err!=nil||len(raw)>12<<10{return managedqa.ErrFixture}
 	var args []string
@@ -140,15 +155,17 @@ func validWindowFixtureArgs(dir string,setup managedqa.Setup,args []string)bool{
 }
 
 
-type fixtureWindowResolver struct{
+type managedWindowResolver struct{
 	registry *windowregistry.Registry
 	generation string
 	setup managedqa.Setup
 	makeGrant func(workerproto.MetadataPlanRequest)processguard.ManagedRuntimeGrant
 	active windowregistry.Grant
+	live bool
+	dir string
 }
-func(r *fixtureWindowResolver)Claim(c context.Context,q workerproto.MetadataPlanRequest)(processguard.ManagedRuntimeGrant,error){
-	if q!=r.setup.MetadataFor(q.JobID)||!workerproto.ValidMetadataPlan(q){return processguard.ManagedRuntimeGrant{},managedqa.ErrFixture}
+func(r *managedWindowResolver)Claim(c context.Context,q workerproto.MetadataPlanRequest)(processguard.ManagedRuntimeGrant,error){
+	if (!r.live&&q!=r.setup.MetadataFor(q.JobID))||!workerproto.ValidMetadataPlan(q){return processguard.ManagedRuntimeGrant{},managedqa.ErrFixture}
 	grant:=r.makeGrant(q)
 	if !grant.Current(c){return processguard.ManagedRuntimeGrant{},managedqa.ErrFixture}
 	observed,err:=r.registry.Observe(q,r.generation);if err!=nil{return processguard.ManagedRuntimeGrant{},err}
@@ -159,13 +176,13 @@ func(r *fixtureWindowResolver)Claim(c context.Context,q workerproto.MetadataPlan
 	v.Current=func(c context.Context)bool{return grant.Current(c)&&r.registry.Admitting(g)}
 	return v,nil
 }
-func(r *fixtureWindowResolver)Settle(c context.Context,q workerproto.MetadataPlanRequest,phase int,failed bool)error{
+func(r *managedWindowResolver)Settle(c context.Context,q workerproto.MetadataPlanRequest,phase int,failed bool)error{
 	if q!=r.active.Request{return managedqa.ErrFixture}
 	// Close arrives after the broker has stopped all runtime handles.
 	// Before metadata completion this window could not allocate any
 	// workspace or publish gallery data. It is safe to retire it and
 	// let the next independently authorized job use the same worker.
-	if failed && phase < 2 {
+	if (failed && phase < 2 || r.live && phase < 6) && r.registry.Admitting(r.active) {
 		if err := r.registry.RecordOutcome(c, windowregistry.Outcome{Grant:r.active,Kind:"abandoned"}); err != nil { return err }
 	}
 	return r.registry.Settle(c,r.active,phase,failed)

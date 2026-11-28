@@ -122,9 +122,16 @@ func NewMetadataSequence(resolve workerproto.MetadataPlanRequest, runtime Runtim
 }
 
 func (s *MetadataSequence) compile(expected, request workerproto.MetadataPlanRequest) ([]string, error) {
+	return s.config.Compile(expected,request)
+}
+
+// Compile reconstructs the qualified command at the contained runtime
+// entry point. The independently claimed job supplies expected.
+func (c MetadataConfig) Compile(expected, request workerproto.MetadataPlanRequest) ([]string,error) {
+	if expected.Source!=c.Source{return nil,ErrMetadataPlan}
 	args, err := CompileMetadata(expected, request)
 	if err != nil { return nil, err }
-	options, err := s.config.args()
+	options, err := c.args()
 	if err != nil { return nil, err }
 	// Only generated fixed options, immediately after --config-ignore.
 	out := append([]string{args[0]}, options...)

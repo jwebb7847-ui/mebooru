@@ -11,6 +11,7 @@ import(
 	"github.com/jwebb7847-ui/mebooru/shared/logx"
 	"github.com/jwebb7847-ui/mebooru/shared/processguard"
 	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/jwebb7847-ui/mebooru/shared/windowregistry"
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/queue"
@@ -22,6 +23,8 @@ import(
 // owned custodian broker; Close reconciles that broker's custody, not
 // merely the worker's local pipe. No direct legacy runtime starter.
 type ManagedWindowRuntime struct{
+	ContainedPolicy func(context.Context)(windowregistry.LivePolicy,error)
+	Abandon func(context.Context,workerproto.StageAllocation)error
 	Request workerproto.MetadataPlanRequest
 	Identity acquisitionplan.MetadataIdentity
 	Config acquisitionplan.MetadataConfig
@@ -65,14 +68,18 @@ func(p *ManagedJobProcessor) ProcessManaged(ctx context.Context,j *queue.Job)(re
 		return errors.Join(errManagedJob,err),nil
 	}
 	proxies:=processguard.NewOperationSet(1)
+	var allocated workerproto.StageAllocation
 	defer func(){
 		cleanup,cancel:=context.WithTimeout(context.WithoutCancel(ctx),15*time.Second);defer cancel()
 		cleanupErr=errors.Join(cleanupErr,proxies.SealAndStop(cleanup))
 		if r.Close==nil{cleanupErr=errors.Join(cleanupErr,processguard.ErrOperationUnconfirmed)}else{cleanupErr=errors.Join(cleanupErr,r.Close(cleanup))}
+		if cleanupErr==nil&&resultErr!=nil&&r.Abandon!=nil&&allocated!=(workerproto.StageAllocation{}){
+			cleanupErr=r.Abandon(cleanup,allocated)
+		}
 	}()
 	if err!=nil{return err,nil}
 	q:=r.Request
-	if r.Client==nil||r.Mapper==nil||r.Observe==nil||r.Scope==nil||r.Close==nil||
+	if r.Client==nil||(r.Mapper==nil&&r.ContainedPolicy==nil)||r.Observe==nil||r.Scope==nil||r.Close==nil||
 		!workerproto.ValidMetadataPlan(q)||q.Kind!=workerproto.MetadataStrictResolve||
 		q.JobID!=job.ID||q.URL!=job.URL||q.Source!=workerproto.StrictQueueSource(job.URL)||
 		job.Gallery!=""&&job.Gallery!=q.Gallery||job.Offset<0||uint64(job.Offset)+1!=uint64(q.First)||
@@ -91,9 +98,14 @@ func(p *ManagedJobProcessor) ProcessManaged(ctx context.Context,j *queue.Job)(re
 	if err!=nil{return err,nil}
 	logx.Infof("managed acquisition job=%d stage=metadata duration=%s",job.ID,time.Since(start).Round(time.Millisecond))
 	start=time.Now()
-	preflight,err:=NewManagedPreflightFromCompletion(ctx,completion,q,r.Identity,r.Config,p.Gate,r.Scope,r.Mapper,r.Transport,r.PolicyGeneration,r.Observe)
-	if err!=nil{return err,nil}
-	verdict,err:=preflight.Run(ctx,q)
+	var verdict ManagedPreflightResult
+	if r.ContainedPolicy!=nil{
+		verdict,err=bindContainedPolicy(ctx,completion,r,p.Gate)
+	}else{
+		var preflight *ManagedPreflight
+		preflight,err=NewManagedPreflightFromCompletion(ctx,completion,q,r.Identity,r.Config,p.Gate,r.Scope,r.Mapper,r.Transport,r.PolicyGeneration,r.Observe)
+		if err==nil{verdict,err=preflight.Run(ctx,q)}
+	}
 	if err!=nil{return err,nil}
 	logx.Infof("managed acquisition job=%d stage=policy duration=%s",job.ID,time.Since(start).Round(time.Millisecond))
 	blocked:=map[string]bool{}
@@ -124,6 +136,7 @@ func(p *ManagedJobProcessor) ProcessManaged(ctx context.Context,j *queue.Job)(re
 	if json.Unmarshal(body,&projection)!=nil||projection.Transfer!=plan{return errManagedJob,nil}
 	grant,root,err:=p.Owner.Allocate(ctx,plan,body,hash)
 	if err!=nil||!workerproto.ValidStageAllocation(grant)||grant.Request.Transfer!=plan{return errors.Join(errManagedJob,err),nil}
+	allocated=grant
 	if err:=j.BindManagedWindow(grant,hash);err!=nil{return err,nil}
 	start=time.Now()
 	files,err:=approval.RunAllocatedTransfer(ctx,grant,proxies,root,r.Client.TransferStarter(grant))

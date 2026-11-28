@@ -349,7 +349,7 @@ func (q *Queue) enqueueLocked(url string, opts Options) *Job {
 	// A re-add gets the archive bypass a retry would; a URL-less job must
 	// match nothing. A watch check stays on the archive: its last failed
 	// run keeps its own retry.
-	if opts.Root == 0 && opts.Watch == 0 && url != "" {
+	if opts.ManagedIntentID == "" && opts.Root == 0 && opts.Watch == 0 && url != "" {
 		if reach, unimported := q.lastRunUnimportedLocked(url); unimported {
 			j.Force, j.ForceTo = true, reach
 		}

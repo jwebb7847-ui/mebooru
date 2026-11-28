@@ -67,7 +67,10 @@
           </td>
           <td>
             {{if $.Managed}}
-              {{if .Live}}<button type="button" hx-post="/loader/jobs/{{.ID}}/cancel" hx-target="#loader-flash" hx-swap="innerHTML" hx-sync="unset" hx-disabled-elt="this">Cancel</button>{{end}}
+              {{if .Live}}<button type="button" hx-post="/loader/jobs/{{.ID}}/cancel" hx-target="#loader-flash" hx-swap="innerHTML" hx-sync="unset" hx-disabled-elt="this">Cancel</button>
+              {{else if and $.Retry .URL (or (eq .Status "failed") (eq .Status "partial") (eq .Status "interrupted") (eq .Status "canceled"))}}
+              <button type="button" hx-post="/loader/jobs/{{.ID}}/retry" hx-target="#loader-flash" hx-swap="innerHTML" hx-sync="unset" hx-disabled-elt="this">Retry</button>
+              {{end}}
             {{else if not .Live}}
               {{if and (ne .Kind "ptr_lookup") (or (eq .Status "failed") (eq .Status "partial") (eq .Status "interrupted") (eq .Status "canceled"))}}
               <button type="button" id="loader-retry-{{.ID}}" hx-post="/loader/jobs/{{.ID}}/retry" hx-target="#loader-flash" hx-swap="innerHTML" hx-sync="unset" hx-disabled-elt="this">Retry</button>
