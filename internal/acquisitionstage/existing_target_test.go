@@ -38,6 +38,10 @@ func TestGuardedExistingHeldReceipt(t *testing.T){
 	testExistingPublicationTargetModes(t, []string{"exec meta dispose held","exec meta dispose alias","exec meta dispose reopen","exec meta dispose revoked after intent","exec meta dispose changed after intent","exec meta dispose revoked after unlink","exec meta dispose DB failure","exec meta dispose changed row","exec meta dispose changed canonical","exec meta dispose receipt revoked","exec meta dispose lost receipt","exec meta dispose changed retained"})
 }
 
+func TestGuardedExistingRestoreReceipt(t *testing.T){
+	testExistingPublicationTargetModes(t, []string{"restore exec meta name marked","restore exec meta name unmarked","restore exec meta name nested","restore exec meta name reopen","restore exec meta name collision","restore exec meta name changed request","restore exec meta name changed target dir","restore exec meta name revoked after intent","restore exec meta name revoked after link","restore exec meta name revoked after repoint","restore exec meta name DB failure","restore exec meta name old path returned","restore exec meta name receipt revoked","restore exec meta name lost receipt","restore exec meta name changed retained","restore exec meta name replaced final"})
+}
+
 func testExistingPublicationTargetModes(t *testing.T, modes []string){
 	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
@@ -85,7 +89,7 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 			}
 			if kind == existingRestore || mode == "wrong disposition" {
 				if err := os.Remove(old); err != nil { t.Fatal(err) }
-				if mode != "restore unmarked" && mode != "restore exec unmarked" {
+				if mode != "restore unmarked" && mode != "restore exec unmarked" && mode != "restore exec meta name unmarked" {
 					if _,err := gallery.SetMissing(g.DB,id,true); err != nil { t.Fatal(err) }
 				}
 			}
@@ -277,6 +281,10 @@ func checkGuardedExistingExecution(t *testing.T,ctx context.Context,ap **Allocat
 	})
 	req:=gallery.ReceivedNamingRequest{Gallery:g.Name,ReceivedName:got.File.RelativeName,Source:"derpibooru",PostID:got.File.ID,DefaultName:"{source}-{post_id}"}
 	if mode=="restore exec bad naming"{req.DefaultName="{date}"}
+	if mode=="restore exec meta name nested"||mode=="restore exec meta name changed target dir"{
+		if err:=os.Mkdir(filepath.Join(g.GalleryPath,"target"),0700);err!=nil{t.Fatal(err)}
+		req.RequestFolder="target"
+	}
 	naming:=namingAuthority(func(context.Context,workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){return req,nil})
 	injected:=false
 	originalExtras:=extras
@@ -415,6 +423,10 @@ func checkGuardedExistingMetadata(t *testing.T,ctx context.Context,ap **Allocato
 	if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("premature terminal receipt")}
 	if b,err:=os.ReadFile(managed);err!=nil||!bytes.Equal(b,data){t.Fatal("managed bytes",err)}
 	if got.Kind==existingHeld{if b,err:=os.ReadFile(old);err!=nil||!bytes.Equal(b,data){t.Fatal("canonical bytes",err)}}
+	if strings.Contains(mode,"restore exec meta name"){
+		checkGuardedExistingRestoreReceipt(t,ctx,ap,stage,grant,g,got,extras,authority,mode,naming,decision,old,data)
+		return
+	}
 	if strings.Contains(mode,"exec meta dispose"){
 		checkGuardedExistingHeldReceipt(t,ctx,ap,stage,grant,g,got,extras,authority,mode,decision,old,data)
 		return
@@ -522,5 +534,96 @@ func checkGuardedExistingHeldReceipt(t *testing.T,ctx context.Context,ap **Alloc
 	}
 	again,err:=a.observeExistingHeldReceipt(ctx,grant,g,decision,extras)
 	want:=mode!="exec meta dispose lost receipt"&&mode!="exec meta dispose changed retained"
+	if (err==nil)!=want||want&&again!=v{t.Fatal("receipt witness",again,err)}
+}
+
+func checkGuardedExistingRestoreReceipt(t *testing.T,ctx context.Context,ap **Allocator,stage string,grant workerproto.StageAllocation,g *library.Gallery,got existingPublicationTarget,extras extrasAuthority,authority Authority,mode string,naming namingAuthority,decision existingDispositionAuthority,old string,data []byte){
+	t.Helper()
+	a:=*ap
+	dir:=filepath.Join(stage,grant.Request.OperationID,"publication")
+	attempt:=filepath.Join(dir,existingRestoreAttemptName)
+	receipt:=filepath.Join(dir,existingRestoreReceiptName)
+	managed:=filepath.Join(g.GalleryPath,finalName(grant,got.File))
+	id:=got.ImageID
+	q,err:=naming(ctx,grant);if err!=nil{t.Fatal(err)}
+	preview,err:=gallery.PreviewReceivedNaming(ctx,g.DB,g.Boundary(),id,q);if err!=nil{t.Fatal(err)}
+	final:=preview.FinalPath
+	if _,err:=a.finishExistingRestoreReceipt(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("premature restored receipt")}
+	if mode=="restore exec meta name collision"{if err:=os.WriteFile(final,[]byte("operator file"),0600);err!=nil{t.Fatal(err)}}
+	if mode=="restore exec meta name changed request"{q.DefaultName="changed";naming=func(context.Context,workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){return q,nil}}
+	if mode=="restore exec meta name changed target dir"{
+		parent:=filepath.Dir(final)
+		if err:=os.Rename(parent,parent+"-old");err!=nil{t.Fatal(err)}
+		if err:=os.Mkdir(parent,0700);err!=nil{t.Fatal(err)}
+	}
+	if mode=="restore exec meta name old path returned"{if err:=os.WriteFile(old,[]byte("operator old"),0600);err!=nil{t.Fatal(err)}}
+	if mode=="restore exec meta name DB failure"{
+		if _,err:=g.DB.Write.Exec("CREATE TRIGGER fixture_reject_repoint BEFORE UPDATE OF canonical_path ON images BEGIN SELECT RAISE(ABORT,'fixture'); END");err!=nil{t.Fatal(err)}
+	}
+	original:=decision
+	decision=func(ctx context.Context,grant workerproto.StageAllocation)(string,error){
+		if _,err:=os.Stat(attempt);err==nil{
+			if mode=="restore exec meta name revoked after intent"{return "",ErrStageRefused}
+			if mode=="restore exec meta name revoked after link"{if _,err:=os.Stat(final);err==nil{return "",ErrStageRefused}}
+			if mode=="restore exec meta name revoked after repoint"{
+				var current string
+				if err:=g.DB.Read.QueryRow("SELECT canonical_path FROM images WHERE id=?",id).Scan(&current);err!=nil{t.Fatal(err)}
+				if current==final{return "",ErrStageRefused}
+			}
+		}
+		if mode=="restore exec meta name receipt revoked"{if _,err:=os.Stat(receipt);err==nil{return "",ErrStageRefused}}
+		return original(ctx,grant)
+	}
+	err=a.nameExistingRestore(ctx,grant,g,decision,extras,naming)
+	pre:=mode=="restore exec meta name collision"||mode=="restore exec meta name changed request"||mode=="restore exec meta name changed target dir"||mode=="restore exec meta name old path returned"
+	partial:=mode=="restore exec meta name revoked after intent"||mode=="restore exec meta name revoked after link"||mode=="restore exec meta name revoked after repoint"||mode=="restore exec meta name DB failure"
+	if (err!=nil)!=(pre||partial){t.Fatal("restore naming",err)}
+	var current string
+	if err:=g.DB.Read.QueryRow("SELECT canonical_path FROM images WHERE id=?",id).Scan(&current);err!=nil{t.Fatal(err)}
+	if pre||partial{
+		_,err:=os.Stat(attempt)
+		if pre!=os.IsNotExist(err){t.Fatal("wrong restore attempt",err)}
+		if b,err:=os.ReadFile(managed);err!=nil||!bytes.Equal(b,data){t.Fatal("managed bytes lost",err)}
+		wantCurrent:=managed
+		if mode=="restore exec meta name revoked after repoint"{wantCurrent=final}
+		if current!=wantCurrent{t.Fatal("wrong partial canonical",current,wantCurrent)}
+		if mode=="restore exec meta name collision"{if b,err:=os.ReadFile(final);err!=nil||string(b)!="operator file"{t.Fatal("clobbered final",err)}}
+		if mode=="restore exec meta name revoked after link"||mode=="restore exec meta name revoked after repoint"||mode=="restore exec meta name DB failure"{if b,err:=os.ReadFile(final);err!=nil||!bytes.Equal(b,data){t.Fatal("linked copy lost",err)}}
+		if _,err:=a.finishExistingRestoreReceipt(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("partial restore got receipt")}
+		if partial{if err:=a.nameExistingRestore(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("partial restore replay")}}
+		return
+	}
+	if current!=final{t.Fatal("wrong canonical",current,final)}
+	if _,err:=os.Stat(managed);!os.IsNotExist(err){t.Fatal("old managed link remains",err)}
+	if _,err:=os.Stat(old);!os.IsNotExist(err){t.Fatal("original missing path reappeared",err)}
+	if b,err:=os.ReadFile(final);err!=nil||!bytes.Equal(b,data){t.Fatal("final bytes",err)}
+	var n int
+	wantOld:=0;if got.Restore.RestoreMarkedMissing{wantOld=1}
+	if err:=g.DB.Read.QueryRow("SELECT COUNT(*) FROM image_paths WHERE image_id=? AND path=? AND is_canonical=0",id,old).Scan(&n);err!=nil||n!=wantOld{t.Fatal("old missing row",n,err)}
+	if err:=a.nameExistingRestore(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("rename replay")}
+	v,err:=a.finishExistingRestoreReceipt(ctx,grant,g,decision,extras,naming)
+	if mode=="restore exec meta name receipt revoked"{
+		if err==nil{t.Fatal("revoked receipt acknowledged")}
+		decision=original
+		v,err=a.observeExistingRestoreReceipt(ctx,grant,g,decision,extras,naming)
+	}
+	if err!=nil||v.Witness.Kind!=existingRestoreReceiptKind||v.Witness.Row.ImageID!=id||v.Witness.FileIdentity!=got.FileIdentity||filepath.Join(g.GalleryPath,v.Witness.Row.Name)!=final{t.Fatal("receipt",v,err)}
+	if _,err:=a.finishExistingRestoreReceipt(ctx,grant,g,decision,extras,naming);err==nil{t.Fatal("receipt overwritten")}
+	if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("legacy reclamation accepted guarded receipt")}
+	switch mode{
+	case "restore exec meta name reopen":
+		if err:=a.Close();err!=nil{t.Fatal(err)}
+		next,err:=Open(stage,2,4096,authority);if err!=nil{t.Fatal(err)}
+		*ap=next;a=next
+	case "restore exec meta name lost receipt":
+		if err:=os.Remove(receipt);err!=nil{t.Fatal(err)}
+	case "restore exec meta name changed retained":
+		if _,err:=g.DB.Write.Exec("UPDATE images SET note='changed retained' WHERE id=?",id);err!=nil{t.Fatal(err)}
+	case "restore exec meta name replaced final":
+		if err:=os.Rename(final,filepath.Join(filepath.Dir(stage),"original-restored.png"));err!=nil{t.Fatal(err)}
+		if err:=os.WriteFile(final,data,0600);err!=nil{t.Fatal(err)}
+	}
+	again,err:=a.observeExistingRestoreReceipt(ctx,grant,g,decision,extras,naming)
+	want:=mode!="restore exec meta name lost receipt"&&mode!="restore exec meta name changed retained"&&mode!="restore exec meta name replaced final"
 	if (err==nil)!=want||want&&again!=v{t.Fatal("receipt witness",again,err)}
 }
