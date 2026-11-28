@@ -24,7 +24,7 @@ import (
 )
 
 func TestPlannedNewPublication(t *testing.T){
-	for _,mode:=range []string{"plain","template","collision","nested","unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","changed naming","changed job","changed collision","changed directory","forged plan","revoked after intent","changed after intent","DB reopen","changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt","changed after landing","changed job after naming","changed client after landing","shared source tag","legacy marker substitution","lost attempt after receipt","full closure","JPEG","JPEG extension","animated GIF","WebP","bad JPEG","mismatched GIF","unsupported video","media facts changed","media facts changed after receipt","forged media facts","measured naming"}{
+	for _,mode:=range []string{"plain","template","collision","nested","unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","changed naming","changed job","changed collision","changed directory","forged plan","revoked after intent","changed after intent","DB reopen","changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt","changed after landing","changed job after naming","changed client after landing","shared source tag","legacy marker substitution","lost attempt after receipt","full closure","JPEG","JPEG extension","animated GIF","WebP","bad JPEG","mismatched GIF","unsupported video","media facts changed","media facts changed after receipt","forged media facts","measured naming","collection existing label","collection missing order","collection changed before publish","collection changed after publish","collection changed before apply","collection missing result","collection changed after receipt","collection JPEG"}{
 		t.Run(mode,func(t *testing.T){
 			ctx:=context.Background()
 			var buf bytes.Buffer
@@ -33,7 +33,7 @@ func TestPlannedNewPublication(t *testing.T){
 			if mode=="bad PNG"{data=[]byte("not a PNG")}
 			if mode=="wrong extension"{ext="jpg"}
 			switch mode{
-			case "JPEG","JPEG extension","media facts changed","media facts changed after receipt","forged media facts","measured naming":
+			case "JPEG","JPEG extension","media facts changed","media facts changed after receipt","forged media facts","measured naming","collection JPEG":
 				var out bytes.Buffer
 				if err:=jpeg.Encode(&out,image.NewRGBA(image.Rect(0,0,16,16)),nil);err!=nil{t.Fatal(err)}
 				data=out.Bytes();ext="jpg"
@@ -60,7 +60,9 @@ func TestPlannedNewPublication(t *testing.T){
 			row:=acquisitionplan.ApprovedPolicyRow{PostID:f.ID,NativeSHA256:strings.Repeat("a",64),MediaURL:"https://example.invalid/42."+ext,
 				SourceLabel:"derpibooru",PostURL:"https://derpibooru.org/images/42",Rating:"general",Tags:[]string{"fixture","rating:general"},Provenance:&acquisitionplan.ApprovedProvenance{}}
 			if mode=="parent"{row.Provenance.ParentURL="https://derpibooru.org/images/41"}
-			if mode=="collection"{row.Provenance.Collection="pool";row.Provenance.CollectionOrder=1}
+			withCollection:=strings.HasPrefix(mode,"collection")
+			if withCollection{row.Provenance.Collection="pool";row.Provenance.CollectionOrder=7}
+			if mode=="collection missing order"{row.Provenance.CollectionOrder=0}
 			if mode!="unbound"{
 				body,hash,err:=acquisitionplan.EncodeApprovedPolicy(grant.Request.Transfer,[]acquisitionplan.ApprovedPolicyRow{row})
 				if err!=nil{t.Fatal(err)}
@@ -74,6 +76,16 @@ func TestPlannedNewPublication(t *testing.T){
 				res,err:=g.Land(ctx,s.GalleryRoot,"existing.png",library.FromReader(bytes.NewReader(data)),library.LandSpec{Origin:"fixture"})
 				if err!=nil||res.Image==nil||res.Duplicate{t.Fatal("existing fixture",err)}
 			}
+			addExistingCollection:=func(){
+				t.Helper()
+				var b bytes.Buffer
+				if err:=png.Encode(&b,image.NewRGBA(image.Rect(0,0,17,17)));err!=nil{t.Fatal(err)}
+				res,err:=g.Land(ctx,s.GalleryRoot,"existing-collection.png",library.FromReader(bytes.NewReader(b.Bytes())),library.LandSpec{Origin:"fixture"})
+				if err!=nil||res.Image==nil||res.Duplicate{t.Fatal("collection fixture",err)}
+				order:=2
+				if err:=gallery.AddCollectionMembership(g.DB,res.Image.ID,"POOL",&order);err!=nil{t.Fatal(err)}
+			}
+			if mode=="collection existing label"{addExistingCollection()}
 			req:=gallery.ReceivedNamingRequest{Gallery:g.Name,ReceivedName:f.RelativeName,Source:row.SourceLabel,PostID:row.PostID}
 			job:=contract.JobExtras{Tags:[]string{"client tag"}}
 			switch mode{
@@ -129,7 +141,7 @@ func TestPlannedNewPublication(t *testing.T){
 			if _,err:=os.Stat(diagnostic);!os.IsNotExist(err){t.Fatal("planning published media",err)}
 			if count()!=before{t.Fatal("planning mutated gallery rows")}
 			switch mode{
-			case "unbound","bad PNG","wrong extension","parent","collection","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","bad JPEG","mismatched GIF","unsupported video":
+			case "unbound","bad PNG","wrong extension","parent","collection missing order","existing image","wrong naming","future ID","future date","missing directory","custom via","commentary","rating alias","no authority","bad JPEG","mismatched GIF","unsupported video":
 				if err==nil{t.Fatal("unsupported plan accepted")}
 				if _,err:=a.publishPlannedNew(ctx,grant,g,naming,extras,plan);err==nil{t.Fatal("unsupported publication accepted")}
 				if _,err:=os.Stat(intent);!os.IsNotExist(err){t.Fatal("unsupported case wrote intent",err)}
@@ -139,6 +151,10 @@ func TestPlannedNewPublication(t *testing.T){
 			}
 			if err!=nil{t.Fatal("plan",err)}
 			if !validPlannedImageFacts(f,plan.Media)||plan.Media.Width!=16||plan.Media.Height!=16{t.Fatal("missing measured media facts",plan.Media)}
+			if withCollection{
+				label:="pool";if mode=="collection existing label"{label="POOL"}
+				if plan.Collection==nil||plan.Collection.Label!=label||plan.Collection.Order!=7{t.Fatal("wrong planned collection",plan.Collection)}
+			}else if plan.Collection!=nil{t.Fatal("unexpected collection plan")}
 			switch mode{
 			case "changed naming":req.DefaultName="changed"
 			case "changed job":job.Tags=[]string{"changed"}
@@ -148,12 +164,13 @@ func TestPlannedNewPublication(t *testing.T){
 				old:=filepath.Join(s.GalleryRoot,"nested")
 				if err:=os.Rename(old,filepath.Join(s.GalleryRoot,"old"));err!=nil{t.Fatal(err)}
 				if err:=os.Mkdir(old,0700);err!=nil{t.Fatal(err)}
+			case "collection changed before publish":addExistingCollection();before=count()
 			case "forged plan":plan.FileIdentity="wrong"
 			case "forged media facts":plan.Media.Width++
 			}
 			places,err:=a.publishPlannedNew(ctx,grant,g,naming,extras,plan)
 			switch mode{
-			case "changed naming","changed job","changed collision","changed directory","forged plan","forged media facts","revoked after intent","changed after intent":
+			case "collection changed before publish","changed naming","changed job","changed collision","changed directory","forged plan","forged media facts","revoked after intent","changed after intent":
 				if err==nil{t.Fatal("changed plan published")}
 				_,statErr:=os.Stat(intent)
 				partial:=mode=="revoked after intent"||mode=="changed after intent"
@@ -175,6 +192,7 @@ func TestPlannedNewPublication(t *testing.T){
 				g,err=library.Open(cfg);if err!=nil{t.Fatal(err)}
 			}
 			switch mode{
+			case "collection changed after publish":addExistingCollection();before=count()
 			case "changed after publish":req.DefaultName="changed"
 			case "changed job after publish":job.Tags=[]string{"changed"}
 			case "changed collision after publish":
@@ -184,7 +202,7 @@ func TestPlannedNewPublication(t *testing.T){
 			}
 			err=a.landPlannedNew(ctx,grant,g,naming,extras)
 			switch mode{
-			case "changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt":
+			case "collection changed after publish","changed after publish","changed job after publish","changed collision after publish","revoked after landing intent","damaged attempt":
 				if err==nil||count()!=before{t.Fatal("unsafe planned landing",err)}
 				_,statErr:=os.Stat(landingPath)
 				if mode=="revoked after landing intent"{if statErr!=nil||!injected{t.Fatal("landing boundary injection not reached",statErr)}}else if !os.IsNotExist(statErr){t.Fatal("unexpected landing intent",statErr)}
@@ -201,6 +219,22 @@ func TestPlannedNewPublication(t *testing.T){
 			mapped,err:=a.applyMappedMetadata(ctx,grant,g)
 			if err!=nil||len(mapped)!=1{t.Fatal("metadata",err)}
 			if err:=a.applyRelationships(ctx,grant,g);err!=nil{t.Fatal(err)}
+			if withCollection{
+				if mode=="collection changed before apply"{addExistingCollection()}
+				if mode=="collection missing result"{
+					if err:=a.applyNaming(ctx,grant,g,naming);err==nil{t.Fatal("naming without collection proof")}
+					return
+				}
+				err:=a.applyCollections(ctx,grant,g)
+				if mode=="collection changed before apply"{
+					if err==nil{t.Fatal("changed collection accepted")}
+					if _,err:=os.Stat(filepath.Join(filepath.Dir(intent),"collection-attempt.json"));!os.IsNotExist(err){t.Fatal("unexpected collection intent",err)}
+					return
+				}
+				if err!=nil{t.Fatal("apply collection",err)}
+				var label string;var position int
+				if err:=g.DB.Read.QueryRow("SELECT name,position FROM image_collections WHERE image_id=?",mapped[0].ImageID).Scan(&label,&position);err!=nil||label!=plan.Collection.Label||position!=7{t.Fatal("collection membership",label,position,err)}
+			}
 			if mode=="media facts changed"{
 				if _,err:=g.DB.Write.Exec("UPDATE images SET width=17 WHERE id=?",mapped[0].ImageID);err!=nil{t.Fatal(err)}
 				if err:=a.applyNaming(ctx,grant,g,naming);err==nil{t.Fatal("changed measured width accepted")}
@@ -235,6 +269,11 @@ func TestPlannedNewPublication(t *testing.T){
 			if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err!=nil{t.Fatal(err)}
 			if got,err:=os.ReadFile(preview.FinalPath);err!=nil||!bytes.Equal(got,data){t.Fatal("canonical bytes",err)}
 			if mode=="collision"{if got,err:=os.ReadFile(filepath.Join(s.GalleryRoot,f.RelativeName));err!=nil||string(got)!="operator"{t.Fatal("operator bytes changed",err)}}
+			if mode=="collection changed after receipt"{
+				if _,err:=g.DB.Write.Exec("UPDATE image_collections SET position=8 WHERE image_id=?",mapped[0].ImageID);err!=nil{t.Fatal(err)}
+				if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("changed collection accepted")}
+				return
+			}
 			if mode=="media facts changed after receipt"{
 				if _,err:=g.DB.Write.Exec("UPDATE images SET file_type='png' WHERE id=?",mapped[0].ImageID);err!=nil{t.Fatal(err)}
 				if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("changed type accepted")}
@@ -245,7 +284,7 @@ func TestPlannedNewPublication(t *testing.T){
 				if _,err:=a.observeTerminalReceipt(ctx,grant,g,naming,extras);err==nil{t.Fatal("lost guarded marker accepted")}
 				return
 			}
-			if mode=="full closure"||mode=="JPEG"||mode=="JPEG extension"||mode=="animated GIF"||mode=="WebP"{
+			if mode=="full closure"||mode=="JPEG"||mode=="JPEG extension"||mode=="animated GIF"||mode=="WebP"||mode=="collection"||mode=="collection existing label"||mode=="collection JPEG"{
 				auth:=func(context.Context,workerproto.StageAllocation,terminalReceiptWitness)error{return nil}
 				if _,err:=a.reclaimWorkspace(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("reclaim",err)}
 				if _,err:=a.releasePrepared(ctx,grant,g,naming,extras,auth);err!=nil{t.Fatal("release",err)}
