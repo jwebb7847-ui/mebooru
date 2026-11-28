@@ -110,7 +110,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 		if err!=nil{return zero,ErrStageRecovery}
 		if plan!=nil{
 			if len(e.Files)!=1||e.Files[0]!=plan.File||plan.DB.GalleryIdentity!=r.GalleryIdentity||
-				names["held-composition.json"]||names["restored-receipt.json"]||names["new-receipt.json"]||names["duplicate-attempt.json"]||names["collection-attempt.json"]{return zero,ErrStageRecovery}
+				names["held-composition.json"]||names["restored-receipt.json"]||names["new-receipt.json"]||names["duplicate-attempt.json"]||(plan.Collection==nil&&names["collection-attempt.json"]){return zero,ErrStageRecovery}
 			for _,path:=range []string{plan.Preview.InitialPath,plan.Preview.FinalPath}{
 				rel,err:=namingRelative(r.GalleryRoot,path)
 				if err!=nil||strings.EqualFold(rel,finalName(r.Allocation,plan.File)){return zero,ErrStageRecovery}
@@ -134,8 +134,14 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 				}
 				if names["collection-attempt.json"]{
 					if err:=validateCollectionRecords(p,landing,result,names["collection-result.json"]);err!=nil{return zero,err}
+					if plan!=nil{
+						raw,err:=boundedRegularBytes(p,"collection-attempt.json",maxCollectionRecord)
+						var col collectionAttempt
+						if err!=nil||json.Unmarshal(raw,&col)!=nil||!matchesPlannedCollectionAttempt(plan.Collection,col){return zero,ErrStageRecovery}
+					}
 				}
 				if names["naming-attempt.json"]{
+					if plan!=nil&&plan.Collection!=nil&&!names["collection-result.json"]{return zero,ErrStageRecovery}
 					if err:=validateNamingRecords(p,r,e,landing,result,names["naming-result.json"]);err!=nil{return zero,err}
 					if plan!=nil{
 						m,_,err:=readNamingAttempt(p,r,e,result)
