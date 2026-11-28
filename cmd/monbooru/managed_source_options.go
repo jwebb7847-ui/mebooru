@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/jwebb7847-ui/mebooru/shared/fsx"
@@ -124,13 +125,9 @@ func (a *managedApplication) SaveAcquisitionSource(ctx context.Context, source w
 	if !addManagedSourceOptions(source.Name, source.Options, make(map[string]any)) {
 		return errors.New("Managed custom options support only Derpibooru's numeric filter and comments toggle.")
 	}
-	if source.Cookies != "" {
-		if !filepath.IsAbs(source.Cookies) {
-			return errors.New("Enter an absolute path to a local cookie file.")
-		}
-		if fi, err := os.Stat(source.Cookies); err != nil || !fi.Mode().IsRegular() {
-			return errors.New("The cookie file is unavailable.")
-		}
+	if source.CookieData != "" && !strings.HasPrefix(source.CookieData, "# Netscape HTTP Cookie File") &&
+		!strings.HasPrefix(source.CookieData, "# HTTP Cookie File") {
+		return errors.New("Paste the contents of a Netscape-format cookie file.")
 	}
 	a.policyMu.Lock()
 	defer a.policyMu.Unlock()
@@ -160,7 +157,7 @@ func (a *managedApplication) SaveAcquisitionSource(ctx context.Context, source w
 	site["name"] = source.Name
 	for k, v := range map[string]string{
 		"username": source.Username, "password": source.Password, "api_key": source.Key,
-		"user_id": source.UserID, "cookies": source.Cookies,
+		"user_id": source.UserID, "cookies": "",
 	} {
 		if source.ClearCredentials {
 			delete(site, k)
@@ -168,6 +165,20 @@ func (a *managedApplication) SaveAcquisitionSource(ctx context.Context, source w
 		if v != "" {
 			site[k] = v
 		}
+	}
+	var cookies string
+	if source.CookieData != "" {
+		file, err := os.CreateTemp(a.owner.dir, "source-cookies-*.txt")
+		if err != nil {
+			return errors.New("The cookie file could not be saved.")
+		}
+		cookies = file.Name()
+		_, err = file.WriteString(source.CookieData + "\n")
+		if err := errors.Join(err, file.Close()); err != nil {
+			_ = os.Remove(cookies)
+			return errors.New("The cookie file could not be saved.")
+		}
+		site["cookies"] = cookies
 	}
 	for k, v := range map[string]string{"options": source.Options, "user_agent": source.Agent} {
 		if source.ClearOptions {
@@ -179,6 +190,9 @@ func (a *managedApplication) SaveAcquisitionSource(ctx context.Context, source w
 	}
 	document["sites"] = append(updated, site)
 	if err := fsx.WriteDurable(path, func(f *os.File) error { return toml.NewEncoder(f).Encode(document) }); err != nil {
+		if cookies != "" {
+			_ = os.Remove(cookies)
+		}
 		return errors.New("The source settings could not be saved.")
 	}
 	return nil

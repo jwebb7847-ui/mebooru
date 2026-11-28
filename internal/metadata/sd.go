@@ -155,7 +155,10 @@ func ParseSeed(s string) (int64, bool) {
 		return n, true
 	}
 	if n, err := strconv.ParseUint(s, 10, 64); err == nil {
-		return int64(n), true
+		if n <= 1<<63-1 {
+			return int64(n), true
+		}
+		return -int64(^n) - 1, true
 	}
 	return 0, false
 }

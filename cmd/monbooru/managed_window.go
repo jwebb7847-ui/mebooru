@@ -159,8 +159,9 @@ func(o *managedWindowOwner) handle(c context.Context,op workerproto.Operation,ra
 			if err != nil { return fault(err) }
 		}
 		_,_,identity:=o.setup.Identity()
-		if o.live!=nil{_,identity=o.live.Identity(p.Request.Source)}
-		g:=windowregistry.Grant{Request:p.Request,OwnerGeneration:o.generation,PolicyGeneration:1,GalleryIdentity:sub.GalleryIdentity,Identity:identity,IntentID:p.IntentID}
+		var optionsDigest string
+		if o.live!=nil{_,identity=o.live.Identity(p.Request.Source);optionsDigest=o.live.SourceOptions[p.Request.Source]}
+		g:=windowregistry.Grant{Request:p.Request,OwnerGeneration:o.generation,PolicyGeneration:1,GalleryIdentity:sub.GalleryIdentity,Identity:identity,IntentID:p.IntentID,SourceOptionsSHA256:optionsDigest}
 		if err:=acquisitionpolicy.RegisterRunningIntentWindow(c,filepath.Join(o.dir,"queue"),o.registry,g,func(c context.Context,v windowregistry.Grant)bool{return o.current(c)&&v==g});err!=nil{return fault(err)}
 		o.window=g
 		o.grant=workerproto.StageAllocation{}

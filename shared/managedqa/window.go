@@ -84,7 +84,7 @@ func ValidCount(count int, application bool) bool {
 }
 func(s Setup) Metadata()workerproto.MetadataPlanRequest{return s.MetadataFor(1)}
 func(s Setup) MetadataFor(job int64)workerproto.MetadataPlanRequest{
-	if job<1||job>int64(s.Windows){return workerproto.MetadataPlanRequest{}}
+	if job<1||job>int64(s.Windows)||s.Count<1||s.Count>workerproto.MaxMetadataWindow{return workerproto.MetadataPlanRequest{}}
 	url:=Search;if job>1{url+=strconv.FormatInt(job,10)}
 	gallery := s.Destination
 	if gallery == "" { gallery = Gallery }

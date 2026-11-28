@@ -131,8 +131,9 @@ func walkPage(ctx context.Context, database *db.DB, w *tagWalk, where string, ar
 	var out []models.Image
 	seen, want := 0, limit
 	for len(out) < limit {
-		batch := make([]int64, 0, want)
-		for len(batch) < want {
+		batchLimit := min(want, walkMaxCandidates-seen+1)
+		batch := make([]int64, 0, batchLimit)
+		for len(batch) < batchLimit {
 			id, ok, err := w.next(ctx)
 			if err != nil {
 				return nil, false, err

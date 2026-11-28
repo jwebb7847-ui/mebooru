@@ -35,7 +35,13 @@ func (b *whereBuilder) buildPhashFilter(e FilterExpr) string {
 	if err != nil {
 		return "1=0"
 	}
-	phash := int64(u)
+	// SQLite stores the 64-bit hash pattern in a signed INTEGER.
+	var phash int64
+	if u <= 1<<63-1 {
+		phash = int64(u)
+	} else {
+		phash = -int64(^u) - 1
+	}
 	if distance < 0 {
 		b.args = append(b.args, phash)
 		return "i.phash = ?"

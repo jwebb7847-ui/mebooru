@@ -33,6 +33,7 @@ type Grant struct{
 	GalleryIdentity string
 	IntentID string
 	Identity acquisitionplan.MetadataIdentity
+	SourceOptionsSHA256 string `json:",omitempty"`
 }
 type Outcome struct{
 	Grant Grant
@@ -55,9 +56,8 @@ func valid(g Grant)bool{
 	if !workerproto.ValidMetadataPlan(g.Request)||g.Request.Kind!=workerproto.MetadataStrictResolve||
 		!validHex(g.OwnerGeneration,32)||g.OwnerGeneration==strings.Repeat("0",64)||g.PolicyGeneration==0||g.IntentID!=""&&!workerproto.ValidQueueIntentID(g.IntentID)||
 		len(g.GalleryIdentity)<1||len(g.GalleryIdentity)>1024||!utf8.ValidString(g.GalleryIdentity)||strings.ContainsFunc(g.GalleryIdentity,unicode.IsControl){return false}
-	// Reconstruct the credential-free qualified config's actual digest
-	// and validate the exact runtime version/artifact/manifest identity.
-	cfg:=acquisitionplan.MetadataConfig{Generation:g.Identity.Config.Generation,Source:g.Request.Source}
+	if g.SourceOptionsSHA256!=""&&!validHex(g.SourceOptionsSHA256,32){return false}
+	cfg:=acquisitionplan.MetadataConfig{Generation:g.Identity.Config.Generation,Source:g.Request.Source,SourceOptionsSHA256:g.SourceOptionsSHA256}
 	id,err:=cfg.Identity();if err!=nil||id!=g.Identity.Config{return false}
 	_,err=acquisitionplan.NewMetadataSequence(g.Request,g.Identity.Runtime,cfg)
 	return err==nil

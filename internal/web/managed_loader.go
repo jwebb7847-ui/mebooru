@@ -41,8 +41,8 @@ type AcquisitionSettings struct {
 }
 
 type AcquisitionSource struct {
-	Name, Username, Password, Key, UserID, Cookies, Agent, Options string
-	ClearCredentials, ClearOptions                                 bool
+	Name, Username, Password, Key, UserID, CookieData, Agent, Options string
+	ClearCredentials, ClearOptions                                    bool
 }
 
 type managedSourceEditor interface {
@@ -157,13 +157,13 @@ func (s *Server) saveAcquisitionSource(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
+	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
 	if !parseFormOK(w, r) {
 		return
 	}
 	source := AcquisitionSource{
 		Name: r.FormValue("source"), Username: r.FormValue("username"), Password: r.FormValue("password"),
-		Key: r.FormValue("api_key"), UserID: r.FormValue("user_id"), Cookies: strings.TrimSpace(r.FormValue("cookies")),
+		Key: r.FormValue("api_key"), UserID: r.FormValue("user_id"), CookieData: strings.TrimSpace(r.FormValue("cookies")),
 		Agent: r.FormValue("user_agent"), Options: strings.TrimSpace(r.FormValue("options")),
 		ClearCredentials: r.FormValue("clear_credentials") == "on", ClearOptions: r.FormValue("clear_options") == "on",
 	}
