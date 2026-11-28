@@ -1,0 +1,136 @@
+package acquisitionstage
+
+import (
+	"bytes"
+	"context"
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/jwebb7847-ui/mebooru/shared/acquisitionplan"
+	"github.com/jwebb7847-ui/mebooru/shared/contract"
+	"github.com/jwebb7847-ui/mebooru/shared/workerproto"
+	"github.com/monbooru/monbooru/internal/config"
+	"github.com/monbooru/monbooru/internal/gallery"
+	"github.com/monbooru/monbooru/internal/library"
+)
+
+func TestExistingPublicationTarget(t *testing.T) {
+	for _, mode := range []string{"held", "held nested", "held alias", "restore marked", "restore unmarked", "missing target", "wrong disposition", "canonical changed", "canonical hardlink", "restore alias", "restore file returned", "wrong DB facts", "nonempty job", "no authority", "revoked", "changed during inspection", "changed note", "changed canonical identity", "restore row changed", "attempt exists"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			var buf bytes.Buffer
+			if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 16, 16))); err != nil {
+				t.Fatal(err)
+			}
+			data := buf.Bytes()
+			a, stage, s, grant, _, f := publicationFixtureData(t, "png", data)
+			defer func(){ if err := a.Close(); err != nil { t.Error(err) } }()
+			row := acquisitionplan.ApprovedPolicyRow{PostID:f.ID, NativeSHA256:strings.Repeat("a",64), MediaURL:"https://example.invalid/42.png", SourceLabel:"derpibooru", PostURL:"https://derpibooru.org/images/42", Rating:"general", Tags:[]string{"fixture","rating:general"}, Provenance:&acquisitionplan.ApprovedProvenance{}}
+			body, hash, err := acquisitionplan.EncodeApprovedPolicy(grant.Request.Transfer, []acquisitionplan.ApprovedPolicyRow{row})
+			if err != nil { t.Fatal(err) }
+			if err := a.BindPolicy(ctx, grant, func(context.Context, workerproto.StageAllocation)([]byte,string,error){return body,hash,nil}); err != nil { t.Fatal(err) }
+			g, err := library.Open(config.Gallery{Name:"A",GalleryPath:s.GalleryRoot,DBPath:filepath.Join(filepath.Dir(stage),"gallery.sqlite"),ThumbnailsPath:filepath.Join(filepath.Dir(stage),"thumbs")})
+			if err != nil { t.Fatal(err) }
+			defer g.Close()
+			old := filepath.Join(s.GalleryRoot,"existing.png")
+			if mode == "held nested" {
+				old = filepath.Join(s.GalleryRoot,"nested","existing.png")
+				if err := os.Mkdir(filepath.Dir(old),0700); err != nil { t.Fatal(err) }
+			}
+			var id int64
+			if mode != "missing target" {
+				if err := os.WriteFile(old,data,0600); err != nil { t.Fatal(err) }
+				res, err := g.LandInPlace(ctx,old,library.LandSpec{Origin:"fixture"})
+				if err != nil || res.Image == nil || res.Duplicate { t.Fatal("existing fixture",err) }
+				id = res.Image.ID
+				if _,_,err := gallery.MergeSource(g.DB,g.TagSvc,id,"other","7","https://example.invalid/7","","",gallery.PostFile{},[]string{"rating:explicit","prior"},gallery.Withheld{}); err != nil { t.Fatal(err) }
+				if _,err := g.DB.Write.Exec("UPDATE images SET note='operator note' WHERE id=?",id); err != nil { t.Fatal(err) }
+			}
+			kind := existingHeld
+			if strings.HasPrefix(mode,"restore") { kind = existingRestore }
+			if mode == "held alias" || mode == "restore alias" {
+				alias := filepath.Join(s.GalleryRoot,"operator.png")
+				if err := os.WriteFile(alias,data,0600); err != nil { t.Fatal(err) }
+				if res,err := g.LandInPlace(ctx,alias,library.LandSpec{Origin:"fixture"}); err != nil || !res.Duplicate { t.Fatal("alias",err) }
+			}
+			if kind == existingRestore || mode == "wrong disposition" {
+				if err := os.Remove(old); err != nil { t.Fatal(err) }
+				if mode != "restore unmarked" {
+					if _,err := gallery.SetMissing(g.DB,id,true); err != nil { t.Fatal(err) }
+				}
+			}
+			switch mode {
+			case "canonical changed":
+				if err := os.WriteFile(old, bytes.Repeat([]byte{'x'},len(data)),0600); err != nil { t.Fatal(err) }
+			case "canonical hardlink":
+				if err := os.Link(old,filepath.Join(s.GalleryRoot,"hardlink.png")); err != nil { t.Fatal(err) }
+			case "restore file returned":
+				if err := os.WriteFile(old,data,0600); err != nil { t.Fatal(err) }
+			case "wrong DB facts":
+				if _,err := g.DB.Write.Exec("UPDATE images SET width=17 WHERE id=?",id); err != nil { t.Fatal(err) }
+			}
+			if err := a.preparePublication(ctx,grant); err != nil { t.Fatal(err) }
+			intent := filepath.Join(stage,grant.Request.OperationID,"publication","attempt")
+			if mode == "attempt exists" {
+				if _,err := a.publishPrepared(ctx,grant); err != nil { t.Fatal(err) }
+			}
+			job := contract.JobExtras{}
+			if mode == "nonempty job" { job.Tags = []string{"not supported"} }
+			calls := 0
+			extras := extrasAuthority(func(context.Context,workerproto.StageAllocation)(contract.JobExtras,error){
+				calls++
+				if mode == "changed during inspection" && calls == 2 {
+					if _,err := g.DB.Write.Exec("UPDATE images SET note='changed' WHERE id=?",id); err != nil { t.Fatal(err) }
+				}
+				return job,nil
+			})
+			if mode == "no authority" { extras = nil }
+			if mode == "revoked" { a.authority = func(context.Context,workerproto.StageAllocateRequest)(Scope,error){ return Scope{},ErrStageRefused } }
+			count := func() [2]int {
+				t.Helper()
+				var n [2]int
+				if err := g.DB.Read.QueryRow("SELECT COUNT(*) FROM images").Scan(&n[0]); err != nil { t.Fatal(err) }
+				if err := g.DB.Read.QueryRow("SELECT COUNT(*) FROM image_paths").Scan(&n[1]); err != nil { t.Fatal(err) }
+				return n
+			}
+			before := count()
+			got,err := a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras)
+			want := mode == "held" || mode == "held nested" || mode == "held alias" || mode == "restore marked" || mode == "restore unmarked" || mode == "changed note" || mode == "changed canonical identity" || mode == "restore row changed"
+			if (err == nil) != want { t.Fatal("unexpected eligibility",got,err) }
+			if count() != before { t.Fatal("observer changed rows") }
+			if mode != "attempt exists" {
+				if _,err := os.Stat(intent); !os.IsNotExist(err) { t.Fatal("observer wrote publication attempt",err) }
+				if _,err := os.Stat(filepath.Join(s.GalleryRoot,finalName(grant,f))); !os.IsNotExist(err) { t.Fatal("observer placed file",err) }
+			}
+			if _,err := os.Stat(filepath.Join(filepath.Dir(intent),"landing-attempt.json")); !os.IsNotExist(err) { t.Fatal("observer wrote landing attempt",err) }
+			if !want { return }
+			if got.ImageID != id || got.Kind != kind || got.PolicySHA256 != hash || got.FileIdentity == "" || !validDigest(got.StateSHA256) { t.Fatal("wrong evidence",got) }
+			if kind == existingHeld {
+				if got.Held == nil || got.Restore != nil || got.Held.ImageID != id || got.Held.CanonicalIdentity == "" { t.Fatal("held evidence",got) }
+				if mode == "held alias" && len(got.Retained) != 2 { t.Fatal("alias evidence missing",got) }
+			} else {
+				if got.Restore == nil || got.Held != nil || got.Restore.RestoreImageID != id || got.Restore.RestorePathID <= 0 || got.Restore.RestoreMarkedMissing != (mode != "restore unmarked") || got.Restore.RestoreRating != "explicit" { t.Fatal("restore evidence",got) }
+			}
+			again,err := a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras)
+			if err != nil || !sameExistingPublicationTarget(got,again) { t.Fatal("stable repeat",again,err) }
+			switch mode {
+			case "changed note":
+				if _,err := g.DB.Write.Exec("UPDATE images SET note='new note' WHERE id=?",id); err != nil { t.Fatal(err) }
+			case "changed canonical identity":
+				if err := os.Rename(old,filepath.Join(filepath.Dir(stage),"retained-original.png")); err != nil { t.Fatal(err) }
+				if err := os.WriteFile(old,data,0600); err != nil { t.Fatal(err) }
+			case "restore row changed":
+				if _,err := g.DB.Write.Exec("UPDATE image_paths SET id=id+10000 WHERE path=?",old); err != nil { t.Fatal(err) }
+			default:
+				return
+			}
+			changed,err := a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras)
+			if err != nil || sameExistingPublicationTarget(got,changed) { t.Fatal("changed target not distinguished",changed,err) }
+			if count() != before { t.Fatal("observer changed rows") }
+		})
+	}
+}

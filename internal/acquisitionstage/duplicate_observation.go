@@ -27,6 +27,13 @@ type heldDuplicate struct{
 	SHA256 string
 }
 func duplicateCanonicalRow(ctx context.Context,tx *sql.Tx,root,alias string,id int64,f acquisitionplan.VerifiedTransferFile)(string,error){
+	return duplicateCanonicalRowMode(ctx,tx,root,alias,id,f,1)
+}
+
+// The guarded prepublication observer requires the managed alias to be absent.
+// The historical post-landing witness continues requiring exactly one alias.
+func duplicateCanonicalRowMode(ctx context.Context,tx *sql.Tx,root,alias string,id int64,f acquisitionplan.VerifiedTransferFile,aliasCount int)(string,error){
+	if aliasCount!=0&&aliasCount!=1{return "",ErrStageRecovery}
 	var path,sha string
 	var size int64
 	var missing int
@@ -35,12 +42,12 @@ func duplicateCanonicalRow(ctx context.Context,tx *sql.Tx,root,alias string,id i
 	rel,err:=filepath.Rel(root,path)
 	if err!=nil||rel=="."||!filepath.IsLocal(rel){return "",ErrStageRecovery}
 	var count int
-	for _,check:=range []struct{q string;args []any}{
-		{`SELECT COUNT(*) FROM image_paths WHERE image_id=? AND path=? AND is_canonical=1`,[]any{id,path}},
-		{`SELECT COUNT(*) FROM image_paths WHERE image_id=? AND path=? AND is_canonical=0`,[]any{id,alias}},
-		{`SELECT COUNT(*) FROM image_paths WHERE image_id=? AND is_canonical=1`,[]any{id}},
+	for _,check:=range []struct{q string;args []any;want int}{
+		{`SELECT COUNT(*) FROM image_paths WHERE image_id=? AND path=? AND is_canonical=1`,[]any{id,path},1},
+		{`SELECT COUNT(*) FROM image_paths WHERE image_id=? AND path=? AND is_canonical=0`,[]any{id,alias},aliasCount},
+		{`SELECT COUNT(*) FROM image_paths WHERE image_id=? AND is_canonical=1`,[]any{id},1},
 	}{
-		if err:=tx.QueryRowContext(ctx,check.q,check.args...).Scan(&count);err!=nil||count!=1{return "",ErrStageRecovery}
+		if err:=tx.QueryRowContext(ctx,check.q,check.args...).Scan(&count);err!=nil||count!=check.want{return "",ErrStageRecovery}
 	}
 	return rel,nil
 }
