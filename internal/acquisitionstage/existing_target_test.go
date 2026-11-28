@@ -19,7 +19,15 @@ import (
 )
 
 func TestExistingPublicationTarget(t *testing.T) {
-	for _, mode := range []string{"held", "held nested", "held alias", "restore marked", "restore unmarked", "missing target", "wrong disposition", "canonical changed", "canonical hardlink", "restore alias", "restore file returned", "wrong DB facts", "nonempty job", "no authority", "revoked", "changed during inspection", "changed note", "changed canonical identity", "restore row changed", "attempt exists"} {
+	testExistingPublicationTargetModes(t, []string{"held", "held nested", "held alias", "restore marked", "restore unmarked", "missing target", "wrong disposition", "canonical changed", "canonical hardlink", "restore alias", "restore file returned", "wrong DB facts", "nonempty job", "no authority", "revoked", "changed during inspection", "changed note", "changed canonical identity", "restore row changed", "attempt exists"})
+}
+
+func TestDurableExistingTargetPlan(t *testing.T){
+	testExistingPublicationTargetModes(t, []string{"plan held", "restore plan", "plan reopen", "plan forged", "plan stale", "plan wrong decision", "plan no decision", "plan revoke after marker", "plan changed after marker", "plan corrupt", "plan noncanonical", "plan changed record", "plan lost marker"})
+}
+
+func testExistingPublicationTargetModes(t *testing.T, modes []string){
+	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			var buf bytes.Buffer
@@ -27,7 +35,7 @@ func TestExistingPublicationTarget(t *testing.T) {
 				t.Fatal(err)
 			}
 			data := buf.Bytes()
-			a, stage, s, grant, _, f := publicationFixtureData(t, "png", data)
+			a, stage, s, grant, authority, f := publicationFixtureData(t, "png", data)
 			defer func(){ if err := a.Close(); err != nil { t.Error(err) } }()
 			row := acquisitionplan.ApprovedPolicyRow{PostID:f.ID, NativeSHA256:strings.Repeat("a",64), MediaURL:"https://example.invalid/42.png", SourceLabel:"derpibooru", PostURL:"https://derpibooru.org/images/42", Rating:"general", Tags:[]string{"fixture","rating:general"}, Provenance:&acquisitionplan.ApprovedProvenance{}}
 			body, hash, err := acquisitionplan.EncodeApprovedPolicy(grant.Request.Transfer, []acquisitionplan.ApprovedPolicyRow{row})
@@ -100,6 +108,8 @@ func TestExistingPublicationTarget(t *testing.T) {
 			before := count()
 			got,err := a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras)
 			want := mode == "held" || mode == "held nested" || mode == "held alias" || mode == "restore marked" || mode == "restore unmarked" || mode == "changed note" || mode == "changed canonical identity" || mode == "restore row changed"
+			planMode := strings.HasPrefix(mode,"plan ")||mode=="restore plan"
+			want = want||planMode
 			if (err == nil) != want { t.Fatal("unexpected eligibility",got,err) }
 			if count() != before { t.Fatal("observer changed rows") }
 			if mode != "attempt exists" {
@@ -117,6 +127,10 @@ func TestExistingPublicationTarget(t *testing.T) {
 			}
 			again,err := a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras)
 			if err != nil || !sameExistingPublicationTarget(got,again) { t.Fatal("stable repeat",again,err) }
+			if planMode {
+				checkDurableExistingTargetPlan(t,ctx,&a,stage,grant,g,got,extras,authority,mode,count,before)
+				return
+			}
 			switch mode {
 			case "changed note":
 				if _,err := g.DB.Write.Exec("UPDATE images SET note='new note' WHERE id=?",id); err != nil { t.Fatal(err) }
@@ -133,4 +147,83 @@ func TestExistingPublicationTarget(t *testing.T) {
 			if count() != before { t.Fatal("observer changed rows") }
 		})
 	}
+}
+
+// No publication, landing, deletion or DB mutation is authorized by a
+// persisted existing-target decision. Changed or corrupt records refuse.
+func checkDurableExistingTargetPlan(t *testing.T,ctx context.Context,ap **Allocator,stage string,grant workerproto.StageAllocation,g *library.Gallery,got existingPublicationTarget,extras extrasAuthority,authority func(context.Context,workerproto.StageAllocateRequest)(Scope,error),mode string,count func()[2]int,before [2]int){
+	t.Helper()
+	a:=*ap
+	dir:=filepath.Join(stage,grant.Request.OperationID,"publication")
+	path:=filepath.Join(dir,existingTargetPlanName)
+	injected:=false
+	decision:=existingDispositionAuthority(func(context.Context,workerproto.StageAllocation)(string,error){
+		if mode=="plan wrong decision"{return existingRestore,nil}
+		if _,err:=os.Stat(path);err==nil&&!injected{
+			injected=true
+			if mode=="plan revoke after marker"{return "",ErrStageRefused}
+			if mode=="plan changed after marker"{
+				if _,err:=g.DB.Write.Exec("UPDATE images SET note='changed' WHERE id=?",got.ImageID);err!=nil{t.Fatal(err)}
+			}
+		}
+		return got.Kind,nil
+	})
+	if mode=="plan no decision"{decision=nil}
+	expected:=got
+	if mode=="plan forged"{expected.ImageID++}
+	if mode=="plan stale"{if _,err:=g.DB.Write.Exec("UPDATE images SET note='changed' WHERE id=?",got.ImageID);err!=nil{t.Fatal(err)}}
+	err:=a.recordExistingTargetPlan(ctx,grant,g,expected,decision,extras)
+	pre:=mode=="plan forged"||mode=="plan stale"||mode=="plan wrong decision"||mode=="plan no decision"
+	late:=mode=="plan revoke after marker"||mode=="plan changed after marker"
+	if (err!=nil)!=(pre||late){t.Fatal("record result",err)}
+	if count()!=before{t.Fatal("record changed gallery rows")}
+	if pre{
+		if _,err:=os.Stat(path);!os.IsNotExist(err){t.Fatal("premature plan",err)}
+		return
+	}
+	raw,err:=os.ReadFile(path)
+	if err!=nil||len(raw)==0{t.Fatal("missing durable plan",err)}
+	// All older publication and landing entry points must remain blocked.
+	if _,err:=a.publishPrepared(ctx,grant);err==nil{t.Fatal("diagnostic publication consumed plan")}
+	if err:=a.beginLanding(ctx,grant,g);err==nil{t.Fatal("diagnostic landing consumed plan")}
+	if err:=a.landRestoredPrepared(ctx,grant,g);err==nil{t.Fatal("diagnostic restoration consumed plan")}
+	if err:=a.landNewPrepared(ctx,grant,g);err==nil{t.Fatal("new diagnostic consumed plan")}
+	naming:=namingAuthority(func(context.Context,workerproto.StageAllocation)(gallery.ReceivedNamingRequest,error){return gallery.ReceivedNamingRequest{Gallery:g.Name,ReceivedName:got.File.RelativeName,Source:"derpibooru",PostID:got.File.ID},nil})
+	if _,err:=a.planNewPublication(ctx,grant,g,naming,extras);err==nil{t.Fatal("new planning consumed plan")}
+	if err:=a.recordExistingTargetPlan(ctx,grant,g,got,decision,extras);err==nil{t.Fatal("plan overwritten")}
+	if b,err:=os.ReadFile(path);err!=nil||!bytes.Equal(b,raw){t.Fatal("plan changed",err)}
+	if _,err:=os.Stat(filepath.Join(dir,"attempt"));!os.IsNotExist(err){t.Fatal("unexpected publication marker",err)}
+	if _,err:=os.Stat(filepath.Join(dir,"landing-attempt.json"));!os.IsNotExist(err){t.Fatal("unexpected landing marker",err)}
+	if count()!=before{t.Fatal("blocked paths changed rows")}
+	if late{
+		if mode=="plan changed after marker"{
+			if _,err:=a.observeExistingTargetPlan(ctx,grant,g,decision,extras);err==nil{t.Fatal("changed target acknowledged")}
+		}else{
+			// Lost acknowledgement may be resolved only with renewed decision.
+			if m,err:=a.observeExistingTargetPlan(ctx,grant,g,decision,extras);err!=nil||!sameExistingPublicationTarget(m.Target,got){t.Fatal("renewed observation",err)}
+		}
+		return
+	}
+	switch mode{
+	case "plan reopen":
+		if err:=a.Close();err!=nil{t.Fatal(err)}
+		next,err:=Open(stage,2,4096,authority)
+		if err!=nil{t.Fatal(err)}
+		*ap=next;a=next
+	case "plan corrupt":
+		if err:=os.WriteFile(path,[]byte("corrupt"),0600);err!=nil{t.Fatal(err)}
+	case "plan noncanonical":
+		if err:=os.WriteFile(path,append(raw,'\n'),0600);err!=nil{t.Fatal(err)}
+	case "plan changed record":
+		// Same canonical JSON shape, wrong target identity.
+		changed:=bytes.Replace(raw,[]byte(got.StateSHA256),[]byte(strings.Repeat("b",64)),1)
+		if bytes.Equal(raw,changed){t.Fatal("fixture unchanged")}
+		if err:=os.WriteFile(path,changed,0600);err!=nil{t.Fatal(err)}
+	case "plan lost marker":
+		if err:=os.Remove(path);err!=nil{t.Fatal(err)}
+	}
+	m,err:=a.observeExistingTargetPlan(ctx,grant,g,decision,extras)
+	want:=mode=="plan held"||mode=="restore plan"||mode=="plan reopen"
+	if (err==nil)!=want||want&&!sameExistingPublicationTarget(m.Target,got){t.Fatal("observation",m,err)}
+	if count()!=before{t.Fatal("observer changed gallery rows")}
 }

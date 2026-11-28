@@ -127,6 +127,10 @@ func observeExistingTarget(ctx context.Context, g *library.Gallery, r record, e 
 func (a *Allocator) inspectExistingPublicationTarget(ctx context.Context, grant workerproto.StageAllocation, g *library.Gallery, kind string, extras extrasAuthority) (existingPublicationTarget, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.inspectExistingPublicationTargetLocked(ctx, grant, g, kind, extras)
+}
+
+func (a *Allocator) inspectExistingPublicationTargetLocked(ctx context.Context, grant workerproto.StageAllocation, g *library.Gallery, kind string, extras extrasAuthority) (existingPublicationTarget, error) {
 	var zero existingPublicationTarget
 	if g == nil || g.WatcherRunning() || extras == nil || (kind != existingHeld && kind != existingRestore) {
 		return zero, ErrStageRefused

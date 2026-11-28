@@ -107,6 +107,7 @@ func(a *Allocator)newPublicationPlanLocked(ctx context.Context,grant workerproto
 	r,e,p,src,dst,err:=a.publicationRoots(ctx,grant)
 	if err!=nil{return zero,err}
 	defer p.Close();defer src.Close();defer dst.Close()
+	if _,err:=p.Lstat(existingTargetPlanName);!os.IsNotExist(err){return zero,ErrStageRefused}
 	if len(e.Files)!=1{return zero,ErrStageRefused}
 	db,err:=observedDB(r,g)
 	if err!=nil{return zero,err}
