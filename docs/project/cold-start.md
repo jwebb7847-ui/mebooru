@@ -2,7 +2,29 @@
 
 **Read this first if a chat ends without a handover.** This is a practical resume index, not a second roadmap. [MEBOORU.md](../../MEBOORU.md) owns product direction and milestone exit criteria. This checkpoint is sufficient to find the exact work, qualification evidence, outstanding tasks and approved operating constraints without relying on chat memory. Re-fetch live refs, CI and PR comments before making changes. Do not assume a documentation-only descendant has been tested by SHA.
 
-## Codex task checkpoint — 2026-11-28
+## Current Codex checkpoint — 2026-11-28
+
+- Task branch `codex/ii6-production-acquisition` branches from `485358adaa49645ac885558c4c9e76f70d32e390`. Candidate `7f28459714fcb0eaeaa52c755279196f910ba591` consists of publication optimization `3856121` and selected-gallery and early active-cancel fixes. [Draft PR #38](https://github.com/jwebb7847-ui/mebooru/pull/38) can incorporate this descendant by normal fast-forward after owner review. Do not merge or update PR #38 without approval.
+- The Loader submission binds the selected gallery's name, database and media paths. Publication uses the bound gallery and its configured naming defaults. The three-post fixture selects a second gallery, switches away and restarts before publishing. The active-cancel fixture waits for contained metadata to start, cancels before allocation, and verifies the next import in the same worker session. Cancellation after allocation still requires reconciliation.
+- Publication now reuses the validated operation handle, seal and bound policy snapshot within the same observation. The existing phase boundaries, current-scope checks, sealed byte checks and receipt verification remain in use. Stage timings appear at info level.
+- Apple Silicon loopback benchmark using the same pinned gallery-dl 1.32.19 and 20-post Loader fixture improved from **34.703 s to 25.427 s** after the first change, with 19 imported and one excluded in each run. The 200-post fixture passed in **3m47.598s** on the final publication code, versus the prior observation of **9m40.985s** under different load. The new run was isolated from the test suites and imported 199 posts, or **52.5 successful imports/min**, with zero requests for the excluded post. The benchmark build preceded the final legacy cancellation guard, which affects the standalone queue path. Keep the 44.4 posts/min live-source benchmark separate from synthetic measurements.
+
+| 200-post phase | Wall time |
+| --- | ---: |
+| Startup through the first Loader page | 29 ms |
+| Metadata | 330 ms |
+| Blacklist and taxonomy | 13 ms |
+| Transfer and transfer verification | 788 ms |
+| Library publication | 3m39.051s |
+| Parent payload reclamation | 4.243 s |
+| Archive, receipt readback and owner settlement | 1.339 s |
+
+- Product status remains disposable. Next bind the configured/pinned gallery-dl and the existing editable strict policy to independent custody, then enable the same Loader path for an isolated real profile. Same-source refresh, repeat/continue and later-phase cancel reconciliation remain open. Advanced watches, PTR and unified settings can continue in their planned chapters. No live sites or real profiles were accessed.
+- All three Go module suites passed on `7f28459` with Go 1.27.4, including pinned runtime fixtures for Meloader and shared. Root staging ran in 179.724 s. Targeted vet and queue/protocol race tests passed. Both Apple Silicon builds and Windows AMD64 cross-builds passed. The selected-gallery and active metadata cancellation probes passed on the committed candidate. No new hosted CI was run, so the prior Windows staging timeout remains open.
+
+The commands in the previous checkpoint remain the synthetic Mac smoke test for the current candidate. Add `"$qa/monbooru" internal-managed-window-probe-v1 app-cancel` after building both siblings. Run `app-200` on its own if measuring sustained throughput. Owner-coordinated live Mac validation follows real-source wiring.
+
+## Previous Codex task checkpoint — 2026-11-28
 
 - Task branch `codex/ii6-managed-application` starts at transition `92d0db744cd2da5acefe38337fe4dd1d7f4ebe12`. Application implementation is `281012f8b0c361d22bcb68895fc8c4236ad30f21`, followed by candidate `091e32c91feeb6de0ea4a61c25a7a4fdc42a3afa` with a shorter bulk check. [Draft PR #38](https://github.com/jwebb7847-ui/mebooru/pull/38) still tracks `worker/operation-migration` at `360113279069d0804a6d44076eef1e609ded0380` on `mebooru-foundation` at `c03761ea0aa2feb4da9c67ae509d65e7193671e2`.
 - Apple Silicon can build both sibling executables and test all three modules locally with Go 1.27.4, `GOWORK=off`, Python 3.12 and a disposable venv with gallery-dl 1.32.19. The Codex sandbox prevents loopback bind. Use the approved task shell for real HTTP/process fixtures. A writable `GOCACHE` in the task temp directory avoids the sandboxed global cache.
