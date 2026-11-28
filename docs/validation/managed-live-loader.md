@@ -1,17 +1,17 @@
 # Managed Loader acceptance on Apple Silicon
 
-Use Chapter II candidate `352586d4dfdc94966f6ba5daaae839634fb7136d`. It includes archive reopening, duplicate and publication fixes, and library startup if acquisition requires repair. Run the checkout commands from your Mebooru repository.
+Use Chapter II candidate `c2f53f216a4c91b771bc5ae0051c4a718700b33b`. It adds an early cancellation fix to `352586d4dfdc94966f6ba5daaae839634fb7136d`, which includes archive reopening, duplicate and publication fixes, and library startup if acquisition requires repair. Run the checkout commands from your Mebooru repository.
 
 ```zsh
-git fetch origin codex/ii6-publication-repair
+git fetch origin codex/ii6-live-acceptance
 qa_checkout="$(mktemp -d "${TMPDIR:-/tmp}/mebooru-acceptance.XXXXXX")"
-git worktree add --detach "$qa_checkout/source" 352586d4dfdc94966f6ba5daaae839634fb7136d
+git worktree add --detach "$qa_checkout/source" c2f53f216a4c91b771bc5ae0051c4a718700b33b
 cd "$qa_checkout/source"
 ```
 
 ## Reopen the two preserved profiles
 
-Build both executables into a new directory. The original LiveTest profile already completed the post-reboot ownership repair, so try ordinary startup first.
+Close any instances using either profile before reopening them. Build both executables into a new directory. The original LiveTest profile already completed the post-reboot ownership repair, so try ordinary startup first.
 
 ```zsh
 test_root="$HOME/Downloads/Projects/Coding/Mebooru/testing"
@@ -83,11 +83,11 @@ binary_path = "$qa/venv/bin/gallery-dl"
 sleep_request = 1.0
 
 [downloader]
-max_items_per_job = 5
+max_items_per_job = 3
 
 [tags]
 strict_blacklist = true
-blacklist = ["violence"]
+blacklist = ["violence", "rating:sensitive", "rating:questionable", "rating:explicit"]
 EOF
 
 printf 'Profile: %s\nLoader: http://127.0.0.1:%s/loader\n' "$qa" "$port"
@@ -104,11 +104,12 @@ printf 'Profile: %s\nLoader: http://127.0.0.1:%s/loader\n' "$qa" "$port"
 
 Record the URL type, configured limit, status counts and any first failure from Loader or the terminal. Keep the profile folder for diagnosis. The live check is limited to this profile and requires no companion web server or pairing.
 
-## Test the separate Chapter III PTR work
+## Test the Chapter III watches and PTR work
 
-To test the PTR increment, use `85a3fa6c9d322d326dec5526f5c58c1aa5fab09e` in the checkout command and build both executables again. The existing **Settings → Acquisition** controls are included.
+Use `ac2b217d2cc6c69ed18fc9c6736b12b7f4061d13` in the checkout command and build both executables again. The existing **Settings → Acquisition** controls are included.
 
-- In the disposable acquisition configuration, set `[ptr].enabled = true` and `[ptr].data_path` to the directory containing a test copy of an existing `ptr.sqlite` index. Open **Loader → PTR** with acquisition offline and enter a known SHA-256. The page reads display tags from that index. Managed sync, contributions, and watches remain follow-up work.
+- In **Loader → Watches**, add a known public, general-rated still-image URL with a one-post limit and leave it set to **Manual**. Select **Check now** while offline and verify the job queues. After going online, check the result in the default gallery. Set an interval only if you want automatic checks while Mebooru is open and acquisition is online.
+- In the disposable acquisition configuration, set `[ptr].enabled = true` and `[ptr].data_path` to a disposable directory. Use a test copy of an existing `ptr.sqlite` index to verify lookup by SHA-256 offline. To sync, set `[ptr].address` to the test repository, go online, and select **Start sync** in **Loader → PTR**. **Stop sync** and going offline both stop synchronization. Cached tags stay available after restart. Contributions remain follow-up work.
 
 ## Candidate scope
 
