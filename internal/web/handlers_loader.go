@@ -146,9 +146,12 @@ func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 	}
 	var panel loaderPanel
 	var ptr loaderPTR
+	var watches loaderWatches
 	if path != "" {
 		if view == "ptr" && s.managedLoader != nil {
 			ptr = s.loaderLocalPTR(r)
+		} else if view == "watches" && s.managedLoader != nil {
+			watches = s.loaderWatches(r)
 		} else if s.managedLoader != nil {
 			panel.Message = "This view is unavailable with the managed queue."
 		} else {
@@ -181,5 +184,6 @@ func (s *Server) loaderPage(w http.ResponseWriter, r *http.Request) {
 		Limit        int
 		Unavailable  string
 		PTR          loaderPTR
-	}{base, view, panel, s.usesManagedLoader(), managed && s.managedLoader.Offline(), destinations, limit, s.acquisitionUnavailableMessage(), ptr})
+		Watches      loaderWatches
+	}{base, view, panel, s.usesManagedLoader(), managed && s.managedLoader.Offline(), destinations, limit, s.acquisitionUnavailableMessage(), ptr, watches})
 }

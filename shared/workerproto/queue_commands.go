@@ -58,7 +58,7 @@ func DecodeQueueCommand(op Operation,body []byte)(QueueCommand,error){
 	case QueueRetry:
 		if decodeObject(body,&q,"job_id","force")!=nil||q.JobID<1{return bad()}
 	case QueueEnqueue:
-		if decodeObject(body,&q,"url","gallery","max_items","intent_id")!=nil||q.IntentID!=""&&!ValidQueueIntentID(q.IntentID)||StrictQueueSource(q.URL)==""||!validCatalogName(q.Gallery)||q.MaxItems<1||q.MaxItems>MaxMetadataWindow{return bad()}
+		if decodeObject(body,&q,"url","gallery","max_items","intent_id","watch_id")!=nil||q.IntentID!=""&&!ValidQueueIntentID(q.IntentID)||q.WatchID<0||q.WatchID>0&&q.IntentID==""||StrictQueueSource(q.URL)==""||!validCatalogName(q.Gallery)||q.MaxItems<1||q.MaxItems>MaxMetadataWindow{return bad()}
 	case QueuePause,QueueResume,QueueClear,QueueClearSucceeded,QueueCancelPending,WatchList:
 		if len(body)!=0{return bad()}
 	case WatchAdd:

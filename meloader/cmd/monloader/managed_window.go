@@ -136,6 +136,10 @@ func runManagedWindowWorker(args []string)error{
 			for job:=int64(1);job<=int64(setup.Windows);job++{md:=setup.MetadataFor(job);if cmd.URL==md.URL&&cmd.Gallery==md.Gallery&&cmd.MaxItems==setup.Count{return nil}}
 		case workerproto.QueueGet,workerproto.QueueList,workerproto.QueuePause,workerproto.QueueResume,workerproto.QueueCancel:
 			return nil
+		case workerproto.WatchList,workerproto.WatchRemove,workerproto.WatchSetInterval:
+			if liveErr==nil{return nil}
+		case workerproto.WatchAdd:
+			if liveErr==nil&&cmd.MaxItems<=live.MaxItems{return nil}
 		}
 		return managedqa.ErrFixture
 	}

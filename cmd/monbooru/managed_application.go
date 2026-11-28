@@ -164,9 +164,13 @@ func (a *managedApplication) run(ctx context.Context) {
 	for {
 		a.policyMu.Lock()
 		call, cancel := context.WithTimeout(ctx, 10*time.Second)
-		demand, err := acquisitionpolicy.ReadQueueDemand(call, filepath.Join(a.owner.dir, "queue"), time.Now(), false)
+		now := time.Now()
+		demand, err := acquisitionpolicy.ReadQueueDemand(call, filepath.Join(a.owner.dir, "queue"), now, a.owner.live != nil)
 		if err == nil {
-			err = a.manager.TickNetworkDemand(call, demand.Queued)
+			err = a.manager.TickNetworkDemand(call, demand.Queued || demand.WatchDue)
+		}
+		if err == nil && demand.WatchDue && a.manager.EffectiveOnline() {
+			err = a.enqueueDueWatch(call, now)
 		}
 		if err == nil && demand.Queued && a.manager.EffectiveOnline() {
 			err = a.call(call, workerproto.QueueResume, workerproto.QueueCommand{}, nil)
@@ -265,6 +269,10 @@ func (a *managedApplication) ImportResults(ctx context.Context, id int64) (monlo
 }
 
 func (a *managedApplication) SubmitImport(ctx context.Context, source, gallery string, limit int) (int64, error) {
+	return a.submitImport(ctx, source, gallery, limit, 0)
+}
+
+func (a *managedApplication) submitImport(ctx context.Context, source, gallery string, limit int, watchID int64) (int64, error) {
 	setup := a.owner.setup
 	if limit == 0 && a.owner.live != nil {
 		limit = a.owner.live.MaxItems
@@ -286,7 +294,7 @@ func (a *managedApplication) SubmitImport(ctx context.Context, source, gallery s
 	if identity == "" {
 		return 0, web.ErrManagedImportUnsupported
 	}
-	intent, err := a.owner.registry.NewSubmission(ctx, workerproto.QueueCommand{URL: source, Gallery: gallery, MaxItems: limit}, identity)
+	intent, err := a.owner.registry.NewSubmission(ctx, workerproto.QueueCommand{URL: source, Gallery: gallery, MaxItems: limit, WatchID: watchID}, identity)
 	if err != nil {
 		return 0, err
 	}

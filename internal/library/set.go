@@ -102,6 +102,8 @@ func (s *Set) All() []*Gallery { return slices.Collect(maps.Values(s.state.Load(
 
 func (s *Set) Names() []string { return slices.Sorted(maps.Keys(s.state.Load().members)) }
 
+func (s *Set) DefaultName() string { return s.host.DefaultGallery() }
+
 // publish makes a changed copy of the members current; the caller holds
 // the write lock.
 func (s *Set) publish(change func(members map[string]*Gallery, active *string)) {

@@ -4,6 +4,7 @@
   <nav class="loader-tabs" aria-label="Loader">
     <a href="/loader"{{if eq .View "queue"}} aria-current="page"{{end}}>Queue</a>
     {{if .Managed}}
+    {{if not .Unavailable}}<a href="/loader?view=watches"{{if eq .View "watches"}} aria-current="page"{{end}}>Watches</a>{{end}}
     {{if not .Unavailable}}<a href="/loader?view=ptr"{{if eq .View "ptr"}} aria-current="page"{{end}}>PTR</a>{{end}}
     <a class="loader-settings-link" href="/settings#meloader">Acquisition settings</a>
     {{else}}
@@ -17,6 +18,8 @@
     <p class="loader-message" role="status">{{.Unavailable}}</p>
   {{else if eq .View "queue"}}
     {{template "loader_queue" .}}
+  {{else if and .Managed (eq .View "watches")}}
+    {{template "loader_watches" .}}
   {{else if and .Managed (eq .View "ptr")}}
     <div class="loader-queue">
       <h2>Public Tag Repository</h2>

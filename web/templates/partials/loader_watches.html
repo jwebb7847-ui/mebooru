@@ -1,0 +1,53 @@
+{{define "loader_watches"}}
+<div class="loader-queue">
+  <h2>Watches</h2>
+  {{if .Watches.Message}}
+  <p role="status">{{.Watches.Message}}</p>
+  {{else}}
+  <p>Checks import into the default gallery, <strong>{{.Watches.DefaultGallery}}</strong>. Scheduled checks run while Mebooru is open and acquisition is online.</p>
+  <form class="loader-import" method="post" action="/loader/watches">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <input type="hidden" name="action" value="add">
+    <label>Source URL <input type="url" name="url" required></label>
+    <label>Maximum posts <input type="number" name="max_items" min="1" {{if .Limit}}max="{{.Limit}}"{{end}} value="1" required></label>
+    <label>Check interval <select name="interval">
+      {{range .Watches.Intervals}}<option value="{{.}}">{{if eq . 0}}Manual{{else}}Every {{.}} hours{{end}}</option>{{end}}
+    </select></label>
+    <button type="submit">Add watch</button>
+  </form>
+  {{if .Watches.Entries}}
+  <div class="table-scroll"><table class="data-table loader-jobs">
+    <thead><tr><th>Source</th><th>Limit</th><th>Schedule</th><th>Last check</th><th>Actions</th></tr></thead>
+    <tbody>
+    {{range .Watches.Entries}}
+    {{$watch := .}}
+    <tr>
+      <td>{{.URL}}</td><td>{{.MaxItems}}</td>
+      <td>
+        <form method="post" action="/loader/watches">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <input type="hidden" name="action" value="schedule">
+          <input type="hidden" name="watch_id" value="{{.ID}}">
+          <select name="interval" aria-label="Check interval">
+            {{range $.Watches.Intervals}}<option value="{{.}}"{{if eq . $watch.IntervalHours}} selected{{end}}>{{if eq . 0}}Manual{{else}}Every {{.}} hours{{end}}</option>{{end}}
+          </select>
+          <button type="submit">Save</button>
+        </form>
+      </td>
+      <td>{{if .Live}}Queued or running{{else if not .Last.CheckedAt.IsZero}}{{.Last.Status}} · <a href="/loader">Job #{{.Last.JobID}}</a>{{else}}Never checked{{end}}</td>
+      <td>
+        <form method="post" action="/loader/watches">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <input type="hidden" name="watch_id" value="{{.ID}}">
+          <button name="action" value="check"{{if .Live}} disabled{{end}}>Check now</button>
+          <button name="action" value="remove">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{end}}
+  {{end}}
+</div>
+{{end}}

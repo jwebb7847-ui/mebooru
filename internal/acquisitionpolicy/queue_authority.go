@@ -19,9 +19,9 @@ import(
 // lease, stable gallery and current policy. First scope is an explicit
 // ordinary strict download window without legacy extra options.
 func VerifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.MetadataPlanRequest)error{
-	return verifyRunningQueueWindow(ctx,dir,q,"")
+	return verifyRunningQueueWindow(ctx,dir,q,"",0)
 }
-func verifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.MetadataPlanRequest,intent string)error{
+func verifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.MetadataPlanRequest,intent string,watchID int64)error{
 	if ctx.Err()!=nil||!workerproto.ValidMetadataPlan(q)||q.Kind!=workerproto.MetadataStrictResolve||!filepath.IsAbs(dir)||filepath.Clean(dir)!=dir{return windowregistry.ErrWindow}
 	canonical,err:=filepath.EvalSymlinks(dir);if err!=nil||canonical!=dir{return windowregistry.ErrWindow}
 	path:=filepath.Join(dir,"queue.sqlite")
@@ -75,7 +75,7 @@ func verifyRunningQueueWindow(ctx context.Context,dir string,q workerproto.Metad
 		j.MaxItems!=int(q.Last-q.First+1)||stored.Offset<0||uint64(stored.Offset)+1!=uint64(q.First)||
 		j.Kind!=""||j.Force||j.Root!=j.ID||j.Folder!=""||j.PageURL!=""||len(j.Tags)!=0||j.Commentary!=""||
 		j.Source!=""||j.Via!=""||j.ImageID!=0||j.Backend!=""||j.MD5!=""||j.SHA256!=""||
-		len(j.ManagedWindow)!=0||stored.Auto||stored.Priority||stored.Background||stored.Budgeted||stored.Watch!=0||
+		len(j.ManagedWindow)!=0||stored.Auto||stored.Priority||stored.Background||stored.Budgeted||stored.Watch!=watchID||
 		stored.ForceTo!=0||len(stored.ContribIDs)!=0||stored.ContribBacklog{return windowregistry.ErrWindow}
 	if stored.ManagedIntentID!=intent{return windowregistry.ErrWindow}
 	if intent!=""{
@@ -105,7 +105,9 @@ func RegisterRunningWindow(ctx context.Context,dir string,registry *windowregist
 // and online lease. It never creates intent from worker-provided data.
 func RegisterRunningIntentWindow(ctx context.Context,dir string,registry *windowregistry.Registry,g windowregistry.Grant,check func(context.Context,windowregistry.Grant)bool)error{
 	if registry==nil||check==nil||!workerproto.ValidQueueIntentID(g.IntentID)||!check(ctx,g){return windowregistry.ErrWindow}
-	if err:=verifyRunningQueueWindow(ctx,dir,g.Request,g.IntentID);err!=nil{return err}
+	sub,err:=registry.ObserveSubmission(g.IntentID)
+	if err!=nil{return err}
+	if err:=verifyRunningQueueWindow(ctx,dir,g.Request,g.IntentID,sub.Command.WatchID);err!=nil{return err}
 	if !check(ctx,g){return windowregistry.ErrWindow}
 	return registry.BindSubmission(ctx,g)
 }
