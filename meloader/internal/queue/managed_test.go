@@ -88,3 +88,27 @@ func TestManagedQueueDeniedAdmissionKeepsPending(t *testing.T){
 	j,err:=q.Get(id);if err!=nil||j.Status!=JobQueued{t.Fatal("unstarted job consumed",j,err)}
 	jobs,err:=st.LoadJobs();if err!=nil||len(jobs)!=1||jobs[0].Status!=JobQueued{t.Fatal("durable pending state",jobs,err)}
 }
+
+
+func TestManagedSubmissionSurvivesQueueHistoryRemoval(t *testing.T){
+	ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel()
+	dir:=t.TempDir()
+	st,err:=OpenStore(dir);if err!=nil{t.Fatal(err)}
+	q,err:=NewManaged(ctx,managedFixtureProc(func(context.Context,*Job)(error,error){return nil,nil}),1,20)
+	if err!=nil{t.Fatal(err)}
+	q.UseStore(st)
+	const intent="0123456789abcdef0123456789abcdef"
+	opts:=Options{Gallery:"A",Site:"derpibooru",MaxItems:1,ManagedIntentID:intent}
+	id,err:=q.EnqueueManaged("https://derpibooru.org/images/1",opts);if err!=nil{t.Fatal(err)}
+	if _,err:=q.EnqueueManaged("https://derpibooru.org/images/1",opts);err==nil{t.Fatal("duplicate enqueue")}
+	jobs,err:=st.LoadJobs();if err!=nil||len(jobs)!=1||jobs[0].ManagedIntentID!=intent{t.Fatal(jobs,err)}
+	q.Close()
+	if err:=st.DeleteJobs([]int64{id});err!=nil{t.Fatal(err)}
+	if err:=st.Close();err!=nil{t.Fatal(err)}
+	st,err=OpenStore(dir);if err!=nil{t.Fatal(err)};defer st.Close()
+	if assigned,err:=st.ManagedSubmissionJob(intent);err!=nil||assigned!=id{t.Fatal(assigned,err)}
+	q2,err:=NewManaged(ctx,managedFixtureProc(func(context.Context,*Job)(error,error){return nil,nil}),1,20)
+	if err!=nil{t.Fatal(err)}
+	q2.UseStore(st);defer q2.Close()
+	if _,err:=q2.EnqueueManaged("https://derpibooru.org/images/1",opts);err==nil{t.Fatal("recreated evicted submission")}
+}

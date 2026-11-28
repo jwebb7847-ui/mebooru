@@ -42,3 +42,31 @@ func TestExactWindowRegistryAcrossReopen(t *testing.T){
 	if err:=r.RecordOutcome(ctx,Outcome{Grant:next,Kind:"no_transfer"});err!=nil{t.Fatal(err)}
 	if err:=r.Settle(ctx,next,2,false);err!=nil{t.Fatal(err)}
 }
+
+
+func TestSubmissionCanOnlyBindOneExactJob(t *testing.T){
+	ctx:=context.Background()
+	path,err:=filepath.EvalSymlinks(t.TempDir());if err!=nil{t.Fatal(err)}
+	r,err:=Open(path);if err!=nil{t.Fatal(err)}
+	cmd:=workerproto.QueueCommand{URL:"https://derpibooru.org/search?q=fixture",Gallery:"A",MaxItems:3}
+	sub,err:=r.NewSubmission(ctx,cmd,"stable-A");if err!=nil{t.Fatal(err)}
+	if sub.Command.IntentID==""{t.Fatal("missing intent")}
+	q:=workerproto.MetadataPlanRequest{JobID:17,Gallery:cmd.Gallery,Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:cmd.URL,First:1,Last:3}
+	cfg:=acquisitionplan.MetadataConfig{Generation:1,Source:q.Source};ci,err:=cfg.Identity();if err!=nil{t.Fatal(err)}
+	g:=Grant{Request:q,OwnerGeneration:strings.Repeat("a",64),PolicyGeneration:1,GalleryIdentity:"stable-A",IntentID:sub.Command.IntentID,Identity:acquisitionplan.MetadataIdentity{Config:ci,Runtime:acquisitionplan.RuntimeIdentity{Generation:1,Version:acquisitionplan.StrictQualifiedVersion,ArtifactSHA256:strings.Repeat("1",64),ManifestSHA256:strings.Repeat("2",64)}}}
+	if err:=r.Register(ctx,g);err==nil{t.Fatal("unbound grant")}
+	bad:=g;bad.GalleryIdentity="recreated-A"
+	if err:=r.BindSubmission(ctx,bad);err==nil{t.Fatal("wrong stable gallery")}
+	bad=g;bad.Request.Last++
+	if err:=r.BindSubmission(ctx,bad);err==nil{t.Fatal("widened window")}
+	if err:=r.Close();err!=nil{t.Fatal(err)}
+	r,err=Open(path);if err!=nil{t.Fatal(err)};defer r.Close()
+	got,err:=r.ObserveSubmission(sub.Command.IntentID);if err!=nil||got!=sub{t.Fatal(got,err)}
+	if err:=r.BindSubmission(ctx,g);err!=nil{t.Fatal(err)}
+	if _,err:=r.Claim(ctx,q,g.OwnerGeneration);err!=nil{t.Fatal(err)}
+	bad=g;bad.Request.JobID++
+	if err:=r.BindSubmission(ctx,bad);err==nil{t.Fatal("intent replay under new job")}
+	if err:=r.RecordOutcome(ctx,Outcome{Grant:g,Kind:"no_transfer"});err!=nil{t.Fatal(err)}
+	if err:=r.Settle(ctx,g,2,false);err!=nil{t.Fatal(err)}
+	if err:=r.BindSubmission(ctx,g);err==nil{t.Fatal("settled intent replay")}
+}

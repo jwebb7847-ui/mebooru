@@ -26,3 +26,15 @@ func TestWindowNoTransferExactOrderedBlockedListing(t *testing.T){
 	body,err:=json.Marshal(empty);if err!=nil{t.Fatal(err)}
 	if _,err:=DecodeWindowNoTransfer(body);err!=nil{t.Fatal("exact empty listing",err)}
 }
+
+
+func TestWindowPrepareRequiresCanonicalIntent(t *testing.T){
+	q:=MetadataPlanRequest{JobID:1,Gallery:"A",Kind:MetadataStrictResolve,Source:"derpibooru",URL:"https://derpibooru.org/images/1",First:1,Last:1}
+	v:=WindowPrepareRequest{Request:q,IntentID:"0123456789abcdef0123456789abcdef"}
+	raw,err:=EncodeWindowPrepare(v);if err!=nil{t.Fatal(err)}
+	got,err:=DecodeWindowPrepare(raw);if err!=nil||got!=v{t.Fatal(got,err)}
+	for _,id:=range []string{"","0","00000000000000000000000000000000","0123456789ABCDEF0123456789ABCDEF","../not-an-intent"}{
+		bad:=v;bad.IntentID=id
+		if _,err:=EncodeWindowPrepare(bad);err==nil{t.Fatal("invalid intent",id)}
+	}
+}
