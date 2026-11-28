@@ -2,6 +2,7 @@ package queue
 
 import(
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 
@@ -53,6 +54,7 @@ func(q *Queue) SetManagedOffline(ctx context.Context,offline bool)error{
 	if ctx.Err()!=nil{return ctx.Err()}
 	if err:=m.gate.Open();err!=nil{return err}
 	q.mu.Lock()
+	if q.closed||q.managedRetiring{q.mu.Unlock();return errors.Join(errStopping,m.gate.Drain(ctx))}
 	q.managedOffline=false
 	q.cond.Broadcast()
 	q.mu.Unlock()
@@ -73,4 +75,51 @@ func(q *Queue) ReserveManagedIdle(ctx context.Context)(bool,error){
 	q.mu.Unlock()
 	if err:=m.gate.Seal(ctx);err!=nil{return false,err}
 	return true,nil
+}
+
+
+// CloseManaged first closes and drains every shared admission (queue,
+// runtime, PTR transport), then joins the actual queue workers.
+func(q *Queue) CloseManaged(ctx context.Context)error{
+	if q==nil||q.managed==nil{return errors.New("not a managed queue")}
+	m:=q.managed
+	m.mu.Lock();defer m.mu.Unlock()
+	q.Stop()
+	if err:=m.gate.Seal(ctx);err!=nil{return err}
+	q.Close()
+	return nil
+}
+
+// ManagedControl is the real worker control handler, not the diagnostic
+// probe. Use only on a private inherited session; unsupported operations
+// refuse rather than route to legacy HTTP. A trusted owner may provide
+// a local wake callback for already-enabled PTR or explicit schedules.
+func(q *Queue) ManagedControl(wake func())workerproto.Handler{
+	return func(ctx context.Context,op workerproto.Operation,payload json.RawMessage)(json.RawMessage,*workerproto.Fault){
+		bad:=func()(json.RawMessage,*workerproto.Fault){return nil,&workerproto.Fault{Code:"invalid"}}
+		fail:=func()(json.RawMessage,*workerproto.Fault){return nil,&workerproto.Fault{Code:"cleanup_unconfirmed"}}
+		if q==nil||q.managed==nil{return nil,&workerproto.Fault{Code:"unsupported"}}
+		switch op{
+		case workerproto.Health:
+			if len(payload)!=0{return bad()}
+			q.mu.Lock()
+			v:=struct{Ready bool `json:"ready"`;Offline bool `json:"offline"`;Operations int `json:"operations"`}{!q.closed,q.managedOffline,len(q.running)}
+			q.mu.Unlock()
+			body,_:=json.Marshal(v);return body,nil
+		case workerproto.SetOffline:
+			p,err:=workerproto.DecodeOfflinePolicy(payload);if err!=nil{return bad()}
+			if err:=q.SetManagedOffline(ctx,p.Offline);err!=nil{return fail()}
+			if !p.Offline&&wake!=nil{wake()}
+			body,_:=json.Marshal(workerproto.OfflineAck{Offline:p.Offline,Drained:p.Offline});return body,nil
+		case workerproto.ReserveIdle:
+			if len(payload)!=0{return bad()}
+			idle,err:=q.ReserveManagedIdle(ctx);if err!=nil{return fail()}
+			body,_:=json.Marshal(workerproto.IdleReservation{Reserved:idle});return body,nil
+		case workerproto.Shutdown:
+			if len(payload)!=0{return bad()}
+			if err:=q.CloseManaged(ctx);err!=nil{return fail()}
+			return nil,nil
+		default:return nil,&workerproto.Fault{Code:"unsupported"}
+		}
+	}
 }

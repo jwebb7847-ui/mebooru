@@ -26,6 +26,15 @@ func (q *Queue) Stop() {
 		return
 	}
 	q.closed = true
+	if q.managed!=nil{
+		// Preserve durable queued jobs across managed shutdown. Only
+		// active jobs become interrupted after their cleanup.
+		q.managedOffline=true
+		q.cond.Broadcast()
+		q.mu.Unlock()
+		close(q.stopped)
+		return
+	}
 	checks := q.dropWatchChecksLocked()
 	dropped, evicted := q.dropPendingLocked()
 	q.cond.Broadcast()
