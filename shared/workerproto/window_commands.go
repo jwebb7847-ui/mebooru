@@ -43,3 +43,29 @@ func DecodeWindowCommitRequest(raw []byte)(WindowCommitRequest,error){
 	canonical,err:=EncodeWindowCommitRequest(q);if err!=nil||!bytes.Equal(raw,canonical){return WindowCommitRequest{},ErrMessage}
 	return q,nil
 }
+
+
+// WindowNoTransferProposal reports an exact ordered listing with no
+// approved rows. It is not proof of a blacklist decision. Only the
+// library's independent native evidence and current policy may settle it.
+type WindowNoTransferProposal struct{
+	Request MetadataPlanRequest `json:"request"`
+	ListedIDs []string `json:"listed_ids"`
+	BlockedIDs []string `json:"blocked_ids"`
+}
+func EncodeWindowNoTransfer(q WindowNoTransferProposal)(json.RawMessage,error){
+	if !ValidMetadataPlan(q.Request)||q.Request.Kind!=MetadataStrictResolve||q.ListedIDs==nil||q.BlockedIDs==nil||
+		len(q.ListedIDs)!=len(q.BlockedIDs)||len(q.ListedIDs)>int(q.Request.Last-q.Request.First+1){return nil,ErrMessage}
+	seen:=map[string]bool{}
+	for i,id:=range q.ListedIDs{
+		if got,ok:=metadataID(json.RawMessage(id));!ok||got!=id||seen[id]||q.BlockedIDs[i]!=id{return nil,ErrMessage}
+		seen[id]=true
+	}
+	b,err:=json.Marshal(q);if err!=nil||len(b)>128<<10{return nil,ErrMessage};return b,nil
+}
+func DecodeWindowNoTransfer(b []byte)(WindowNoTransferProposal,error){
+	var q WindowNoTransferProposal
+	if len(b)>128<<10||json.Unmarshal(b,&q)!=nil{return q,ErrMessage}
+	raw,err:=EncodeWindowNoTransfer(q);if err!=nil||!bytes.Equal(raw,b){return WindowNoTransferProposal{},ErrMessage}
+	return q,nil
+}

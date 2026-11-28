@@ -100,7 +100,16 @@ func(p *ManagedJobProcessor) ProcessManaged(ctx context.Context,j *queue.Job)(re
 		items[i]=item
 	}
 	j.SetItems(items)
-	if verdict.Approval==nil{return nil,nil}
+	if verdict.Approval==nil{
+		// No allocation does not imply settled custody. Have the owner
+		// independently confirm the exact native listing and all-blocked
+		// policy before closing this window or finalizing queue history.
+		owner,ok:=p.Owner.(interface{NoTransfer(context.Context,workerproto.WindowNoTransferProposal)error})
+		if !ok{return errManagedJob,nil}
+		listed:=append([]string{},verdict.ListedIDs...)
+		blocked:=append([]string{},verdict.BlockedIDs...)
+		return owner.NoTransfer(ctx,workerproto.WindowNoTransferProposal{Request:q,ListedIDs:listed,BlockedIDs:blocked}),nil
+	}
 	approval:=verdict.Approval
 	plan:=approval.Request()
 	j.SetSubcategory(plan.Subcategory)

@@ -25,6 +25,19 @@ func(o *SessionJobOwner) call(ctx context.Context,op workerproto.Operation,body 
 	if o==nil||o.Session==nil||o.Session()==nil{return workerproto.Envelope{},errManagedJob}
 	return o.Session().Call(ctx,op,body)
 }
+// RegisterWindow requests owner admission of the exact already-running durable job.
+// The response confirms only the registration; custody independently claims it.
+func(o *SessionJobOwner) RegisterWindow(ctx context.Context,q workerproto.MetadataPlanRequest)error{
+	if !workerproto.ValidMetadataPlan(q)||q.Kind!=workerproto.MetadataStrictResolve{return errManagedJob}
+	body,err:=json.Marshal(workerproto.ManagedMetadataStart{Request:q});if err!=nil{return err}
+	e,err:=o.call(ctx,workerproto.WindowPrepare,body);if err!=nil||e.Error!=nil{return errors.Join(errManagedJob,err)}
+	got,err:=workerproto.DecodeManagedMetadataStart(e.Payload);if err!=nil||got!=q{return errManagedJob};return nil
+}
+func(o *SessionJobOwner) NoTransfer(ctx context.Context,q workerproto.WindowNoTransferProposal)error{
+	body,err:=workerproto.EncodeWindowNoTransfer(q);if err!=nil{return err}
+	e,err:=o.call(ctx,workerproto.WindowNoTransfer,body);if err!=nil||e.Error!=nil{return errors.Join(errManagedJob,err)}
+	got,err:=workerproto.DecodeManagedMetadataStart(e.Payload);if err!=nil||got!=q.Request{return errManagedJob};return nil
+}
 func(o *SessionJobOwner) Allocate(ctx context.Context,q workerproto.TransferPlanRequest,projection []byte,hash string)(workerproto.StageAllocation,string,error){
 	var zero workerproto.StageAllocation
 	if o.Workspace==nil{return zero,"",errManagedJob}

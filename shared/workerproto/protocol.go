@@ -157,6 +157,8 @@ const (
 	ResolveTags Operation = "library.resolve_tags"
 	ImageDigest Operation = "library.image_digest"
 	ImageThumbnail Operation = "library.image_thumbnail"
+	WindowPrepare Operation = "library.window_prepare"
+	WindowNoTransfer Operation = "library.window_no_transfer"
 	StageAllocate Operation = "library.stage_allocate"
 	StageAbandon Operation = "library.stage_abandon"
 	ImportMedia Operation = "library.import_media"
@@ -240,6 +242,8 @@ var rules = map[Operation]Rule{
 	ResolveTags: {Worker, Local},
 	ImageDigest: {Worker, Local},
 	ImageThumbnail: {Worker, Local},
+	WindowPrepare: {Worker, Local},
+	WindowNoTransfer: {Worker, Local},
 	StageAllocate: {Worker, Local},
 	StageAbandon: {Worker, Local},
 	ImportMedia: {Worker, Local},
