@@ -146,7 +146,7 @@ func testExistingPublicationTargetModes(t *testing.T, modes []string){
 				if got.Held == nil || got.Restore != nil || got.Held.ImageID != id || got.Held.CanonicalIdentity == "" { t.Fatal("held evidence",got) }
 				if mode == "held alias" && len(got.Retained) != 2 { t.Fatal("alias evidence missing",got) }
 			} else {
-				if got.Restore == nil || got.Held != nil || got.Restore.RestoreImageID != id || got.Restore.RestorePathID <= 0 || got.Restore.RestoreMarkedMissing != (mode != "restore unmarked" && mode != "restore exec unmarked") || got.Restore.RestoreRating != "explicit" { t.Fatal("restore evidence",got) }
+				if got.Restore == nil || got.Held != nil || got.Restore.RestoreImageID != id || got.Restore.RestorePathID <= 0 || got.Restore.RestoreMarkedMissing != (mode != "restore unmarked" && mode != "restore exec unmarked" && mode != "restore exec meta name unmarked") || got.Restore.RestoreRating != "explicit" { t.Fatal("restore evidence",got) }
 			}
 			again,err := a.inspectExistingPublicationTarget(ctx,grant,g,kind,extras)
 			if err != nil || !sameExistingPublicationTarget(got,again) { t.Fatal("stable repeat",again,err) }
