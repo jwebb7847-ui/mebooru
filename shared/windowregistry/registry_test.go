@@ -12,7 +12,7 @@ func TestExactWindowRegistryAcrossReopen(t *testing.T){
 	ctx:=context.Background()
 	path,err:=filepath.EvalSymlinks(t.TempDir());if err!=nil{t.Fatal(err)}
 	r,err:=Open(path);if err!=nil{t.Fatal(err)}
-	g:=Grant{Request:workerproto.MetadataPlanRequest{JobID:1,Gallery:"A",Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:"https://derpibooru.org/images/1",First:1,Last:1},OwnerGeneration:strings.Repeat("a",32),PolicyGeneration:1}
+	g:=Grant{Request:workerproto.MetadataPlanRequest{JobID:1,Gallery:"A",Kind:workerproto.MetadataStrictResolve,Source:"derpibooru",URL:"https://derpibooru.org/images/1",First:1,Last:1},OwnerGeneration:strings.Repeat("a",64),PolicyGeneration:1}
 	if err:=r.Register(ctx,g);err!=nil{t.Fatal(err)}
 	bad:=g.Request;bad.Gallery="B"
 	if _,err:=r.Claim(ctx,bad,g.OwnerGeneration);err==nil{t.Fatal("changed job")}
@@ -27,6 +27,7 @@ func TestExactWindowRegistryAcrossReopen(t *testing.T){
 	if err:=r.Settle(ctx,g,2,false);err==nil{t.Fatal("wrong phase")}
 	if err:=r.Settle(ctx,g,6,false);err!=nil{t.Fatal(err)}
 	if r.Current(g){t.Fatal("settled grant still current")}
+	if got,err:=r.ObserveSettlement(g);err!=nil||got!=v{t.Fatal("settlement",got,err)}
 	if err:=r.Register(ctx,g);err==nil{t.Fatal("reused job ID")}
 	next:=g;next.Request.JobID++
 	if err:=r.Register(ctx,next);err!=nil{t.Fatal(err)}

@@ -42,7 +42,7 @@ func Open(path string)(*Registry,error){
 }
 func(r *Registry)Close()error{return r.root.Close()}
 func validHex(s string,n int)bool{b,err:=hex.DecodeString(s);return err==nil&&len(b)==n&&hex.EncodeToString(b)==s}
-func valid(g Grant)bool{return workerproto.ValidMetadataPlan(g.Request)&&g.Request.Kind==workerproto.MetadataStrictResolve&&validHex(g.OwnerGeneration,16)&&g.PolicyGeneration>0}
+func valid(g Grant)bool{return workerproto.ValidMetadataPlan(g.Request)&&g.Request.Kind==workerproto.MetadataStrictResolve&&validHex(g.OwnerGeneration,32)&&g.PolicyGeneration>0}
 func name(q workerproto.MetadataPlanRequest,suffix string)string{return strconv.FormatInt(q.JobID,10)+"."+suffix}
 func(r *Registry) read(path string,v any)error{
 	i,err:=r.root.Lstat(path);if err!=nil{return err}
@@ -121,4 +121,18 @@ func(r *Registry)Settle(ctx context.Context,g Grant,phase int,failed bool)error{
 	case "abandoned":if phase<0||phase>6{return ErrWindow}
 	}
 	return r.write(ctx,name(g.Request,"settled"),v)
+}
+
+
+// ObserveSettlement requires a positive exact durable record; absence
+// or invalidity of the current grant alone does not prove settlement.
+func(r *Registry)ObserveSettlement(g Grant)(Outcome,error){
+	var zero Outcome
+	got,err:=r.Observe(g.Request,g.OwnerGeneration)
+	var claimed Grant
+	var outcome,settled Outcome
+	if err!=nil||got!=g||r.read(name(g.Request,"claimed"),&claimed)!=nil||claimed!=g||
+		r.read(name(g.Request,"outcome"),&outcome)!=nil||!validOutcome(outcome)||outcome.Grant!=g||
+		r.read(name(g.Request,"settled"),&settled)!=nil||settled!=outcome{return zero,ErrWindow}
+	return settled,nil
 }

@@ -65,7 +65,7 @@ type windowFixtureOwner struct{
 
 func(o *windowFixtureOwner) current(c context.Context)bool{return c.Err()==nil&&o.lease!=nil&&o.lease.Current()}
 func(o *windowFixtureOwner) scope(c context.Context,q workerproto.StageAllocateRequest)(acquisitionstage.Scope,error){
-	if !o.current(c)||o.allowed[q.OperationID]!=q{return acquisitionstage.Scope{},managedqa.ErrFixture}
+	if !o.current(c)||q.Transfer.Metadata!=o.window.Request||o.allowed[q.OperationID]!=q{return acquisitionstage.Scope{},managedqa.ErrFixture}
 	root:=filepath.Join(o.dir,"gallery")
 	s:=acquisitionstage.Scope{GalleryIdentity:"disposable-window:"+o.dir,GalleryRoot:root,GalleryRoots:[]string{root},MaxFiles:1,MaxBytes:128<<10}
 	if q.OperationID==managedqa.ParentID(q.Transfer.Metadata.JobID){s.MaxFiles=uint32(o.setup.Count);s.MaxBytes=8<<20}
@@ -288,14 +288,15 @@ func runManagedWindowProbe(countArg string)(result error){
 			if v.Status!="queued"&&v.Status!="running"{return fmt.Errorf("managed job %s: %s",v.Status,v.Error)}
 			select{case <-ctx.Done():return ctx.Err();case <-time.After(200*time.Millisecond):}
 		}
-		if registry.Current(o.window)||v.ManagedWindow==nil||v.ManagedWindow.State!="complete"||len(v.Items)!=count{return managedqa.ErrFixture}
+		settled,err:=registry.ObserveSettlement(o.window)
+		if err!=nil||settled.Kind!="committed"||v.ManagedWindow==nil||v.ManagedWindow.State!="complete"||len(v.Items)!=count{return managedqa.ErrFixture}
 		offset:=setup.Offset(job)
 		if v.Items[0].PostID!=strconv.Itoa(offset+1)||v.Items[0].Outcome!=string(contract.OutcomeSkippedBlacklist){return managedqa.ErrFixture}
 		for i,it:=range v.Items[1:]{
 			if it.PostID!=strconv.Itoa(offset+i+2)||it.Outcome!=string(contract.OutcomeCreated)||it.ImageID<=0||len(it.Receipt)!=64{return managedqa.ErrFixture}
 		}
 		o.mu.Lock();observed:=o.result;o.mu.Unlock()
-		if len(observed.Items)!=count-1{return managedqa.ErrFixture}
+		if len(observed.Items)!=count-1||settled.PolicySHA256!=observed.PolicySHA256||settled.PlanSHA256!=observed.PlanSHA256{return managedqa.ErrFixture}
 		g:=set.Get(cfg.Name)
 		var n int
 		if err:=g.DB.Read.QueryRowContext(ctx,"SELECT COUNT(*) FROM images WHERE is_missing=0").Scan(&n);err!=nil||n!=int(job)*(count-1){return fmt.Errorf("library rows %d: %v",n,err)}
