@@ -57,11 +57,11 @@ func(q *Queue) PrivateDispatch(authorize CommandAuthority,wake func())workerprot
 			return raw,nil
 		}
 		accepted:=func(id int64,err error)(json.RawMessage,*workerproto.Fault){
-			if err!=nil||id<1{return fault("queue_refused")}
+			if err!=nil||id<1||q.ManagedStoreError()!=nil{return fault("queue_refused")}
 			return respond(struct{JobID int64 `json:"job_id"`}{id})
 		}
 		done:=func(err error)(json.RawMessage,*workerproto.Fault){
-			if err!=nil{return fault("queue_refused")}
+			if err!=nil||q.ManagedStoreError()!=nil{return fault("queue_refused")}
 			return respond(struct{OK bool `json:"ok"`}{true})
 		}
 		switch op{
@@ -101,7 +101,7 @@ func(q *Queue) PrivateDispatch(authorize CommandAuthority,wake func())workerprot
 			// owner must explicitly authorize that model at submission
 			// and again when the due job is resolved.
 			id,err:=q.AddWatch(cmd.URL,cmd.IntervalHours,cmd.MaxItems,nil)
-			if err!=nil||id<1{return fault("queue_refused")}
+			if err!=nil||id<1||q.ManagedStoreError()!=nil{return fault("queue_refused")}
 			return respond(struct{WatchID int64 `json:"watch_id"`}{id})
 		case workerproto.WatchSetInterval:
 			return done(q.SetWatchInterval(cmd.WatchID,cmd.IntervalHours))

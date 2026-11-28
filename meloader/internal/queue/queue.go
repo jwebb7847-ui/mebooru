@@ -170,6 +170,7 @@ func (q *Queue) Workers() int { return q.workers }
 // surprise the operator.
 func (q *Queue) UseStore(st *Store) {
 	jobs, err := st.LoadJobs()
+	loadFailed:=err!=nil
 	if err != nil {
 		logx.Warnf("queue: store reload failed, history lost: %v", err)
 	}
@@ -196,21 +197,25 @@ func (q *Queue) UseStore(st *Store) {
 	budgetDay, budgetSpent, err := st.LoadCounter(lookupBudgetCounter)
 	if err != nil {
 		logx.Warnf("queue: budget counter reload failed: %v", err)
+		loadFailed=true
 		budgetDay, budgetSpent = "", 0
 	}
 	watches, err := st.LoadWatches()
 	if err != nil {
 		logx.Warnf("queue: watch reload failed: %v", err)
+		loadFailed=true
 	}
 	// Past every id ever issued, not just the surviving rows: monbooru still
 	// holds old ids, and a reissued one would answer for another job.
 	high, err := st.HighestJobID()
 	if err != nil {
 		logx.Warnf("queue: job id high-water reload failed: %v", err)
+		loadFailed=true
 	}
 	var evicted []int64
 	q.mu.Lock()
 	q.store = st
+	if q.managed!=nil&&loadFailed{q.managedStoreFault=true}
 	q.budgetDay, q.budgetSpent = budgetDay, budgetSpent
 	for i := range watches {
 		q.watches = append(q.watches, &watches[i])
@@ -240,6 +245,7 @@ func (q *Queue) persist(j *Job) {
 	}
 	if err := q.store.SaveJob(j.Snapshot()); err != nil {
 		logx.Warnf("queue: store write for job %d failed: %v", j.ID, err)
+		if q.managed!=nil{q.mu.Lock();q.managedStoreFault=true;q.mu.Unlock()}
 	}
 }
 
@@ -265,6 +271,7 @@ func (q *Queue) persistDelete(ids []int64) {
 	defer q.rowWrite.Unlock()
 	if err := q.store.DeleteJobs(ids); err != nil {
 		logx.Warnf("queue: store delete failed: %v", err)
+		if q.managed!=nil{q.mu.Lock();q.managedStoreFault=true;q.mu.Unlock()}
 	}
 }
 

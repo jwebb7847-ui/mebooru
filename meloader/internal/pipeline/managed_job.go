@@ -59,7 +59,10 @@ func(p *ManagedJobProcessor) ProcessManaged(ctx context.Context,j *queue.Job)(re
 	// refuse before WAN rather than falling through to legacy.
 	if job.Kind!=""||workerproto.StrictQueueSource(job.URL)==""{return errManagedJob,nil}
 	r,err:=p.Owner.Prepare(ctx,job)
-	if r==nil{return errors.Join(errManagedJob,err),nil}
+	if r==nil{
+		if err==nil||errors.Is(err,processguard.ErrOperationUnconfirmed){return errManagedJob,processguard.ErrOperationUnconfirmed}
+		return errors.Join(errManagedJob,err),nil
+	}
 	proxies:=processguard.NewOperationSet(1)
 	defer func(){
 		cleanup,cancel:=context.WithTimeout(context.WithoutCancel(ctx),15*time.Second);defer cancel()

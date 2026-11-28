@@ -143,6 +143,7 @@ func TestManagedStrictTransferPinnedRuntime(t *testing.T){
 	// only proxy handles. All wire starts are exact typed requests.
 	root,err:=filepath.EvalSymlinks(t.TempDir());if err!=nil{t.Fatal(err)}
 	custody:=processguard.NewOperationSet(1)
+	epoch:=gate.CurrentGeneration()
 	var grantMu sync.Mutex
 	var grant workerproto.StageAllocation
 	var completed []acquisitionplan.VerifiedTransferFile
@@ -152,7 +153,7 @@ func TestManagedStrictTransferPinnedRuntime(t *testing.T){
 	brokerDone:=make(chan error,1)
 	go func(){brokerDone<-processguard.ServeManagedRuntimeBroker(ctx,sr,cw,custody,processguard.ManagedRuntimeGrant{
 		Metadata:q,Runtime:r,Config:c,
-		Current:func(context.Context)bool{return gate.CurrentGeneration()!=(workerproto.DrainGeneration{})},
+		Current:func(context.Context)bool{return gate.CurrentGeneration()==epoch},
 		Transfer:func(context.Context)(workerproto.StageAllocation,string,error){
 			grantMu.Lock();defer grantMu.Unlock()
 			if !workerproto.ValidStageAllocation(grant){return workerproto.StageAllocation{},"",processguard.ErrStrictTransferOperation}
