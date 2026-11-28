@@ -3,7 +3,7 @@ set -eu
 
 bundle=${1:?Pass the app Contents directory}
 stage=${2:?Pass the package staging directory}
-ffmpeg_version=9.0.2
+ffmpeg_version=9.1
 webp_version=1.6.0
 sources=${MEBOORU_MACOS_MEDIA_ARCHIVES:-"$stage"}
 
@@ -18,7 +18,7 @@ unpack() {
 }
 
 unpack "ffmpeg-$ffmpeg_version.tar.xz" "https://ffmpeg.org/releases/ffmpeg-$ffmpeg_version.tar.xz" \
-  8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+  1a4d394ae63d190a526cd052eb4415c156b5c5e2df37efab41a7de0b8fde2433
 webp_url=https://storage.googleapis.com/downloads.webmproject.org/releases/webp
 unpack "libwebp-$webp_version.tar.gz" "$webp_url/libwebp-$webp_version.tar.gz" \
   e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564
@@ -62,7 +62,7 @@ chmod 0755 "$stage/webp-pkg-config"
     --disable-everything --enable-libwebp --enable-zlib --pkg-config="$stage/webp-pkg-config" \
     --enable-protocol=file,pipe --enable-demuxer=mov,matroska,gif,image2,png_pipe,jpeg_pipe,webp_pipe,av1 \
     --enable-muxer=image2,webp,null,mp4 --enable-decoder=h264,hevc,vp8,vp9,av1,gif,png,mjpeg,webp,mpeg4 \
-    --enable-parser=h264,hevc,vp8,vp9,av1 --enable-encoder=mjpeg,png,libwebp,libwebp_anim \
+    --enable-parser=h264,hevc,vp8,vp9,av1,gif --enable-encoder=mjpeg,png,libwebp,libwebp_anim \
     --enable-filter=scale,format,null,trim,setpts --enable-swscale
   make -j "$cpu_count" ffmpeg ffprobe
   install -m 0755 ffmpeg ffprobe "$bundle/MacOS/"
