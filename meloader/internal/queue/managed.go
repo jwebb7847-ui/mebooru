@@ -54,7 +54,7 @@ func(q *Queue) SetManagedOffline(ctx context.Context,offline bool)error{
 	if ctx.Err()!=nil{return ctx.Err()}
 	if err:=m.gate.Open();err!=nil{return err}
 	q.mu.Lock()
-	if q.closed||q.managedRetiring{q.mu.Unlock();return errors.Join(errStopping,m.gate.Drain(ctx))}
+	if q.closed||q.managedRetiring||q.managedStoreFault{q.mu.Unlock();return errors.Join(errStopping,m.gate.Drain(ctx))}
 	q.managedOffline=false
 	q.cond.Broadcast()
 	q.mu.Unlock()
@@ -69,7 +69,7 @@ func(q *Queue) ReserveManagedIdle(ctx context.Context)(bool,error){
 	m:=q.managed
 	m.mu.Lock();defer m.mu.Unlock()
 	q.mu.Lock()
-	if q.closed||q.managedRetiring||len(q.pending)!=0||len(q.running)!=0{q.mu.Unlock();return false,nil}
+	if q.closed||q.managedRetiring||q.managedStoreFault||len(q.pending)!=0||len(q.running)!=0{q.mu.Unlock();return false,nil}
 	q.managedRetiring=true
 	q.managedOffline=true
 	q.mu.Unlock()

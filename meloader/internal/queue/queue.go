@@ -118,6 +118,7 @@ type Queue struct {
 	managed *managedQueueState
 	managedOffline bool
 	managedRetiring bool
+	managedStoreFault bool
 
 	// Mirrored to the store: a crash loop must not refill a spent budget.
 	budgetLimit int
@@ -308,7 +309,7 @@ func (q *Queue) Release() {
 func (q *Queue) Held() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.held || q.managedOffline || q.managedRetiring
+	return q.held || q.managedOffline || q.managedRetiring || q.managedStoreFault
 }
 
 func (q *Queue) Paused() bool {

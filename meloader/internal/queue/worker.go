@@ -85,7 +85,7 @@ func (q *Queue) worker() {
 func (q *Queue) nextJob() (*Job, context.Context, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	for (len(q.pending) == 0 || q.paused || q.held || q.managedOffline || q.managedRetiring) && !q.closed {
+	for (len(q.pending) == 0 || q.paused || q.held || q.managedOffline || q.managedRetiring || q.managedStoreFault) && !q.closed {
 		q.cond.Wait()
 	}
 	if q.closed {
@@ -128,7 +128,7 @@ func (q *Queue) runJob(j *Job, ctx context.Context) {
 	}
 	if q.managed!=nil {
 		if q.store==nil { j.interrupt(q.now());return }
-		if err:=q.store.SaveJob(j.Snapshot());err!=nil{j.interrupt(q.now());return}
+		if err:=q.store.SaveJob(j.Snapshot());err!=nil{q.mu.Lock();q.managedStoreFault=true;q.mu.Unlock();j.interrupt(q.now());return}
 	} else { q.persist(j) }
 	q.stampWatch(j)
 
