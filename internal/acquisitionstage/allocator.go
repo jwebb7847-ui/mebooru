@@ -64,6 +64,10 @@ type Allocator struct {
 	maxCount int
 	maxBytes uint64
 	freeBytes func(string)(uint64,error)
+	history map[string]HistoryEntry
+	historyTransfers map[string]bool
+	historyInfo os.FileInfo
+	historyCharge uint64
 }
 
 func Open(path string,maxCount int,maxBytes uint64,authority Authority)(*Allocator,error){
@@ -74,7 +78,9 @@ func Open(path string,maxCount int,maxBytes uint64,authority Authority)(*Allocat
 	if err!=nil{return nil,ErrStageRefused}
 	actual,err:=r.Stat(".")
 	if err!=nil||!os.SameFile(info,actual){_ = r.Close();return nil,ErrStageRefused}
-	return &Allocator{root:r,path:canonical,info:info,authority:authority,maxCount:maxCount,maxBytes:maxBytes,freeBytes:diskFree},nil
+	a:=&Allocator{root:r,path:canonical,info:info,authority:authority,maxCount:maxCount,maxBytes:maxBytes,freeBytes:diskFree,history:map[string]HistoryEntry{},historyTransfers:map[string]bool{}}
+	if err:=a.loadHistory();err!=nil{r.Close();return nil,err}
+	return a,nil
 }
 func(a *Allocator)Close()error{
 	a.mu.Lock()
@@ -247,21 +253,25 @@ func(a *Allocator)inventory(ctx context.Context)(map[string]record,uint64,error)
 	return records,reserved,err
 }
 func(a *Allocator)inventoryWithClosure(ctx context.Context)(map[string]record,map[string]bool,uint64,error){
-	entries,err:=list(a.root,maxAllocations)
+	if !a.historyLive(){return nil,nil,0,ErrStageRecovery}
+	entries,err:=list(a.root,maxAllocations+1)
 	if err!=nil{return nil,nil,0,err}
 	records:=make(map[string]record,len(entries))
 	closed:=make(map[string]bool)
 	transfers:=make(map[string]bool,len(entries))
-	var reserved uint64
+	reserved:=a.historyCharge
 	for _,entry:=range entries{
+		if entry.Name()==historyDirName{continue}
+		if _,exists:=a.history[entry.Name()];exists{return nil,nil,0,ErrStageRecovery}
 		if ctx.Err()!=nil{return nil,nil,0,ErrStageRefused}
 		if !entry.IsDir(){return nil,nil,0,ErrStageRecovery}
 		r,err:=a.load(entry.Name())
-		if err!=nil||transfers[r.Allocation.TransferID]{return nil,nil,0,ErrStageRecovery}
+		if err!=nil||transfers[r.Allocation.TransferID]||a.historyTransfers[r.Allocation.TransferID]{return nil,nil,0,ErrStageRecovery}
 		transfers[r.Allocation.TransferID]=true
 		done,charge,err:=a.closedCharge(ctx,r)
 		if err!=nil{return nil,nil,0,err}
 		if done{closed[entry.Name()]=true}
+		if charge>maxReservedBytes-reserved{return nil,nil,0,ErrStageLimit}
 		reserved+=charge
 		records[entry.Name()]=r
 	}
@@ -293,6 +303,7 @@ func(a *Allocator)Allocate(ctx context.Context,q workerproto.StageAllocateReques
 	defer a.mu.Unlock()
 	s,err:=a.scope(ctx,q)
 	if err!=nil{return workerproto.StageAllocation{},err}
+	if _,exists:=a.history[q.OperationID];exists{return workerproto.StageAllocation{},ErrStageRefused}
 	records,closed,reserved,err:=a.inventoryWithClosure(ctx)
 	if err!=nil{return workerproto.StageAllocation{},err}
 	if r,ok:=records[q.OperationID];ok{
@@ -306,6 +317,7 @@ func(a *Allocator)Allocate(ctx context.Context,q workerproto.StageAllocateReques
 	if _,err:=rand.Read(id[:]);err!=nil{return workerproto.StageAllocation{},ErrStageRefused}
 	grant:=workerproto.StageAllocation{Request:q,TransferID:hex.EncodeToString(id[:]),MaxFiles:s.MaxFiles,MaxBytes:s.MaxBytes}
 	if !workerproto.ValidStageAllocation(grant){return workerproto.StageAllocation{},ErrStageRefused}
+	if a.historyTransfers[grant.TransferID]{return workerproto.StageAllocation{},ErrStageRecovery}
 	for _,r:=range records{if r.Allocation.TransferID==grant.TransferID{return workerproto.StageAllocation{},ErrStageRecovery}}
 	r:=record{Version:1,Allocation:grant,GalleryIdentity:s.GalleryIdentity,GalleryRoot:s.GalleryRoot,StageRoot:a.path}
 	if ctx.Err()!=nil||!a.live(){return workerproto.StageAllocation{},ErrStageRefused}
