@@ -49,7 +49,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	for _,entry:=range entries{
 		name:=entry.Name()
 		switch name{
-		case "media","intent.json",existingTargetPlanName,existingTargetAnchorName,existingLinkAttemptName,existingLandingAttemptName,existingMetadataAttemptName,existingMetadataResultName,existingHeldAttemptName,existingHeldReceiptName,"attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json","operation-closed.json":
+		case "media","intent.json",existingTargetPlanName,existingTargetAnchorName,existingLinkAttemptName,existingLandingAttemptName,existingMetadataAttemptName,existingMetadataResultName,existingHeldAttemptName,existingHeldReceiptName,existingRestoreAttemptName,existingRestoreReceiptName,"attempt","landing-attempt.json","metadata-attempt.json","metadata-result.json","relationship-attempt.json","relationship-result.json","collection-attempt.json","collection-result.json","naming-attempt.json","naming-result.json","extras-attempt.json","extras-result.json","composed-receipt.json","new-receipt.json","duplicate-attempt.json","held-composition.json","held-receipt.json","restored-receipt.json","workspace-reclaim-attempt.json","workspace-reclaim-result.json","prepared-release-attempt.json","prepared-release-result.json","sealed-retirement-attempt.json","sealed-retirement-result.json","operation-closed.json":
 			names[name]=true
 		default:return zero,ErrStageRecovery
 		}
@@ -107,7 +107,7 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 	// Existing-target planning is mutually exclusive with all later markers.
 	// Its reservation uses the same bounded allowance as the publication attempt,
 	// plus a small independent anchor. Partial records fail closed.
-	if names[existingTargetPlanName]||names[existingTargetAnchorName]||names[existingLinkAttemptName]||names[existingLandingAttemptName]||names[existingMetadataAttemptName]||names[existingMetadataResultName]||names[existingHeldAttemptName]||names[existingHeldReceiptName]{
+	if names[existingTargetPlanName]||names[existingTargetAnchorName]||names[existingLinkAttemptName]||names[existingLandingAttemptName]||names[existingMetadataAttemptName]||names[existingMetadataResultName]||names[existingHeldAttemptName]||names[existingHeldReceiptName]||names[existingRestoreAttemptName]||names[existingRestoreReceiptName]{
 		if !names[existingTargetPlanName]||!names[existingTargetAnchorName]||len(e.Files)!=1{return zero,ErrStageRecovery}
 		plan,err:=readExistingTargetPlan(p,r,e.Files[0]);if err!=nil{return zero,ErrStageRecovery}
 		expected:=4
@@ -129,6 +129,14 @@ func readPublication(operation *os.Root,r record,e SealedEvidence)(publicationIn
 							if names[existingHeldReceiptName]{
 								expected++
 								if _,err:=readExistingHeldReceipt(p,r,plan,m,result,h);err!=nil{return zero,ErrStageRecovery}
+							}
+						}
+						if names[existingRestoreAttemptName]{
+							expected++
+							n,err:=readExistingRestoreAttempt(p,r,plan,link,m,result);if err!=nil{return zero,ErrStageRecovery}
+							if names[existingRestoreReceiptName]{
+								expected++
+								if _,err:=readExistingRestoreReceipt(p,r,plan,m,n);err!=nil{return zero,ErrStageRecovery}
 							}
 						}
 					}
