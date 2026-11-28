@@ -117,7 +117,7 @@ func(o *windowFixtureOwner) handle(c context.Context,op workerproto.Operation,ra
 		if o.grant!=(workerproto.StageAllocation{}){return fault(managedqa.ErrFixture)}
 		p,err:=workerproto.DecodeWindowAllocateProposal(raw);if err!=nil{return fault(err)}
 		manifest,err:=o.authorizeProjection(c,p);if err!=nil{return fault(err)}
-		q:=workerproto.StageAllocateRequest{OperationID:managedqa.ParentID(q.Transfer.Metadata.JobID),Transfer:p.Transfer}
+		q:=workerproto.StageAllocateRequest{OperationID:managedqa.ParentID(p.Transfer.Metadata.JobID),Transfer:p.Transfer}
 		o.allowed[q.OperationID]=q
 		g,err:=o.a.Allocate(c,q);if err!=nil{return fault(err)}
 		o.grant,o.manifest,o.projection,o.hash=g,manifest,bytes.Clone(p.Projection),p.PolicySHA256
