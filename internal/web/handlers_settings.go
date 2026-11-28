@@ -51,6 +51,10 @@ type settingsData struct {
 	DesktopJobWarning  string
 	PluginsRepoURL     string
 	LoaderSettings     loaderPanel
+	ManagedAcquisition bool
+	AcquisitionOffline bool
+	AcquisitionLocal   bool
+	Acquisition        AcquisitionSettings
 	FFmpegAvailable    bool
 }
 
@@ -94,6 +98,19 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		unsupportedRows = append(unsupportedRows, s.installedTaggerRow(t, totalGalleries, modelPath, nil))
 	}
 	taggerRows := append(supportedRows, unsupportedRows...)
+	var acquisition AcquisitionSettings
+	var offline bool
+	var legacy loaderPanel
+	managed := s.managedLoader != nil
+	local := desktop.LocalRequest(r)
+	if managed {
+		offline = s.managedLoader.Offline()
+		if provider, ok := s.managedLoader.(managedSettingsProvider); ok && local {
+			acquisition = provider.AcquisitionSettings()
+		}
+	} else {
+		legacy = s.loaderPanel(r, base, "/settings")
+	}
 	s.renderTemplate(w, "settings.html", settingsData{
 		baseData:           base,
 		Galleries:          s.galleryRowsWithSnapshot(s.activeGallery(), base.VisibleCount, base.TagCount),
@@ -109,7 +126,11 @@ func (s *Server) settingsHandler(w http.ResponseWriter, r *http.Request) {
 		PluginPaired:       s.pairedPeerCount(),
 		PluginRows:         s.pluginRows(),
 		PluginsDir:         s.pluginsDir(),
-		LoaderSettings:     s.loaderPanel(r, base, "/settings"),
+		LoaderSettings:     legacy,
+		ManagedAcquisition: managed,
+		AcquisitionOffline: offline,
+		AcquisitionLocal:   local,
+		Acquisition:        acquisition,
 		Themes:             s.themeCluster(),
 		ThemesDir:          s.themesDir(),
 		DesktopProfile:     s.desktopLocal(r),

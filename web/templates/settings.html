@@ -25,7 +25,7 @@
     <a href="#general">General</a>
     <a href="#galleries">Galleries</a>
     <a href="#plugins">Plugins<span id="settings-pair-count" class="nav-count">{{with len .PairNotice.Items}} ({{.}}){{end}}</span></a>
-    <a href="#meloader">Meloader</a>
+    <a href="#meloader">{{if .ManagedAcquisition}}Acquisition{{else}}Meloader{{end}}</a>
     <a href="#tagger">Tagger</a>
     <a href="#relations">Relations</a>
     <a href="#auth">Auth</a>
@@ -1332,8 +1332,34 @@
   </script>
 
   <section id="meloader" class="settings-section">
+    {{if .ManagedAcquisition}}
+    {{template "webui/settings_section_header" dict "Title" "Acquisition"}}
+    {{if .Acquisition.PolicyFile}}
+    <dl>
+      <dt>Blacklist and source settings</dt><dd><code>{{.Acquisition.PolicyFile}}</code></dd>
+      <dt>Configured gallery-dl</dt><dd><code>{{.Acquisition.Runtime}}</code></dd>
+      <dt>Maximum posts per import</dt><dd>{{.Acquisition.MaxItems}}</dd>
+    </dl>
+    {{end}}
+    <div class="settings-actions">
+      <form method="post" action="/loader/offline">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <input type="hidden" name="return_to" value="settings">
+        <input type="hidden" name="offline" value="{{if .AcquisitionOffline}}false{{else}}true{{end}}">
+        <span>Acquisition is {{if .AcquisitionOffline}}offline{{else}}online{{end}}.</span>
+        <button type="submit">{{if .AcquisitionOffline}}Go online{{else}}Go offline{{end}}</button>
+      </form>
+      {{if and .AcquisitionLocal (not .DesktopProfile)}}
+      <form method="post" action="/settings/quit">
+        <input type="hidden" name="_csrf" value="{{$csrf}}">
+        <button type="submit">Quit Mebooru</button>
+      </form>
+      {{end}}
+    </div>
+    {{else}}
     {{template "webui/settings_section_header" dict "Title" "Meloader"}}
     {{template "partials/meloader_settings_panel.html" (dict "Panel" .LoaderSettings)}}
+    {{end}}
   </section>
 
   <section id="plugins" class="settings-section">

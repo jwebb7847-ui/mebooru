@@ -23,6 +23,15 @@ type managedRetry interface {
 	RetryImport(context.Context, int64) (int64, error)
 }
 
+type AcquisitionSettings struct {
+	Runtime, PolicyFile string
+	MaxItems            int
+}
+
+type managedSettingsProvider interface {
+	AcquisitionSettings() AcquisitionSettings
+}
+
 var ErrManagedImportUnsupported = errors.New("unsupported managed import")
 
 func (s *Server) loaderOffline(w http.ResponseWriter, r *http.Request) {
@@ -42,5 +51,9 @@ func (s *Server) loaderOffline(w http.ResponseWriter, r *http.Request) {
 		externalErr(w, r, "Could not change acquisition network access.", http.StatusServiceUnavailable)
 		return
 	}
-	http.Redirect(w, r, "/loader", http.StatusSeeOther)
+	target := "/loader"
+	if r.FormValue("return_to") == "settings" {
+		target = "/settings#meloader"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }

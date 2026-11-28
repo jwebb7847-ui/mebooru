@@ -277,6 +277,13 @@ func (a *managedApplication) Cancel(ctx context.Context, id int64) error {
 
 func (a *managedApplication) CanRetry() bool { return a.owner.live != nil }
 
+func (a *managedApplication) AcquisitionSettings() web.AcquisitionSettings {
+	if a.owner.live == nil {
+		return web.AcquisitionSettings{}
+	}
+	return web.AcquisitionSettings{Runtime: a.owner.live.Runtime, PolicyFile: a.owner.live.PolicyConfig, MaxItems: a.owner.live.MaxItems}
+}
+
 func (a *managedApplication) RetryImport(ctx context.Context, id int64) (int64, error) {
 	j, err := a.ImportResults(ctx, id)
 	if err != nil {
