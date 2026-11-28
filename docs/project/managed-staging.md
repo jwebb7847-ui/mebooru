@@ -1,5 +1,7 @@
 # II.6.4c — Managed staging and durable outcome design
 
+**Current resume (2026-11-28):** [Cold-start engineering resume](cold-start.md) supersedes historical next-action language below. Exact a0e054f executable baseline passed all seven development jobs, including actual Linux 200-post acquisition (199 committed, one blocked) and Windows 3-post acquisition. Prepared multi-window code f2d88d0 remains unqualified; normal app production binding and full acceptance pending.
+
 Subordinate technical design for the approved destination-aware staging model in [MEBOORU.md](../../MEBOORU.md). Initial scope is the strict acquisition candidate, not normal/deep acquisition, replacement, archive catch-up or production activation. No existing import route is replaced.
 
 ## Authority and identities
